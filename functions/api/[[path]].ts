@@ -204,18 +204,26 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 
 		// ======== 排行（KV 缓存 1 小时） ========
 		if (path === '/api/rank') {
-			const cached = await env.CACHE.get('rank');
+			const category = url.searchParams.get('category') || '';
+			const cacheKey = 'rank:' + category;
+			const cached = await env.CACHE.get(cacheKey);
 			if (cached) return json({ success: true, data: JSON.parse(cached) }, 200, { 'Cache-Control': 'public, max-age=3600' });
 
 			const shards = getShards(env);
-			const results = await Promise.all(shards.map(db => db.prepare('SELECT ' + VIDEO_COLS + ' FROM videos WHERE status = 1 ORDER BY views DESC LIMIT 50').all<VideoRow>()));
+			const sql = category 
+				? 'SELECT ' + VIDEO_COLS + ' FROM videos WHERE status = 1 AND category = ? ORDER BY views DESC LIMIT 50'
+				: 'SELECT ' + VIDEO_COLS + ' FROM videos WHERE status = 1 ORDER BY views DESC LIMIT 50';
+			
+			const results = category 
+				? await Promise.all(shards.map(db => db.prepare(sql).bind(category).all<VideoRow>()))
+				: await Promise.all(shards.map(db => db.prepare(sql).all<VideoRow>()));
 
 			const allVideos: VideoRow[] = [];
 			for (const r of results) if (r.results) allVideos.push(...r.results);
 			allVideos.sort((a, b) => b.views - a.views);
 
 			const top50 = allVideos.slice(0, 50);
-			await env.CACHE.put('rank', JSON.stringify(top50), { expirationTtl: 3600 });
+			await env.CACHE.put(cacheKey, JSON.stringify(top50), { expirationTtl: 3600 });
 			return json({ success: true, data: top50 }, 200, { 'Cache-Control': 'public, max-age=3600' });
 		}
 

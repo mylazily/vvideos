@@ -16,6 +16,7 @@
     generateSearchActionSchema
   } from '$lib/seo';
   import Breadcrumb from '$components/Breadcrumb.svelte';
+  import { isFavorite, addFavorite, removeFavorite, addToHistory } from '$lib/storage';
 
   interface PlayLine {
     name: string;
@@ -30,9 +31,10 @@
   let currentEpisodeIndex = 0;
   let hlsInstance: Hls | null = null;
   let videoEl: HTMLVideoElement;
+  let isFav = $state(false);
 
-  $: vodId = $page.params.id;
-  $: currentEpisode = playLines[currentLineIndex]?.episodes[currentEpisodeIndex];
+  let vodId = $derived($page.params.id);
+  let currentEpisode = $derived(playLines[currentLineIndex]?.episodes[currentEpisodeIndex]);
 
   onMount(async () => {
     if (!vodId) return;
@@ -53,6 +55,18 @@
       if (data.success && data.data) {
         video = data.data;
         playLines = parsePlayUrl(video.play_url);
+        isFav = isFavorite(video.vod_id);
+        
+        // 添加到历史记录
+        addToHistory({
+          vod_id: video.vod_id,
+          title: video.title,
+          cover: video.cover,
+          category: video.category,
+          vod_year: video.vod_year,
+          vod_area: video.vod_area
+        });
+        
         // 自动播放第一集
         if (playLines.length > 0 && playLines[0].episodes.length > 0) {
           setTimeout(() => playEpisode(0, 0), 100);
@@ -135,6 +149,24 @@
       playEpisode(currentLineIndex, currentEpisodeIndex + 1);
     }
   }
+
+  function toggleFavorite() {
+    if (!video) return;
+    if (isFav) {
+      removeFavorite(video.vod_id);
+    } else {
+      addFavorite({
+        vod_id: video.vod_id,
+        title: video.title,
+        cover: video.cover,
+        category: video.category,
+        vod_year: video.vod_year,
+        vod_area: video.vod_area
+      });
+    }
+    isFav = !isFav;
+  }
+
 </script>
 
 <svelte:head>
@@ -267,7 +299,18 @@
 
       <!-- 视频信息 -->
       <div class="p-3 bg-white">
-        <h2 class="text-lg font-bold text-gray-800 mb-2">{video.title}</h2>
+        <div class="flex items-start justify-between gap-2 mb-2">
+          <h2 class="text-lg font-bold text-gray-800 flex-1">{video.title}</h2>
+          <button 
+            onclick={toggleFavorite}
+            class="flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-full {isFav ? 'bg-pink-100 text-pink-500' : 'bg-gray-100 text-gray-400'} transition-colors"
+            title={isFav ? '取消收藏' : '收藏'}
+          >
+            <svg class="w-5 h-5" fill={isFav ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+            </svg>
+          </button>
+        </div>
         <div class="flex items-center gap-4 text-sm text-gray-500 mb-3">
           {#if video.category}
             <span>{video.category}</span>

@@ -1,33 +1,118 @@
 <script lang="ts">
-  import NavBar from '$components/NavBar.svelte';
+  import { onMount } from 'svelte';
+  import PageLayout from '$components/PageLayout.svelte';
+  import { getStorageSize, clearAllData } from '$lib/storage';
+
+  let storageSize = $state({ favorites: 0, history: 0 });
+
+  onMount(() => {
+    storageSize = getStorageSize();
+  });
+
+  function handleClearFavorites() {
+    if (confirm('确定要清空所有收藏吗？')) {
+      localStorage.removeItem('vvideos_favorites');
+      storageSize = getStorageSize();
+    }
+  }
+
+  function handleClearHistory() {
+    if (confirm('确定要清空所有观看历史吗？')) {
+      localStorage.removeItem('vvideos_history');
+      storageSize = getStorageSize();
+    }
+  }
+
+  function handleClearAll() {
+    if (confirm('确定要清除所有本地数据吗？这将删除收藏和观看历史。')) {
+      clearAllData();
+      storageSize = getStorageSize();
+    }
+  }
+
+  function handleClearCache() {
+    if ('caches' in window) {
+      caches.keys().then(names => {
+        names.forEach(name => caches.delete(name));
+      });
+    }
+    alert('缓存已清除');
+  }
 </script>
 
 <svelte:head>
   <title>设置 - 必爱必爱</title>
+  <meta name="robots" content="noindex, nofollow" />
 </svelte:head>
 
-<div class="min-h-screen bg-gray-50">
-  <header class="sticky top-0 bg-white border-b border-gray-100 px-3 py-2 z-50 flex items-center gap-2">
-    <a href="/profile" class="text-gray-600">←</a>
-    <h1 class="text-lg font-bold text-pink-500">设置</h1>
-  </header>
-
-  <main class="p-4 pb-16">
-    <div class="bg-white rounded-lg overflow-hidden mb-4">
-      <div class="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
-        <span class="text-gray-700">清除缓存</span>
-        <button class="text-sm text-pink-500">清除</button>
-      </div>
-      <div class="px-4 py-3 flex items-center justify-between">
-        <span class="text-gray-700">关于我们</span>
-        <span class="text-gray-400 text-sm">必爱必爱 v1.0</span>
+<PageLayout title="设置">
+  <div class="space-y-3">
+    <!-- 数据管理 -->
+    <div class="bg-white rounded-lg p-4">
+      <h3 class="font-medium text-gray-800 mb-3">数据管理</h3>
+      
+      <div class="space-y-3">
+        <div class="flex items-center justify-between py-2 border-b border-gray-100">
+          <div>
+            <div class="text-sm text-gray-700">我的收藏</div>
+            <div class="text-xs text-gray-400">{storageSize.favorites} 个视频</div>
+          </div>
+          <button 
+            onclick={handleClearFavorites}
+            disabled={storageSize.favorites === 0}
+            class="text-sm text-gray-400 hover:text-red-500 disabled:text-gray-200 transition-colors"
+          >
+            清空
+          </button>
+        </div>
+        
+        <div class="flex items-center justify-between py-2 border-b border-gray-100">
+          <div>
+            <div class="text-sm text-gray-700">观看历史</div>
+            <div class="text-xs text-gray-400">{storageSize.history} 条记录</div>
+          </div>
+          <button 
+            onclick={handleClearHistory}
+            disabled={storageSize.history === 0}
+            class="text-sm text-gray-400 hover:text-red-500 disabled:text-gray-200 transition-colors"
+          >
+            清空
+          </button>
+        </div>
+        
+        <div class="flex items-center justify-between py-2">
+          <div>
+            <div class="text-sm text-gray-700">清除缓存</div>
+            <div class="text-xs text-gray-400">清理临时文件，释放空间</div>
+          </div>
+          <button 
+            onclick={handleClearCache}
+            class="text-sm text-gray-400 hover:text-red-500 transition-colors"
+          >
+            清除
+          </button>
+        </div>
       </div>
     </div>
-
-    <div class="text-center text-xs text-gray-400 mt-8">
-      <p>© 2026 必爱必爱 版权所有</p>
+    
+    <!-- 危险操作 -->
+    <div class="bg-white rounded-lg p-4">
+      <h3 class="font-medium text-gray-800 mb-3">危险操作</h3>
+      <button 
+        onclick={handleClearAll}
+        class="w-full py-2 text-sm text-red-500 border border-red-200 rounded-lg hover:bg-red-50 transition-colors"
+      >
+        清除所有本地数据
+      </button>
     </div>
-  </main>
-
-  <NavBar />
-</div>
+    
+    <!-- 关于 -->
+    <div class="bg-white rounded-lg p-4">
+      <h3 class="font-medium text-gray-800 mb-3">关于</h3>
+      <div class="text-sm text-gray-500 space-y-1">
+        <div>必爱必爱 v1.0.0</div>
+        <div>高清视频在线观看平台</div>
+      </div>
+    </div>
+  </div>
+</PageLayout>
