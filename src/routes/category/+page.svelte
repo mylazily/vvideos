@@ -2,16 +2,15 @@
   import { onMount } from 'svelte';
   import NavBar from '$components/NavBar.svelte';
   import VideoCard from '$components/VideoCard.svelte';
+  import Pagination from '$components/Pagination.svelte';
   import type { Video } from '$lib/types';
 
   let categories: { name: string; count: number }[] = [];
   let activeCategory = '全部';
   let videos: Video[] = [];
   let loading = true;
-
   let categoriesLoading = true;
   let currentPage = 1;
-  let hasMore = true;
   let totalPages = 1;
 
   onMount(async () => {
@@ -49,9 +48,7 @@
       if (res.ok) {
         const data = await res.json();
         videos = data.data?.videos || [];
-        const pagination = data.data?.pagination;
-        hasMore = pagination ? page < pagination.totalPages : false;
-        totalPages = pagination?.totalPages || 1;
+        totalPages = data.data?.pagination?.totalPages || 1;
       }
     } catch {
       // ignore
@@ -62,6 +59,11 @@
 
   function switchCategory(cat: string) {
     loadVideos(cat, 1);
+  }
+
+  function handlePageChange(page: number) {
+    loadVideos(activeCategory, page);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
 
@@ -119,23 +121,14 @@
         {/each}
       </div>
 
-      <div class="flex items-center justify-center gap-4 mt-6">
-        <button
-          onclick={() => loadVideos(activeCategory, currentPage - 1)}
-          disabled={currentPage <= 1 || loading}
-          class="px-4 py-2 bg-gray-100 text-gray-700 text-sm rounded-lg disabled:bg-gray-200 disabled:text-gray-400 disabled:cursor-not-allowed hover:bg-gray-200 transition-colors"
-        >
-          上一页
-        </button>
-        <span class="text-sm text-gray-500">第 {currentPage} 页 / 共 {totalPages} 页</span>
-        <button
-          onclick={() => loadVideos(activeCategory, currentPage + 1)}
-          disabled={!hasMore || loading}
-          class="px-4 py-2 bg-pink-500 text-white text-sm rounded-lg disabled:bg-gray-300 disabled:cursor-not-allowed hover:bg-pink-600 transition-colors"
-        >
-          {loading ? '加载中...' : '下一页'}
-        </button>
-      </div>
+      {#if totalPages > 1}
+        <Pagination
+          {currentPage}
+          {totalPages}
+          {loading}
+          onPageChange={handlePageChange}
+        />
+      {/if}
     {/if}
   </main>
 

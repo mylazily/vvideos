@@ -342,7 +342,7 @@
           <div class="flex flex-wrap gap-2">
             {#each tags as tag}
               <a 
-                href="/search?q={encodeURIComponent(tag)}" 
+                href="/tag/{encodeURIComponent(tag)}" 
                 class="px-3 py-1 text-xs bg-gray-100 text-gray-600 rounded-full hover:bg-pink-100 hover:text-pink-600 transition-colors"
               >
                 {tag}
