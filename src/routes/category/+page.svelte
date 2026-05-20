@@ -8,7 +8,11 @@
   let activeCategory = '全部';
   let videos: Video[] = [];
   let loading = true;
+  let loadingMore = false;
   let categoriesLoading = true;
+  let currentPage = 1;
+  let hasMore = true;
+  let totalPages = 1;
 
   onMount(async () => {
     await loadCategories();
@@ -21,7 +25,7 @@
       if (res.ok) {
         const data = await res.json();
         categories = data.data || [];
-        loadVideos('全部');
+        loadVideos('全部', 1);
       }
     } catch {
       categories = [];
@@ -30,23 +34,49 @@
     }
   }
 
-  async function loadVideos(category: string) {
-    loading = true;
+  async function loadVideos(category: string, page: number) {
+    if (page === 1) {
+      loading = true;
+      videos = [];
+    } else {
+      loadingMore = true;
+    }
     activeCategory = category;
+    currentPage = page;
+
     try {
       const url =
         category === '全部'
-          ? '/api/videos?page=1&limit=24'
-          : '/api/videos?category=' + encodeURIComponent(category) + '&page=1&limit=24';
+          ? '/api/videos?page=' + page + '&limit=24'
+          : '/api/videos?category=' + encodeURIComponent(category) + '&page=' + page + '&limit=24';
       const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
       if (res.ok) {
         const data = await res.json();
-        videos = data.data?.videos || [];
+        const list = data.data?.videos || [];
+        if (page === 1) {
+          videos = list;
+        } else {
+          videos = [...videos, ...list];
+        }
+        const pagination = data.data?.pagination;
+        hasMore = pagination ? page < pagination.totalPages : false;
+        totalPages = pagination?.totalPages || 1;
       }
     } catch {
-      videos = [];
+      // ignore
     } finally {
       loading = false;
+      loadingMore = false;
+    }
+  }
+
+  function switchCategory(cat: string) {
+    loadVideos(cat, 1);
+  }
+
+  function loadNextPage() {
+    if (!loadingMore && hasMore) {
+      loadVideos(activeCategory, currentPage + 1);
     }
   }
 </script>
@@ -68,7 +98,7 @@
         {/each}
       {:else}
         <button
-          onclick={() => loadVideos('全部')}
+          onclick={() => switchCategory('全部')}
           class="flex-shrink-0 px-4 py-1.5 text-sm rounded-full transition-all {activeCategory === '全部'
             ? 'bg-pink-500 text-white'
             : 'text-gray-600 bg-gray-100'}"
@@ -77,7 +107,7 @@
         </button>
         {#each categories as cat}
           <button
-            onclick={() => loadVideos(cat.name)}
+            onclick={() => switchCategory(cat.name)}
             class="flex-shrink-0 px-4 py-1.5 text-sm rounded-full transition-all {activeCategory === cat.name
               ? 'bg-pink-500 text-white'
               : 'text-gray-600 bg-gray-100'}"
@@ -89,7 +119,7 @@
     </div>
   </div>
 
-  <main class="p-2 pb-16">
+  <main class="p-2 pb-20">
     {#if loading}
       <div class="flex items-center justify-center py-20">
         <div class="w-8 h-8 border-2 border-pink-200 border-t-pink-500 rounded-full animate-spin"></div>
@@ -101,6 +131,21 @@
         {#each videos as video (video.vod_id)}
           <VideoCard {video} />
         {/each}
+      </div>
+
+      <div class="flex items-center justify-center gap-4 mt-6">
+        <span class="text-sm text-gray-500">第 {currentPage} 页 / 共 {totalPages} 页</span>
+        {#if hasMore}
+          <button
+            onclick={loadNextPage}
+            disabled={loadingMore}
+            class="px-6 py-2 bg-pink-500 text-white text-sm rounded-lg disabled:bg-gray-300 disabled:cursor-not-allowed hover:bg-pink-600 transition-colors"
+          >
+            {loadingMore ? '加载中...' : '下一页'}
+          </button>
+        {:else}
+          <span class="text-sm text-gray-400">没有更多了</span>
+        {/if}
       </div>
     {/if}
   </main>
