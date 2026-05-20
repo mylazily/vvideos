@@ -1,10 +1,17 @@
 <script lang="ts">
   import type { Video } from '$lib/types';
+  import { generateImageAlt } from '$lib/seo';
 
   let { video } = $props<{ video: Video }>();
 
   let loaded = $state(false);
   let errored = $state(false);
+
+  let imgAlt = $derived(generateImageAlt({
+    title: video.title,
+    category: video.category,
+    vod_year: video.vod_year
+  }));
 
   function formatDuration(input: number | string | undefined | null): string {
     if (input === undefined || input === null || input === '') return '';
@@ -30,7 +37,7 @@
     {#if video.cover}
       <img
         src={video.cover}
-        alt={video.title}
+        alt={imgAlt}
         loading="lazy"
         decoding="async"
         referrerpolicy="no-referrer"

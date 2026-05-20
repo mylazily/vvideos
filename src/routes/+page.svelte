@@ -4,6 +4,7 @@
   import NavBar from '$components/NavBar.svelte';
   import VideoCard from '$components/VideoCard.svelte';
   import type { Video } from '$lib/types';
+  import { generateSearchActionSchema } from '$lib/seo';
 
   let videos: Video[] = [];
   let loading = true;
@@ -39,20 +40,16 @@
   <title>必爱必爱 - 高清电影电视剧在线观看</title>
   <meta name="description" content="必爱必爱提供最新高清电影、热播电视剧、综艺节目、动漫纪录片在线观看。免费高清视频，支持手机播放，更新速度快，片源齐全。" />
   <meta name="keywords" content="在线观看,免费电影,电视剧,综艺节目,动漫,高清视频,手机播放" />
+  <link rel="canonical" href="https://vvideos.pages.dev/" />
   
   <!-- Open Graph -->
   <meta property="og:title" content="必爱必爱 - 高清电影电视剧在线观看" />
   <meta property="og:description" content="最新高清电影、热播电视剧、综艺节目在线观看" />
   <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://vvideos.pages.dev/" />
   
-  <!-- JSON-LD -->
-  {@html `<script type="application/ld+json">${JSON.stringify({
-    '@context': 'https://schema.org',
-    '@type': 'WebSite',
-    name: '必爱必爱',
-    description: '高清电影电视剧在线观看',
-    url: 'https://vvideos.pages.dev/'
-  })}</script>`}
+  <!-- JSON-LD: WebSite + SearchAction -->
+  {@html `<script type="application/ld+json">${JSON.stringify(generateSearchActionSchema())}</script>`}
 </svelte:head>
 
 <div class="min-h-screen bg-gray-50">

@@ -1,11 +1,13 @@
 User-agent: *
 Allow: /
 
-# Sitemap
+# Sitemaps
 Sitemap: https://vvideos.pages.dev/api/sitemap.xml
+Sitemap: https://vvideos.pages.dev/api/video-sitemap.xml
 
-# Disallow admin
+# Disallow admin and search
 Disallow: /admin/
+Noindex: /search
 
 # Crawl delay
 Crawl-delay: 1

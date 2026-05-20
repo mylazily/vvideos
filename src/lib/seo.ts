@@ -1,5 +1,8 @@
 // SEO 工具函数 - 生成动态描述、关键词、TAG等
 
+export const SITE_URL = 'https://vvideos.pages.dev';
+export const SITE_NAME = '必爱必爱';
+
 export interface VideoSEOData {
   title: string;
   category: string;
@@ -248,4 +251,85 @@ export function generateBreadcrumbSchema(items: { name: string; url: string }[])
       item: item.url
     }))
   };
+}
+
+// ===== 新增 SEO 方案 =====
+
+// 生成 Canonical URL
+export function canonicalUrl(path: string): string {
+  return SITE_URL + path;
+}
+
+// 生成分页 rel prev/next
+export function paginationLinks(baseUrl: string, currentPage: number, totalPages: number): { prev?: string; next?: string } {
+  const links: { prev?: string; next?: string } = {};
+  if (currentPage > 1) {
+    links.prev = `${baseUrl}?page=${currentPage - 1}`;
+  }
+  if (currentPage < totalPages) {
+    links.next = `${baseUrl}?page=${currentPage + 1}`;
+  }
+  return links;
+}
+
+// SearchAction Schema（Google 搜索框直达）
+export function generateSearchActionSchema() {
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'WebSite',
+    name: SITE_NAME,
+    url: SITE_URL,
+    potentialAction: {
+      '@type': 'SearchAction',
+      target: {
+        '@type': 'EntryPoint',
+        urlTemplate: `${SITE_URL}/search?q={search_term_string}`
+      },
+      'query-input': 'required name=search_term_string'
+    }
+  };
+}
+
+// Image alt 文本优化
+export function generateImageAlt(video: VideoSEOData): string {
+  const parts: string[] = [];
+  parts.push(video.title);
+  if (video.category) parts.push(video.category);
+  if (video.vod_year) parts.push(video.vod_year + '年');
+  parts.push('封面');
+  return parts.join(' - ');
+}
+
+// 分类页 SEO
+export function generateCategorySEO(categoryName: string, page: number = 1): { title: string; description: string; keywords: string } {
+  const suffix = page > 1 ? ` 第${page}页` : '';
+  return {
+    title: `${categoryName}在线观看${suffix} - ${SITE_NAME}`,
+    description: `最新${categoryName}在线观看，高清完整版免费播放。${categoryName}推荐、排行榜，每日更新，支持手机在线观看。`,
+    keywords: `${categoryName},${categoryName}在线观看,最新${categoryName},${categoryName}推荐,免费${categoryName},高清${categoryName}`
+  };
+}
+
+// RSS Feed 生成
+export function generateRSSFeed(videos: { title: string; vod_id: string; category?: string; vod_year?: string; cover?: string; updated_at?: number }[]): string {
+  const items = videos.map(v => `
+    <item>
+      <title><![CDATA[${v.title}]]></title>
+      <link>${SITE_URL}/v/${v.vod_id}</link>
+      <description><![CDATA[${v.category || '视频'}${v.vod_year ? ' · ' + v.vod_year + '年' : ''} - ${SITE_NAME}]]></description>
+      <pubDate>${v.updated_at ? new Date(v.updated_at * 1000).toUTCString() : new Date().toUTCString()}</pubDate>
+      <guid isPermaLink="true">${SITE_URL}/v/${v.vod_id}</guid>
+    </item>`).join('');
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>${SITE_NAME} - 最新更新</title>
+    <link>${SITE_URL}</link>
+    <description>最新高清电影、电视剧、综艺、动漫在线观看</description>
+    <language>zh-CN</language>
+    <atom:link href="${SITE_URL}/rss.xml" rel="self" type="application/rss+xml"/>
+    ${items}
+  </channel>
+</rss>`;
 }

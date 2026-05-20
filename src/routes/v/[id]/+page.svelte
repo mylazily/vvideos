@@ -11,8 +11,11 @@
     generateRelatedSearches,
     generatePageTitle,
     generateVideoSchema,
-    generateBreadcrumbSchema
+    generateBreadcrumbSchema,
+    canonicalUrl,
+    generateSearchActionSchema
   } from '$lib/seo';
+  import Breadcrumb from '$components/Breadcrumb.svelte';
 
   interface PlayLine {
     name: string;
@@ -164,6 +167,9 @@
       vod_lang: video.vod_lang
     }).join(',')} />
     
+    <!-- Canonical URL -->
+    <link rel="canonical" href={canonicalUrl(`/v/${video.vod_id}`)} />
+    
     <!-- Open Graph -->
     <meta property="og:title" content={video.title} />
     <meta property="og:description" content={generateSEODescription({
@@ -177,6 +183,7 @@
     })} />
     <meta property="og:image" content={video.cover} />
     <meta property="og:type" content="video.movie" />
+    <meta property="og:url" content={canonicalUrl(`/v/${video.vod_id}`)} />
     
     <!-- Twitter Card -->
     <meta name="twitter:card" content="summary_large_image" />
@@ -229,6 +236,12 @@
     {:else if errorMsg}
       <div class="text-center py-20 text-red-500">{errorMsg}</div>
     {:else if video}
+      <!-- 面包屑导航 -->
+      <Breadcrumb items={[
+        { name: '首页', url: '/' },
+        { name: video.category || '分类', url: '/category' },
+        { name: video.title }
+      ]} />
       <!-- 播放器 -->
       <div class="aspect-video bg-black relative">
         <video

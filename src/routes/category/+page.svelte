@@ -4,6 +4,7 @@
   import VideoCard from '$components/VideoCard.svelte';
   import Pagination from '$components/Pagination.svelte';
   import type { Video } from '$lib/types';
+  import { generateCategorySEO, canonicalUrl, paginationLinks } from '$lib/seo';
 
   let categories: { name: string; count: number }[] = [];
   let activeCategory = '全部';
@@ -66,11 +67,25 @@
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
+  $: seo = generateCategorySEO(activeCategory, currentPage);
+  $: pl = paginationLinks('/category', currentPage, totalPages);
 
 </script>
 
 <svelte:head>
-  <title>分类 - 必爱必爱</title>
+  <title>{seo.title}</title>
+  <meta name="description" content={seo.description} />
+  <meta name="keywords" content={seo.keywords} />
+  <link rel="canonical" href={canonicalUrl('/category')} />
+  <meta property="og:title" content={seo.title} />
+  <meta property="og:description" content={seo.description} />
+  <meta property="og:type" content="website" />
+  {#if pl.prev}
+    <link rel="prev" href={pl.prev} />
+  {/if}
+  {#if pl.next}
+    <link rel="next" href={pl.next} />
+  {/if}
 </svelte:head>
 
 <div class="min-h-screen bg-gray-50">

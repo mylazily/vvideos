@@ -64,7 +64,10 @@
 </script>
 
 <svelte:head>
-  <title>搜索 - 必爱必爱</title>
+  <title>{keyword ? `${keyword}的搜索结果 - 必爱必爱` : '搜索 - 必爱必爱'}</title>
+  <meta name="description" content={keyword ? `搜索"${keyword}"的相关视频结果` : '搜索影片'} />
+  <meta name="robots" content="noindex, follow" />
+  <link rel="canonical" href="https://vvideos.pages.dev/search" />
 </svelte:head>
 
 <div class="min-h-screen bg-gray-50">
