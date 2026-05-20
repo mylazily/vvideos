@@ -63,9 +63,31 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 	}
 
 	try {
-		// ======== 首页视频列表 ========
-		// page=1 只查 DB_0，KV 缓存 1 小时，保证首页最快
-		// page>1 查全部分片，KV 缓存 10 分钟
+		// ======== 首页专用 API ========
+		// 固定24个视频，只查 DB_0，KV 缓存 1 小时，HTTP 缓存 1 小时
+		// 10万日活下，每小时只消耗 1 次 Worker 请求
+		if (path === '/api/home') {
+			const cacheKey = 'home:videos';
+			const cached = await env.CACHE.get(cacheKey);
+			if (cached) {
+				return json({ success: true, data: { videos: JSON.parse(cached) } }, 200, {
+					'Cache-Control': 'public, max-age=3600, s-maxage=3600'
+				});
+			}
+
+			// 只查 DB_0，固定24个
+			const result = await env.DB_0.prepare(
+				'SELECT ' + VIDEO_COLS + ' FROM videos WHERE status = 1 ORDER BY created_at DESC LIMIT 24'
+			).all<VideoRow>();
+
+			const videos = result.results || [];
+			await env.CACHE.put(cacheKey, JSON.stringify(videos), { expirationTtl: 3600 });
+			return json({ success: true, data: { videos } }, 200, {
+				'Cache-Control': 'public, max-age=3600, s-maxage=3600'
+			});
+		}
+
+		// ======== 通用视频列表（分类/翻页用） ========
 		if (path === '/api/videos') {
 			const page = parseInt(url.searchParams.get('page') || '1');
 			const limit = Math.min(parseInt(url.searchParams.get('limit') || '20'), 100);
@@ -74,44 +96,31 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 			const cacheKey = 'videos:p' + page + ':l' + limit + ':' + (category || '');
 			const cached = await env.CACHE.get(cacheKey);
 			if (cached) {
-				const ttl = page === 1 ? 3600 : 600;
 				return json({ success: true, data: JSON.parse(cached) }, 200, {
-					'Cache-Control': 'public, max-age=' + ttl + ', s-maxage=' + ttl
+					'Cache-Control': 'public, max-age=600, s-maxage=600'
 				});
 			}
 
 			const where = category ? 'WHERE status = 1 AND category = ?' : 'WHERE status = 1';
 			const params = category ? [category] : [];
-			let allVideos: VideoRow[] = [];
-			let total = 0;
+			const shards = getShards(env);
+			
+			const [videoResults, countResults] = await Promise.all([
+				Promise.all(shards.map(db => db.prepare('SELECT ' + VIDEO_COLS + ' FROM videos ' + where + ' ORDER BY created_at DESC').bind(...params).all<VideoRow>())),
+				Promise.all(shards.map(db => db.prepare('SELECT COUNT(*) as total FROM videos ' + where).bind(...params).first<{ total: number }>()))
+			]);
+			
+			const allVideos: VideoRow[] = [];
+			for (const r of videoResults) if (r.results) allVideos.push(...r.results);
+			allVideos.sort((a, b) => b.created_at - a.created_at);
+			const total = countResults.reduce((s, r) => s + (r?.total || 0), 0);
+			const offset = (page - 1) * limit;
+			const pagedVideos = allVideos.slice(offset, offset + limit);
 
-			if (page === 1 && !category) {
-				// 首页：只查 DB_0，最快
-				const [videoResult, countResult] = await Promise.all([
-					env.DB_0.prepare('SELECT ' + VIDEO_COLS + ' FROM videos WHERE status = 1 ORDER BY created_at DESC LIMIT ?').bind(limit).all<VideoRow>(),
-					env.DB_0.prepare('SELECT COUNT(*) as total FROM videos WHERE status = 1').first<{ total: number }>()
-				]);
-				allVideos = videoResult.results || [];
-				total = countResult?.total || 0;
-			} else {
-				// 非首页：查全部10个分片
-				const shards = getShards(env);
-				const [videoResults, countResults] = await Promise.all([
-					Promise.all(shards.map(db => db.prepare('SELECT ' + VIDEO_COLS + ' FROM videos ' + where + ' ORDER BY created_at DESC').bind(...params).all<VideoRow>())),
-					Promise.all(shards.map(db => db.prepare('SELECT COUNT(*) as total FROM videos ' + where).bind(...params).first<{ total: number }>()))
-				]);
-				for (const r of videoResults) if (r.results) allVideos.push(...r.results);
-				allVideos.sort((a, b) => b.created_at - a.created_at);
-				total = countResults.reduce((s, r) => s + (r?.total || 0), 0);
-				const offset = (page - 1) * limit;
-				allVideos = allVideos.slice(offset, offset + limit);
-			}
-
-			const responseData = { videos: allVideos, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } };
-			const ttl = page === 1 && !category ? 3600 : 600;
-			await env.CACHE.put(cacheKey, JSON.stringify(responseData), { expirationTtl: ttl });
+			const responseData = { videos: pagedVideos, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } };
+			await env.CACHE.put(cacheKey, JSON.stringify(responseData), { expirationTtl: 600 });
 			return json({ success: true, data: responseData }, 200, {
-				'Cache-Control': 'public, max-age=' + ttl + ', s-maxage=' + ttl
+				'Cache-Control': 'public, max-age=600, s-maxage=600'
 			});
 		}
 

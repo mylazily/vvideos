@@ -12,7 +12,7 @@
 
   onMount(async () => {
     try {
-      const res = await fetch('/api/videos?page=1&limit=24', {
+      const res = await fetch('/api/home', {
         signal: AbortSignal.timeout(10000)
       });
       if (res.ok) {
