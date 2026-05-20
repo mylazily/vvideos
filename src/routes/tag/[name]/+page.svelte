@@ -6,13 +6,13 @@
   import Pagination from '$components/Pagination.svelte';
   import type { Video } from '$lib/types';
 
-  let videos: Video[] = [];
-  let loading = true;
-  let currentPage = 1;
-  let totalPages = 1;
-  let totalCount = 0;
+  let videos = $state<Video[]>([]);
+  let loading = $state(true);
+  let currentPage = $state(1);
+  let totalPages = $state(1);
+  let totalCount = $state(0);
 
-  $: tagName = decodeURIComponent($page.params.name || '');
+  let tagName = $derived(decodeURIComponent($page.params.name || ''));
 
   onMount(() => {
     if (tagName) {
@@ -45,15 +45,14 @@
 
   function handlePageChange(page: number) {
     loadTagVideos(page);
-    // 滚动到顶部
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 </script>
 
 <svelte:head>
   <title>{tagName} - 相关视频 - 必爱必爱</title>
-  <meta name="description" content={`${tagName}相关视频在线观看，高清完整版免费播放。`} />
-  <meta name="keywords" content={`${tagName},${tagName}视频,${tagName}在线观看`} />
+  <meta name="description" content="{tagName}相关视频在线观看，高清完整版免费播放。" />
+  <meta name="keywords" content="{tagName},{tagName}视频,{tagName}在线观看" />
 </svelte:head>
 
 <div class="min-h-screen bg-gray-50">
