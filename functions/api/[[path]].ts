@@ -70,7 +70,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 
 			const cacheKey = 'videos:p' + page + ':l' + limit + ':' + (category || '');
 			const cached = await env.CACHE.get(cacheKey);
-			if (cached) return json({ success: true, data: JSON.parse(cached) }, 200, { 'Cache-Control': 'public, max-age=60' });
+			if (cached) return json({ success: true, data: JSON.parse(cached) }, 200, { 'Cache-Control': 'public, max-age=3600, s-maxage=3600' });
 
 			const where = category ? 'WHERE status = 1 AND category = ?' : 'WHERE status = 1';
 			const params = category ? [category] : [];
@@ -92,7 +92,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 			const paged = allVideos.slice(offset, offset + limit);
 
 			const responseData = { videos: paged, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } };
-			await env.CACHE.put(cacheKey, JSON.stringify(responseData), { expirationTtl: 300 });
+			await env.CACHE.put(cacheKey, JSON.stringify(responseData), { expirationTtl: 3600 });
 			return json({ success: true, data: responseData });
 		}
 
