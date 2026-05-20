@@ -64,25 +64,30 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 
 	try {
 		// ======== 首页专用 API ========
-		// 固定24个视频，只查 DB_0，KV 缓存 1 小时，HTTP 缓存 1 小时
+		// 每2小时轮换一个库，固定24个视频，KV 缓存 1 小时
 		// 10万日活下，每小时只消耗 1 次 Worker 请求
 		if (path === '/api/home') {
-			const cacheKey = 'home:videos';
+			// 基于时间计算当前应该查哪个库（每2小时切换）
+			const hour = Math.floor(Date.now() / 3600000);
+			const shardIndex = Math.floor(hour / 2) % 10; // 每2小时切换一个库
+			const cacheKey = 'home:videos:h' + hour;
+			
 			const cached = await env.CACHE.get(cacheKey);
 			if (cached) {
-				return json({ success: true, data: { videos: JSON.parse(cached) } }, 200, {
+				return json({ success: true, data: { videos: JSON.parse(cached), shard: shardIndex } }, 200, {
 					'Cache-Control': 'public, max-age=3600, s-maxage=3600'
 				});
 			}
 
-			// 只查 DB_0，固定24个
-			const result = await env.DB_0.prepare(
+			// 从当前轮换的库取24个视频
+			const shards = getShards(env);
+			const result = await shards[shardIndex].prepare(
 				'SELECT ' + VIDEO_COLS + ' FROM videos WHERE status = 1 ORDER BY created_at DESC LIMIT 24'
 			).all<VideoRow>();
 
 			const videos = result.results || [];
 			await env.CACHE.put(cacheKey, JSON.stringify(videos), { expirationTtl: 3600 });
-			return json({ success: true, data: { videos } }, 200, {
+			return json({ success: true, data: { videos, shard: shardIndex } }, 200, {
 				'Cache-Control': 'public, max-age=3600, s-maxage=3600'
 			});
 		}
