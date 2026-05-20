@@ -278,11 +278,32 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 		}
 
 		// ======== 管理后台（低频，不缓存） ========
-		if (path === '/api/admin/sources') {
+		// 获取采集源列表
+		if (path === '/api/admin/sources' && request.method === 'GET') {
 			const results = await env.DB_0.prepare('SELECT id, name, api_url, status, last_collect_at, total_videos, created_at FROM sources ORDER BY id').all<{
 				id: number; name: string; api_url: string; status: number; last_collect_at: number; total_videos: number; created_at: number;
 			}>();
 			return json({ success: true, data: results.results || [] });
+		}
+
+		// 添加采集源
+		if (path === '/api/admin/sources' && request.method === 'POST') {
+			const body = await request.json<{ name?: string; api_url?: string }>();
+			if (!body.name || !body.api_url) {
+				return json({ success: false, message: '缺少名称或接口地址' }, 400);
+			}
+			await env.DB_0.prepare(
+				'INSERT INTO sources (name, api_url, status, total_videos, created_at) VALUES (?, ?, 1, 0, ?)'
+			).bind(body.name, body.api_url, Math.floor(Date.now() / 1000)).run();
+			return json({ success: true, message: '添加成功' });
+		}
+
+		// 删除采集源
+		if (path === '/api/admin/sources' && request.method === 'DELETE') {
+			const id = parseInt(url.searchParams.get('id') || '0');
+			if (!id) return json({ success: false, message: '缺少id' }, 400);
+			await env.DB_0.prepare('DELETE FROM sources WHERE id = ?').bind(id).run();
+			return json({ success: true, message: '删除成功' });
 		}
 
 		if (path === '/api/admin/logs') {

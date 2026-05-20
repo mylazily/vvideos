@@ -35,6 +35,8 @@
   let loading = true;
   let collecting = false;
   let message = '';
+  let newSourceName = '';
+  let newSourceUrl = '';
 
   onMount(async () => {
     await loadData();
@@ -81,6 +83,62 @@
       }
     } catch (e) {
       message = '请求失败';
+    } finally {
+      collecting = false;
+    }
+  }
+
+  async function addSource() {
+    if (!newSourceName.trim() || !newSourceUrl.trim()) {
+      message = '请填写名称和接口地址';
+      return;
+    }
+    try {
+      const res = await fetch('/api/admin/sources', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newSourceName, api_url: newSourceUrl })
+      });
+      const data = await res.json();
+      if (data.success) {
+        newSourceName = '';
+        newSourceUrl = '';
+        await loadData();
+        message = '添加成功';
+      } else {
+        message = data.message || '添加失败';
+      }
+    } catch (e) {
+      message = '请求失败';
+    }
+  }
+
+  async function deleteSource(id: number) {
+    if (!confirm('确定删除这个采集源吗？')) return;
+    try {
+      const res = await fetch('/api/admin/sources?id=' + id, { method: 'DELETE' });
+      const data = await res.json();
+      if (data.success) {
+        await loadData();
+        message = '删除成功';
+      }
+    } catch (e) {
+      message = '删除失败';
+    }
+  }
+
+  async function runTimming() {
+    collecting = true;
+    message = '正在执行定时采集...';
+    try {
+      const res = await fetch('/api/timming?enforce=1');
+      const data = await res.json();
+      message = data.msg;
+      if (data.success) {
+        setTimeout(loadData, 2000);
+      }
+    } catch (e) {
+      message = '执行失败';
     } finally {
       collecting = false;
     }
@@ -138,6 +196,48 @@
         <div class="bg-blue-50 text-blue-700 px-4 py-2 rounded-lg mb-4">{message}</div>
       {/if}
 
+      <!-- 定时采集按钮 -->
+      <div class="bg-white rounded-lg p-4 mb-6">
+        <div class="flex items-center justify-between">
+          <div>
+            <h2 class="font-medium text-gray-800">定时采集</h2>
+            <p class="text-sm text-gray-500">每小时自动执行一次</p>
+          </div>
+          <button
+            onclick={runTimming}
+            disabled={collecting}
+            class="px-4 py-2 bg-green-500 text-white text-sm rounded-lg disabled:bg-gray-300"
+          >
+            {collecting ? '执行中...' : '立即执行'}
+          </button>
+        </div>
+      </div>
+
+      <!-- 添加采集源 -->
+      <div class="bg-white rounded-lg p-4 mb-6">
+        <h2 class="font-medium text-gray-800 mb-3">添加采集源</h2>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <input
+            bind:value={newSourceName}
+            type="text"
+            placeholder="采集源名称"
+            class="px-3 py-2 border border-gray-200 rounded-lg text-sm"
+          />
+          <input
+            bind:value={newSourceUrl}
+            type="text"
+            placeholder="接口地址，如：https://api.example.com/api.php/provide/vod/"
+            class="px-3 py-2 border border-gray-200 rounded-lg text-sm md:col-span-2"
+          />
+        </div>
+        <button
+          onclick={addSource}
+          class="mt-3 px-4 py-2 bg-blue-500 text-white text-sm rounded-lg"
+        >
+          添加
+        </button>
+      </div>
+
       <!-- 采集源 -->
       <div class="bg-white rounded-lg mb-6">
         <div class="px-4 py-3 border-b border-gray-100">
@@ -146,22 +246,30 @@
         <div class="divide-y divide-gray-100">
           {#each sources as source}
             <div class="px-4 py-3 flex items-center justify-between">
-              <div>
+              <div class="flex-1">
                 <div class="font-medium text-gray-800">{source.name}</div>
-                <div class="text-xs text-gray-400">{source.api_url}</div>
+                <div class="text-xs text-gray-400 break-all">{source.api_url}</div>
                 <div class="text-xs text-gray-400 mt-1">
                   状态: {source.status === 1 ? '启用' : '禁用'} |
                   视频: {source.total_videos} |
                   最后采集: {formatTime(source.last_collect_at)}
                 </div>
               </div>
-              <button
-                onclick={() => startCollect(source.id)}
-                disabled={collecting || source.status !== 1}
-                class="px-4 py-2 bg-pink-500 text-white text-sm rounded-lg disabled:bg-gray-300"
-              >
-                {collecting ? '采集中...' : '开始采集'}
-              </button>
+              <div class="flex gap-2">
+                <button
+                  onclick={() => startCollect(source.id)}
+                  disabled={collecting || source.status !== 1}
+                  class="px-3 py-1.5 bg-pink-500 text-white text-sm rounded disabled:bg-gray-300"
+                >
+                  {collecting ? '采集中...' : '采集'}
+                </button>
+                <button
+                  onclick={() => deleteSource(source.id)}
+                  class="px-3 py-1.5 bg-red-500 text-white text-sm rounded"
+                >
+                  删除
+                </button>
+              </div>
             </div>
           {/each}
         </div>
