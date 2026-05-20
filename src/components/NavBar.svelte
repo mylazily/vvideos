@@ -22,8 +22,8 @@
       发现
     </a>
     <a
-      href="/category"
-      class="flex items-center justify-center flex-1 h-full text-sm {currentPath === '/category' ? 'text-pink-500 font-medium' : 'text-gray-600'}"
+      href="/category/全部/1"
+      class="flex items-center justify-center flex-1 h-full text-sm {currentPath.startsWith('/category') ? 'text-pink-500 font-medium' : 'text-gray-600'}"
     >
       分类
     </a>

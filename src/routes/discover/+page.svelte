@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import NavBar from '$components/NavBar.svelte';
   import VideoCard from '$components/VideoCard.svelte';
+  import Pagination from '$components/Pagination.svelte';
   import type { Video } from '$lib/types';
 
   interface Tag {
@@ -12,25 +13,18 @@
     video_count: number;
   }
 
-  let categories: Tag[] = [];
-  let areas: Tag[] = [];
-  let years: Tag[] = [];
-  let actors: Tag[] = [];
-  let directors: Tag[] = [];
+  let categories = $state<Tag[]>([]);
+  let areas = $state<Tag[]>([]);
+  let years = $state<Tag[]>([]);
+  let actors = $state<Tag[]>([]);
+  let directors = $state<Tag[]>([]);
 
-  let selectedTag: Tag | null = null;
-  let tagVideos: Video[] = [];
-  let tagLoading = false;
-  let tagsLoading = true;
-
-  const typeLabels: Record<string, string> = {
-    category: '分类',
-    area: '地区',
-    year: '年份',
-    actor: '演员',
-    director: '导演',
-    lang: '语言'
-  };
+  let selectedTag = $state<Tag | null>(null);
+  let tagVideos = $state<Video[]>([]);
+  let tagLoading = $state(false);
+  let tagsLoading = $state(true);
+  let currentPage = $state(1);
+  let totalPages = $state(1);
 
   onMount(async () => {
     try {
@@ -58,18 +52,20 @@
     }
   });
 
-  async function selectTag(tag: Tag) {
+  async function selectTag(tag: Tag, page = 1) {
     selectedTag = tag;
     tagLoading = true;
     tagVideos = [];
+    currentPage = page;
 
     try {
-      const res = await fetch('/api/tag/videos?tag_id=' + tag.id + '&page=1&limit=24', {
+      const res = await fetch('/api/tag/videos?tag_id=' + tag.id + '&page=' + page + '&limit=24', {
         signal: AbortSignal.timeout(10000)
       });
       if (res.ok) {
         const data = await res.json();
         tagVideos = data.data?.videos || [];
+        totalPages = data.data?.pagination?.totalPages || 1;
       }
     } catch (e) {
       console.error(e);
@@ -78,14 +74,24 @@
     }
   }
 
+  function handlePageChange(page: number) {
+    if (selectedTag) {
+      selectTag(selectedTag, page);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  }
+
   function closeTag() {
     selectedTag = null;
     tagVideos = [];
+    currentPage = 1;
+    totalPages = 1;
   }
 </script>
 
 <svelte:head>
   <title>发现 - 必爱必爱</title>
+  <meta name="description" content="发现最新热门电影、电视剧、综艺、动漫，按分类、地区、年份、演员、导演浏览" />
 </svelte:head>
 
 <div class="min-h-screen bg-gray-50">
@@ -119,6 +125,15 @@
               <VideoCard {video} />
             {/each}
           </div>
+
+          {#if totalPages > 1}
+            <Pagination
+              currentPage={currentPage}
+              totalPages={totalPages}
+              loading={tagLoading}
+              onPageChange={handlePageChange}
+            />
+          {/if}
         </div>
       {/if}
     {:else}
@@ -128,7 +143,6 @@
           <div class="w-8 h-8 border-2 border-pink-200 border-t-pink-500 rounded-full animate-spin"></div>
         </div>
       {:else}
-        <!-- 分类 -->
         {#if categories.length > 0}
           <div class="bg-white mt-2">
             <div class="px-3 py-2 border-b border-gray-100">
@@ -148,7 +162,6 @@
           </div>
         {/if}
 
-        <!-- 地区 -->
         {#if areas.length > 0}
           <div class="bg-white mt-2">
             <div class="px-3 py-2 border-b border-gray-100">
@@ -168,7 +181,6 @@
           </div>
         {/if}
 
-        <!-- 年份 -->
         {#if years.length > 0}
           <div class="bg-white mt-2">
             <div class="px-3 py-2 border-b border-gray-100">
@@ -188,7 +200,6 @@
           </div>
         {/if}
 
-        <!-- 热门演员 -->
         {#if actors.length > 0}
           <div class="bg-white mt-2">
             <div class="px-3 py-2 border-b border-gray-100">
@@ -208,7 +219,6 @@
           </div>
         {/if}
 
-        <!-- 导演 -->
         {#if directors.length > 0}
           <div class="bg-white mt-2">
             <div class="px-3 py-2 border-b border-gray-100">

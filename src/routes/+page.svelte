@@ -31,7 +31,7 @@
 
   function handleSearch() {
     if (searchKeyword.trim()) {
-      goto('/search?q=' + encodeURIComponent(searchKeyword.trim()));
+      goto('/search/' + encodeURIComponent(searchKeyword.trim()) + '/1');
     }
   }
 </script>
