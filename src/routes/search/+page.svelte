@@ -116,18 +116,21 @@
 
       <!-- 分页 -->
       <div class="flex items-center justify-center gap-4 mt-6">
+        <button
+          onclick={() => doSearch(currentPage - 1)}
+          disabled={currentPage <= 1 || loadingMore}
+          class="px-4 py-2 bg-gray-100 text-gray-700 text-sm rounded-lg disabled:bg-gray-200 disabled:text-gray-400 disabled:cursor-not-allowed hover:bg-gray-200 transition-colors"
+        >
+          上一页
+        </button>
         <span class="text-sm text-gray-500">第 {currentPage} 页 / 共 {totalPages} 页</span>
-        {#if hasMore}
-          <button
-            onclick={loadNextPage}
-            disabled={loadingMore}
-            class="px-6 py-2 bg-pink-500 text-white text-sm rounded-lg disabled:bg-gray-300 disabled:cursor-not-allowed hover:bg-pink-600 transition-colors"
-          >
-            {loadingMore ? '加载中...' : '下一页'}
-          </button>
-        {:else}
-          <span class="text-sm text-gray-400">没有更多了</span>
-        {/if}
+        <button
+          onclick={() => doSearch(currentPage + 1)}
+          disabled={!hasMore || loadingMore}
+          class="px-4 py-2 bg-pink-500 text-white text-sm rounded-lg disabled:bg-gray-300 disabled:cursor-not-allowed hover:bg-pink-600 transition-colors"
+        >
+          {loadingMore ? '加载中...' : '下一页'}
+        </button>
       </div>
     {:else}
       <div class="text-center py-20 text-gray-400">输入关键词搜索影片</div>
