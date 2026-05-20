@@ -87,8 +87,8 @@
       <div class="text-center py-20 text-gray-400">暂无内容</div>
     {:else}
       <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2">
-        {#each videos as video (video.vod_id)}
-          <VideoCard {video} />
+        {#each videos as video, i (video.vod_id)}
+          <VideoCard {video} eager={i < 4} />
         {/each}
       </div>
     {/if}

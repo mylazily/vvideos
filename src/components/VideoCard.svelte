@@ -2,7 +2,7 @@
   import type { Video } from '$lib/types';
   import { generateImageAlt } from '$lib/seo';
 
-  let { video } = $props<{ video: Video }>();
+  let { video, eager = false } = $props<{ video: Video; eager?: boolean }>();
 
   let loaded = $state(false);
   let errored = $state(false);
@@ -38,8 +38,9 @@
       <img
         src={video.cover}
         alt={imgAlt}
-        loading="lazy"
-        decoding="async"
+        loading={eager ? 'eager' : 'lazy'}
+        decoding={eager ? 'sync' : 'async'}
+        fetchpriority={eager ? 'high' : 'auto'}
         referrerpolicy="no-referrer"
         onload={() => (loaded = true)}
         onerror={() => (errored = true)}

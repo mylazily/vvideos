@@ -15,6 +15,7 @@
     canonicalUrl
   } from '$lib/seo';
   import Breadcrumb from '$components/Breadcrumb.svelte';
+  import Comments from '$components/Comments.svelte';
   import { isFavorite, addFavorite, removeFavorite, addToHistory } from '$lib/storage';
 
   interface PlayLine {
@@ -422,13 +423,18 @@
             <h3 class="font-medium text-gray-800 mb-2">相关搜索</h3>
             <div class="flex flex-wrap gap-2">
               {#each relatedSearches as keyword}
-                <a href="/search?q={encodeURIComponent(keyword)}" class="px-3 py-1 text-xs bg-pink-50 text-pink-600 rounded-full hover:bg-pink-100 transition-colors">
+                <a href="/search/{encodeURIComponent(keyword)}/1" class="px-3 py-1 text-xs bg-pink-50 text-pink-600 rounded-full hover:bg-pink-100 transition-colors">
                   {keyword}
                 </a>
               {/each}
             </div>
           </div>
         {/if}
+      {/if}
+
+      <!-- 用户评论（静态注入，提升文本密度） -->
+      {#if video}
+        <Comments videoId={video.vod_id} title={video.title} />
       {/if}
     {/if}
   </main>
