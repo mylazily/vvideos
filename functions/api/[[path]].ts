@@ -229,6 +229,64 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 			return json({ success: true, data: { videos, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } } });
 		}
 
+		// ---- 管理后台：获取采集源列表 ----
+		if (path === '/api/admin/sources') {
+			const results = await env.DB_0.prepare('SELECT id, name, api_url, status, last_collect_at, total_videos, created_at FROM sources ORDER BY id').all<{
+				id: number; name: string; api_url: string; status: number; last_collect_at: number; total_videos: number; created_at: number;
+			}>();
+			return json({ success: true, data: results.results || [] });
+		}
+
+		// ---- 管理后台：获取采集日志 ----
+		if (path === '/api/admin/logs') {
+			const limit = Math.min(parseInt(url.searchParams.get('limit') || '50'), 100);
+			const results = await env.DB_0.prepare(
+				'SELECT l.*, s.name as source_name FROM collect_logs l LEFT JOIN sources s ON l.source_id = s.id ORDER BY l.created_at DESC LIMIT ?'
+			).bind(limit).all<{
+				id: number; source_id: number; source_name: string; action: string; details: string; new_count: number; error_msg: string; created_at: number;
+			}>();
+			return json({ success: true, data: results.results || [] });
+		}
+
+		// ---- 管理后台：触发采集（简化版，记录日志） ----
+		if (path === '/api/admin/collect' && request.method === 'POST') {
+			const { source_id } = await request.json<{ source_id?: number }>();
+			if (!source_id) return json({ success: false, message: '缺少source_id' }, 400);
+
+			// 获取源信息
+			const source = await env.DB_0.prepare('SELECT * FROM sources WHERE id = ?').bind(source_id).first<{ id: number; name: string; api_url: string }>();
+			if (!source) return json({ success: false, message: '采集源不存在' }, 404);
+
+			// 这里应该调用实际的采集逻辑，现在先记录日志
+			await env.DB_0.prepare(
+				'INSERT INTO collect_logs (source_id, action, details, new_count, created_at) VALUES (?, ?, ?, ?, ?)'
+			).bind(source_id, 'collect_start', '开始采集: ' + source.name, 0, Math.floor(Date.now() / 1000)).run();
+
+			return json({ success: true, message: '采集任务已启动' });
+		}
+
+		// ---- 管理后台：统计数据 ----
+		if (path === '/api/admin/stats') {
+			const shards = getShards(env);
+			const videoCounts = await Promise.all(shards.map(db => db.prepare('SELECT COUNT(*) as cnt FROM videos WHERE status = 1').first<{ cnt: number }>()));
+			const totalVideos = videoCounts.reduce((s, r) => s + (r?.cnt || 0), 0);
+
+			const sourceCount = await env.DB_0.prepare('SELECT COUNT(*) as cnt FROM sources').first<{ cnt: number }>();
+			const todayLogs = await env.DB_0.prepare(
+				'SELECT COUNT(*) as cnt, SUM(new_count) as total_new FROM collect_logs WHERE created_at > ?'
+			).bind(Math.floor(Date.now() / 1000) - 86400).first<{ cnt: number; total_new: number }>();
+
+			return json({
+				success: true,
+				data: {
+					totalVideos,
+					sourceCount: sourceCount?.cnt || 0,
+					todayCollectCount: todayLogs?.cnt || 0,
+					todayNewVideos: todayLogs?.total_new || 0
+				}
+			});
+		}
+
 		return json({ success: false, message: 'API not found' }, 404);
 	} catch (err: any) {
 		return json({ success: false, message: err.message || '服务器错误' }, 500);
