@@ -20,9 +20,9 @@ interface VideoData {
   vod_area?: string;
   vod_actor?: string;
   vod_director?: string;
-  vod_content?: string;
   vod_play_url: string;
   vod_remarks?: string;
+  vod_lang?: string;
 }
 
 function getShard(vodId: string, env: Env): D1Database {
@@ -79,9 +79,9 @@ async function collectFromSource(sourceUrl: string, page = 1, env: Env): Promise
         vod_area: v.vod_area || '',
         vod_actor: v.vod_actor || '',
         vod_director: v.vod_director || '',
-        vod_content: v.vod_content || v.description || '',
         vod_play_url: v.vod_play_url,
-        vod_remarks: v.vod_remarks || ''
+        vod_remarks: v.vod_remarks || '',
+        vod_lang: v.vod_lang || ''
       };
       
       result.videos.push(video);
@@ -103,22 +103,22 @@ async function saveVideo(video: VideoData, env: Env): Promise<boolean> {
     // 检查是否已存在
     const existing = await shard.prepare('SELECT id FROM videos WHERE vod_id = ?').bind(vodId).first<{ id: number }>();
     if (existing) {
-      // 更新
+      // 更新 - 不更新description字段
       await shard.prepare(
-        'UPDATE videos SET title = ?, category = ?, cover = ?, play_url = ?, vod_year = ?, vod_area = ?, vod_actor = ?, vod_director = ?, description = ?, vod_remarks = ?, updated_at = ? WHERE vod_id = ?'
+        'UPDATE videos SET title = ?, category = ?, cover = ?, play_url = ?, vod_year = ?, vod_area = ?, vod_actor = ?, vod_director = ?, vod_remarks = ?, vod_lang = ?, updated_at = ? WHERE vod_id = ?'
       ).bind(
         video.vod_name, video.type_name, video.vod_pic, video.vod_play_url,
         video.vod_year, video.vod_area, video.vod_actor, video.vod_director,
-        video.vod_content, video.vod_remarks, Math.floor(Date.now() / 1000), vodId
+        video.vod_remarks, video.vod_lang, Math.floor(Date.now() / 1000), vodId
       ).run();
     } else {
-      // 插入
+      // 插入 - 不采集description，后续SEO时动态生成
       await shard.prepare(
-        'INSERT INTO videos (vod_id, title, category, cover, play_url, vod_year, vod_area, vod_actor, vod_director, description, vod_remarks, status, views, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?, ?)'
+        'INSERT INTO videos (vod_id, title, category, cover, play_url, vod_year, vod_area, vod_actor, vod_director, vod_remarks, vod_lang, status, views, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?, ?)'
       ).bind(
         vodId, video.vod_name, video.type_name, video.vod_pic, video.vod_play_url,
         video.vod_year, video.vod_area, video.vod_actor, video.vod_director,
-        video.vod_content, video.vod_remarks,
+        video.vod_remarks, video.vod_lang,
         Math.floor(Date.now() / 1000), Math.floor(Date.now() / 1000)
       ).run();
     }

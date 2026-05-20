@@ -4,6 +4,15 @@
   import NavBar from '$components/NavBar.svelte';
   import type { Video } from '$lib/types';
   import Hls from 'hls.js';
+  import {
+    generateSEODescription,
+    generateSEOKeywords,
+    generateTags,
+    generateRelatedSearches,
+    generatePageTitle,
+    generateVideoSchema,
+    generateBreadcrumbSchema
+  } from '$lib/seo';
 
   interface PlayLine {
     name: string;
@@ -126,7 +135,84 @@
 </script>
 
 <svelte:head>
-  <title>{video?.title || '视频详情'} - 必爱必爱</title>
+  {#if video}
+    <title>{generatePageTitle({
+      title: video.title,
+      category: video.category,
+      vod_year: video.vod_year,
+      vod_area: video.vod_area,
+      vod_actor: video.vod_actor,
+      vod_director: video.vod_director,
+      vod_lang: video.vod_lang
+    })}</title>
+    <meta name="description" content={generateSEODescription({
+      title: video.title,
+      category: video.category,
+      vod_year: video.vod_year,
+      vod_area: video.vod_area,
+      vod_actor: video.vod_actor,
+      vod_director: video.vod_director,
+      vod_lang: video.vod_lang
+    })} />
+    <meta name="keywords" content={generateSEOKeywords({
+      title: video.title,
+      category: video.category,
+      vod_year: video.vod_year,
+      vod_area: video.vod_area,
+      vod_actor: video.vod_actor,
+      vod_director: video.vod_director,
+      vod_lang: video.vod_lang
+    }).join(',')} />
+    
+    <!-- Open Graph -->
+    <meta property="og:title" content={video.title} />
+    <meta property="og:description" content={generateSEODescription({
+      title: video.title,
+      category: video.category,
+      vod_year: video.vod_year,
+      vod_area: video.vod_area,
+      vod_actor: video.vod_actor,
+      vod_director: video.vod_director,
+      vod_lang: video.vod_lang
+    })} />
+    <meta property="og:image" content={video.cover} />
+    <meta property="og:type" content="video.movie" />
+    
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={video.title} />
+    <meta name="twitter:description" content={generateSEODescription({
+      title: video.title,
+      category: video.category,
+      vod_year: video.vod_year,
+      vod_area: video.vod_area,
+      vod_actor: video.vod_actor,
+      vod_director: video.vod_director,
+      vod_lang: video.vod_lang
+    })} />
+    <meta name="twitter:image" content={video.cover} />
+    
+    <!-- JSON-LD Structured Data -->
+    {@html `<script type="application/ld+json">${JSON.stringify(generateVideoSchema({
+      title: video.title,
+      category: video.category,
+      vod_year: video.vod_year,
+      vod_area: video.vod_area,
+      vod_actor: video.vod_actor,
+      vod_director: video.vod_director,
+      vod_lang: video.vod_lang,
+      cover: video.cover,
+      play_url: video.play_url,
+      vod_id: video.vod_id
+    }))}</script>`}
+    {@html `<script type="application/ld+json">${JSON.stringify(generateBreadcrumbSchema([
+      { name: '首页', url: 'https://vvideos.pages.dev/' },
+      { name: video.category || '视频', url: `https://vvideos.pages.dev/category` },
+      { name: video.title, url: `https://vvideos.pages.dev/v/${video.vod_id}` }
+    ]))}</script>`}
+  {:else}
+    <title>视频详情 - 必爱必爱</title>
+  {/if}
 </svelte:head>
 
 <div class="min-h-screen bg-gray-50">
@@ -237,6 +323,58 @@
           {#if video.vod_actor}
             <div><span class="text-gray-500">演员：</span>{video.vod_actor}</div>
           {/if}
+        </div>
+      {/if}
+
+      <!-- TAG标签 -->
+      {@const tags = generateTags({
+        title: video.title,
+        category: video.category,
+        vod_year: video.vod_year,
+        vod_area: video.vod_area,
+        vod_actor: video.vod_actor,
+        vod_director: video.vod_director,
+        vod_lang: video.vod_lang
+      })}
+      {#if tags.length > 0}
+        <div class="mt-2 bg-white p-3">
+          <h3 class="font-medium text-gray-800 mb-2">相关标签</h3>
+          <div class="flex flex-wrap gap-2">
+            {#each tags as tag}
+              <a 
+                href="/search?q={encodeURIComponent(tag)}" 
+                class="px-3 py-1 text-xs bg-gray-100 text-gray-600 rounded-full hover:bg-pink-100 hover:text-pink-600 transition-colors"
+              >
+                {tag}
+              </a>
+            {/each}
+          </div>
+        </div>
+      {/if}
+
+      <!-- 相关搜索 -->
+      {@const relatedSearches = generateRelatedSearches({
+        title: video.title,
+        category: video.category,
+        vod_year: video.vod_year,
+        vod_area: video.vod_area,
+        vod_actor: video.vod_actor,
+        vod_director: video.vod_director,
+        vod_lang: video.vod_lang
+      })}
+      {#if relatedSearches.length > 0}
+        <div class="mt-2 bg-white p-3">
+          <h3 class="font-medium text-gray-800 mb-2">相关搜索</h3>
+          <div class="flex flex-wrap gap-2">
+            {#each relatedSearches as keyword}
+              <a 
+                href="/search?q={encodeURIComponent(keyword)}" 
+                class="px-3 py-1 text-xs bg-pink-50 text-pink-600 rounded-full hover:bg-pink-100 transition-colors"
+              >
+                {keyword}
+              </a>
+            {/each}
+          </div>
         </div>
       {/if}
     {/if}
