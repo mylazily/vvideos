@@ -2,35 +2,64 @@
 <html lang="zh-CN">
   <head>
     <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    
+    <!-- Favicon -->
     <link rel="icon" href="%sveltekit.assets%/favicon.png" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
     
-    <!-- 全局 SEO -->
-    <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large" />
-    <meta name="googlebot" content="index, follow" />
-    <meta name="baiduspider" content="index, follow" />
-    <link rel="canonical" href="https://evideos.pages.dev/" />
-    
-    <!-- RSS Feed -->
-    <link rel="alternate" type="application/rss+xml" title="必爱必爱 - 最新更新" href="/rss.xml" />
-    
-    <!-- Preconnect 资源提示 - 加速第三方资源加载 -->
-    <link rel="preconnect" href="https://fonts.googleapis.com" crossorigin />
-    <link rel="dns-prefetch" href="https://fonts.googleapis.com" />
-    
-    <!-- Theme Color -->
+    <!-- PWA -->
+    <link rel="manifest" href="/manifest.json" />
     <meta name="theme-color" content="#ec4899" />
     <meta name="msapplication-TileColor" content="#ec4899" />
-    
-    <!-- Mobile -->
+    <link rel="apple-touch-icon" href="/icon-192.png" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="必爱必爱" />
+    
+    <!-- SEO 基础 -->
+    <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1" />
+    <meta name="googlebot" content="index, follow" />
+    <meta name="baiduspider" content="index, follow" />
     <meta name="format-detection" content="telephone=no" />
+    <link rel="canonical" href="https://evideos.pages.dev/" />
+    
+    <!-- Open Graph 基础 -->
+    <meta property="og:site_name" content="必爱必爱" />
+    <meta property="og:locale" content="zh_CN" />
+    <meta property="og:type" content="website" />
+    
+    <!-- RSS Feed -->
+    <link rel="alternate" type="application/rss+xml" title="必爱必爱 - 最新更新" href="/api/rss.xml" />
+    
+    <!-- Sitemap -->
+    <link rel="sitemap" type="application/xml" href="/api/sitemap.xml" />
+    
+    <!-- Preconnect -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" crossorigin />
+    <link rel="dns-prefetch" href="https://fonts.googleapis.com" />
     
     %sveltekit.head%
   </head>
   <body data-sveltekit-preload-data="hover">
     <div style="display: contents">%sveltekit.body%</div>
+    
+    <!-- Service Worker 注册 -->
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', function() {
+          navigator.serviceWorker.register('/sw.js').then(function(reg) {
+            reg.onupdatefound = function() {
+              var newWorker = reg.installing;
+              newWorker.onstatechange = function() {
+                if (newWorker.state === 'activated') {
+                  // 新版本可用，提示用户刷新
+                }
+              };
+            };
+          }).catch(function() {});
+        });
+      }
+    </script>
   </body>
 </html>

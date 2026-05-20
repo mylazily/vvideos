@@ -328,8 +328,78 @@ export function generateRSSFeed(videos: { title: string; vod_id: string; categor
     <link>${SITE_URL}</link>
     <description>最新高清电影、电视剧、综艺、动漫在线观看</description>
     <language>zh-CN</language>
-    <atom:link href="${SITE_URL}/rss.xml" rel="self" type="application/rss+xml"/>
+    <atom:link href="${SITE_URL}/api/rss.xml" rel="self" type="application/rss+xml"/>
     ${items}
   </channel>
 </rss>`;
+}
+
+// ===== 高级 SEO =====
+
+// ItemList Schema（列表页 - 分类/搜索/TAG）
+export function generateItemListSchema(
+  items: { name: string; url: string; position?: number; image?: string }[],
+  listName: string
+) {
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'ItemList',
+    name: listName,
+    numberOfItems: items.length,
+    itemListElement: items.map((item, i) => ({
+      '@type': 'ListItem',
+      position: item.position || (i + 1),
+      name: item.name,
+      url: item.url.startsWith('http') ? item.url : SITE_URL + item.url,
+      ...(item.image ? { image: item.image } : {})
+    }))
+  };
+}
+
+// CollectionPage Schema（分类聚合页）
+export function generateCollectionPageSchema(
+  categoryName: string,
+  description: string,
+  pageUrl: string
+) {
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'CollectionPage',
+    name: categoryName,
+    description: description,
+    url: pageUrl.startsWith('http') ? pageUrl : SITE_URL + pageUrl,
+    isPartOf: {
+      '@type': 'WebSite',
+      name: SITE_NAME,
+      url: SITE_URL
+    }
+  };
+}
+
+// FAQPage Schema（常见问题 - 提升搜索展示）
+export function generateFAQSchema(faqs: { question: string; answer: string }[]) {
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'FAQPage',
+    mainEntity: faqs.map(faq => ({
+      '@type': 'Question',
+      name: faq.question,
+      acceptedAnswer: {
+        '@type': 'Answer',
+        text: faq.answer
+      }
+    }))
+  };
+}
+
+// Organization Schema
+export function generateOrganizationSchema() {
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'Organization',
+    name: SITE_NAME,
+    url: SITE_URL,
+    logo: `${SITE_URL}/icon-512.png`,
+    sameAs: []
+  };
 }

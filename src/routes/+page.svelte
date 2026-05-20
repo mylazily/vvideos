@@ -4,7 +4,7 @@
   import NavBar from '$components/NavBar.svelte';
   import VideoCard from '$components/VideoCard.svelte';
   import type { Video } from '$lib/types';
-  import { generateSearchActionSchema } from '$lib/seo';
+  import { generateSearchActionSchema, generateOrganizationSchema, generateFAQSchema } from '$lib/seo';
 
   let videos: Video[] = [];
   let loading = true;
@@ -48,8 +48,15 @@
   <meta property="og:type" content="website" />
   <meta property="og:url" content="https://evideos.pages.dev/" />
   
-  <!-- JSON-LD: WebSite + SearchAction -->
+  <!-- JSON-LD: WebSite + SearchAction + Organization + FAQ -->
   {@html `<script type="application/ld+json">${JSON.stringify(generateSearchActionSchema())}</script>`}
+  {@html `<script type="application/ld+json">${JSON.stringify(generateOrganizationSchema())}</script>`}
+  {@html `<script type="application/ld+json">${JSON.stringify(generateFAQSchema([
+    { question: '必爱必爱是什么？', answer: '必爱必爱是一个免费的高清视频在线观看平台，提供电影、电视剧、综艺、动漫等多种类型的视频内容。' },
+    { question: '必爱必爱收费吗？', answer: '必爱必爱完全免费，无需注册即可观看所有视频内容。' },
+    { question: '如何在线观看视频？', answer: '在必爱必爱搜索或浏览找到想看的视频，点击进入详情页即可在线播放，支持手机和电脑观看。' },
+    { question: '视频可以下载吗？', answer: '必爱必爱仅提供在线播放服务，不支持视频下载。' }
+  ]))}</script>`}
 </svelte:head>
 
 <div class="min-h-screen bg-gray-50">
