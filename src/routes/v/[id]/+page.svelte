@@ -12,8 +12,7 @@
     generatePageTitle,
     generateVideoSchema,
     generateBreadcrumbSchema,
-    canonicalUrl,
-    generateSearchActionSchema
+    canonicalUrl
   } from '$lib/seo';
   import Breadcrumb from '$components/Breadcrumb.svelte';
   import { isFavorite, addFavorite, removeFavorite, addToHistory } from '$lib/storage';
@@ -23,15 +22,15 @@
     episodes: { name: string; url: string }[];
   }
 
-  let video: Video | null = null;
-  let loading = true;
-  let errorMsg = '';
-  let playLines: PlayLine[] = [];
-  let currentLineIndex = 0;
-  let currentEpisodeIndex = 0;
+  let video = $state<Video | null>(null);
+  let loading = $state(true);
+  let errorMsg = $state('');
+  let playLines = $state<PlayLine[]>([]);
+  let currentLineIndex = $state(0);
+  let currentEpisodeIndex = $state(0);
+  let isFav = $state(false);
   let hlsInstance: Hls | null = null;
   let videoEl: HTMLVideoElement;
-  let isFav = $state(false);
 
   let vodId = $derived($page.params.id);
   let currentEpisode = $derived(playLines[currentLineIndex]?.episodes[currentEpisodeIndex]);
@@ -46,10 +45,18 @@
   });
 
   async function loadVideo() {
+    loading = true;
+    errorMsg = '';
     try {
       const res = await fetch('/api/video/' + vodId, {
         signal: AbortSignal.timeout(10000)
       });
+      
+      if (!res.ok) {
+        errorMsg = '请求失败 (' + res.status + ')';
+        return;
+      }
+      
       const data = await res.json();
 
       if (data.success && data.data) {
@@ -75,7 +82,8 @@
         errorMsg = data.message || '视频不存在';
       }
     } catch (e: any) {
-      errorMsg = '加载失败';
+      errorMsg = '网络错误，请稍后重试';
+      console.error('loadVideo error:', e);
     } finally {
       loading = false;
     }
@@ -84,7 +92,6 @@
   function parsePlayUrl(playUrl: string | undefined): PlayLine[] {
     if (!playUrl) return [];
     const lines: PlayLine[] = [];
-    // 支持 $$$ 分隔的多线路
     const lineGroups = playUrl.split('$$$');
     lineGroups.forEach((group, idx) => {
       const episodes: { name: string; url: string }[] = [];
@@ -136,6 +143,28 @@
       hlsInstance.on(Hls.Events.MANIFEST_PARSED, () => {
         videoEl.play().catch(() => {});
       });
+      hlsInstance.on(Hls.Events.ERROR, (_event, data) => {
+        if (data.fatal) {
+          console.error('HLS fatal error:', data);
+          switch (data.type) {
+            case Hls.ErrorTypes.NETWORK_ERROR:
+              console.error('网络错误，尝试恢复...');
+              hlsInstance?.startLoad();
+              break;
+            case Hls.ErrorTypes.MEDIA_ERROR:
+              console.error('媒体错误，尝试恢复...');
+              hlsInstance?.recoverMediaError();
+              break;
+            default:
+              destroyHls();
+              break;
+          }
+        }
+      });
+    } else if (url.includes('.m3u8') && videoEl.canPlayType('application/vnd.apple.mpegurl')) {
+      // Safari 原生 HLS
+      videoEl.src = url;
+      videoEl.play().catch(() => {});
     } else {
       videoEl.src = url;
       videoEl.play().catch(() => {});
@@ -143,7 +172,6 @@
   }
 
   function onVideoEnded() {
-    // 自动播放下一集
     const currentLine = playLines[currentLineIndex];
     if (currentLine && currentEpisodeIndex < currentLine.episodes.length - 1) {
       playEpisode(currentLineIndex, currentEpisodeIndex + 1);
@@ -167,6 +195,9 @@
     isFav = !isFav;
   }
 
+  function retryLoad() {
+    loadVideo();
+  }
 </script>
 
 <svelte:head>
@@ -198,55 +229,26 @@
       vod_director: video.vod_director,
       vod_lang: video.vod_lang
     }).join(',')} />
-    
-    <!-- Canonical URL -->
     <link rel="canonical" href={canonicalUrl(`/v/${video.vod_id}`)} />
-    
-    <!-- Open Graph -->
     <meta property="og:title" content={video.title} />
     <meta property="og:description" content={generateSEODescription({
-      title: video.title,
-      category: video.category,
-      vod_year: video.vod_year,
-      vod_area: video.vod_area,
-      vod_actor: video.vod_actor,
-      vod_director: video.vod_director,
-      vod_lang: video.vod_lang
+      title: video.title, category: video.category, vod_year: video.vod_year,
+      vod_area: video.vod_area, vod_actor: video.vod_actor, vod_director: video.vod_director, vod_lang: video.vod_lang
     })} />
     <meta property="og:image" content={video.cover} />
     <meta property="og:type" content="video.movie" />
     <meta property="og:url" content={canonicalUrl(`/v/${video.vod_id}`)} />
-    
-    <!-- Twitter Card -->
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content={video.title} />
-    <meta name="twitter:description" content={generateSEODescription({
-      title: video.title,
-      category: video.category,
-      vod_year: video.vod_year,
-      vod_area: video.vod_area,
-      vod_actor: video.vod_actor,
-      vod_director: video.vod_director,
-      vod_lang: video.vod_lang
-    })} />
     <meta name="twitter:image" content={video.cover} />
-    
-    <!-- JSON-LD Structured Data -->
     {@html `<script type="application/ld+json">${JSON.stringify(generateVideoSchema({
-      title: video.title,
-      category: video.category,
-      vod_year: video.vod_year,
-      vod_area: video.vod_area,
-      vod_actor: video.vod_actor,
-      vod_director: video.vod_director,
-      vod_lang: video.vod_lang,
-      cover: video.cover,
-      play_url: video.play_url,
-      vod_id: video.vod_id
+      title: video.title, category: video.category, vod_year: video.vod_year,
+      vod_area: video.vod_area, vod_actor: video.vod_actor, vod_director: video.vod_director,
+      vod_lang: video.vod_lang, cover: video.cover, play_url: video.play_url, vod_id: video.vod_id
     }))}</script>`}
     {@html `<script type="application/ld+json">${JSON.stringify(generateBreadcrumbSchema([
       { name: '首页', url: 'https://vvideos.pages.dev/' },
-      { name: video.category || '视频', url: `https://vvideos.pages.dev/category` },
+      { name: video.category || '视频', url: 'https://vvideos.pages.dev/category' },
       { name: video.title, url: `https://vvideos.pages.dev/v/${video.vod_id}` }
     ]))}</script>`}
   {:else}
@@ -262,24 +264,34 @@
 
   <main class="pb-16">
     {#if loading}
-      <div class="flex items-center justify-center py-20">
+      <div class="flex flex-col items-center justify-center py-20">
         <div class="w-8 h-8 border-2 border-pink-200 border-t-pink-500 rounded-full animate-spin"></div>
+        <p class="mt-3 text-sm text-gray-400">加载中...</p>
       </div>
     {:else if errorMsg}
-      <div class="text-center py-20 text-red-500">{errorMsg}</div>
+      <div class="flex flex-col items-center justify-center py-20">
+        <svg class="w-16 h-16 mb-4 text-gray-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+        </svg>
+        <p class="text-red-500 text-sm mb-4">{errorMsg}</p>
+        <button onclick={retryLoad} class="px-4 py-2 bg-pink-500 text-white text-sm rounded-lg hover:bg-pink-600 transition-colors">
+          重新加载
+        </button>
+      </div>
     {:else if video}
-      <!-- 面包屑导航 -->
       <Breadcrumb items={[
         { name: '首页', url: '/' },
         { name: video.category || '分类', url: '/category' },
         { name: video.title }
       ]} />
+
       <!-- 播放器 -->
       <div class="aspect-video bg-black relative">
         <video
           bind:this={videoEl}
           controls
           autoplay
+          playsinline
           class="w-full h-full"
           poster={video.cover}
           onended={onVideoEnded}
@@ -319,9 +331,6 @@
             <span>{video.views}次观看</span>
           {/if}
         </div>
-        {#if video.description}
-          <p class="text-sm text-gray-600 line-clamp-3">{video.description}</p>
-        {/if}
       </div>
 
       <!-- 线路选择 -->
@@ -347,13 +356,13 @@
       {#if playLines.length > 0}
         <div class="mt-2 bg-white p-3">
           <h3 class="font-medium text-gray-800 mb-2">
-            选集 ({playLines[currentLineIndex]?.episodes.length}集)
+            选集 ({playLines[currentLineIndex]?.episodes.length || 0}集)
           </h3>
           <div class="flex gap-2 overflow-x-auto pb-2">
             {#each playLines[currentLineIndex]?.episodes || [] as ep, idx}
               <button
                 onclick={() => playEpisode(currentLineIndex, idx)}
-                class="flex-shrink-0 px-3 py-1.5 text-sm rounded {currentEpisodeIndex === idx && currentLineIndex === currentLineIndex
+                class="flex-shrink-0 px-3 py-1.5 text-sm rounded {currentEpisodeIndex === idx
                   ? 'bg-pink-500 text-white'
                   : 'bg-gray-100 text-gray-700'}"
               >
@@ -383,55 +392,43 @@
       {/if}
 
       <!-- TAG标签 -->
-      {@const tags = generateTags({
-        title: video.title,
-        category: video.category,
-        vod_year: video.vod_year,
-        vod_area: video.vod_area,
-        vod_actor: video.vod_actor,
-        vod_director: video.vod_director,
-        vod_lang: video.vod_lang
-      })}
-      {#if tags.length > 0}
-        <div class="mt-2 bg-white p-3">
-          <h3 class="font-medium text-gray-800 mb-2">相关标签</h3>
-          <div class="flex flex-wrap gap-2">
-            {#each tags as tag}
-              <a 
-                href="/tag/{encodeURIComponent(tag)}" 
-                class="px-3 py-1 text-xs bg-gray-100 text-gray-600 rounded-full hover:bg-pink-100 hover:text-pink-600 transition-colors"
-              >
-                {tag}
-              </a>
-            {/each}
+      {#if video}
+        {@const tags = generateTags({
+          title: video.title, category: video.category, vod_year: video.vod_year,
+          vod_area: video.vod_area, vod_actor: video.vod_actor, vod_director: video.vod_director, vod_lang: video.vod_lang
+        })}
+        {#if tags.length > 0}
+          <div class="mt-2 bg-white p-3">
+            <h3 class="font-medium text-gray-800 mb-2">相关标签</h3>
+            <div class="flex flex-wrap gap-2">
+              {#each tags as tag}
+                <a href="/tag/{encodeURIComponent(tag)}" class="px-3 py-1 text-xs bg-gray-100 text-gray-600 rounded-full hover:bg-pink-100 hover:text-pink-600 transition-colors">
+                  {tag}
+                </a>
+              {/each}
+            </div>
           </div>
-        </div>
+        {/if}
       {/if}
 
       <!-- 相关搜索 -->
-      {@const relatedSearches = generateRelatedSearches({
-        title: video.title,
-        category: video.category,
-        vod_year: video.vod_year,
-        vod_area: video.vod_area,
-        vod_actor: video.vod_actor,
-        vod_director: video.vod_director,
-        vod_lang: video.vod_lang
-      })}
-      {#if relatedSearches.length > 0}
-        <div class="mt-2 bg-white p-3">
-          <h3 class="font-medium text-gray-800 mb-2">相关搜索</h3>
-          <div class="flex flex-wrap gap-2">
-            {#each relatedSearches as keyword}
-              <a 
-                href="/search?q={encodeURIComponent(keyword)}" 
-                class="px-3 py-1 text-xs bg-pink-50 text-pink-600 rounded-full hover:bg-pink-100 transition-colors"
-              >
-                {keyword}
-              </a>
-            {/each}
+      {#if video}
+        {@const relatedSearches = generateRelatedSearches({
+          title: video.title, category: video.category, vod_year: video.vod_year,
+          vod_area: video.vod_area, vod_actor: video.vod_actor, vod_director: video.vod_director, vod_lang: video.vod_lang
+        })}
+        {#if relatedSearches.length > 0}
+          <div class="mt-2 bg-white p-3">
+            <h3 class="font-medium text-gray-800 mb-2">相关搜索</h3>
+            <div class="flex flex-wrap gap-2">
+              {#each relatedSearches as keyword}
+                <a href="/search?q={encodeURIComponent(keyword)}" class="px-3 py-1 text-xs bg-pink-50 text-pink-600 rounded-full hover:bg-pink-100 transition-colors">
+                  {keyword}
+                </a>
+              {/each}
+            </div>
           </div>
-        </div>
+        {/if}
       {/if}
     {/if}
   </main>
