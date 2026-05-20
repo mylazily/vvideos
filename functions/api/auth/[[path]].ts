@@ -26,7 +26,7 @@ function json(data: any, status = 200, extraHeaders: Record<string, string> = {}
 	});
 }
 
-// 简单的密码哈希（生产环境应使用 bcrypt，但 D1 环境限制用 Web Crypto）
+// 简单的密码哈希
 async function hashPassword(password: string): Promise<string> {
 	const encoder = new TextEncoder();
 	const data = encoder.encode(password + '_vvideos_salt_2024');
@@ -39,11 +39,25 @@ async function verifyPassword(password: string, hash: string): Promise<boolean> 
 	return passwordHash === hash;
 }
 
-// 生成 token
 function generateToken(): string {
 	const arr = new Uint8Array(32);
 	crypto.getRandomValues(arr);
 	return Array.from(arr).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+// 自动建表
+async function ensureTables(db: D1Database): Promise<void> {
+	await db.prepare(`
+		CREATE TABLE IF NOT EXISTS users (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			user_id TEXT UNIQUE NOT NULL,
+			username TEXT UNIQUE NOT NULL,
+			password_hash TEXT NOT NULL,
+			nickname TEXT DEFAULT '',
+			avatar TEXT DEFAULT '',
+			created_at INTEGER NOT NULL
+		)
+	`).run();
 }
 
 export const onRequest: PagesFunction<Env> = async (context) => {
@@ -58,6 +72,9 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 	}
 
 	try {
+		// 确保表存在
+		await ensureTables(env.DB_0);
+
 		// ======== 注册 ========
 		if (path === '/api/auth/register' && request.method === 'POST') {
 			const body = await request.json<{ username?: string; password?: string; nickname?: string }>();
@@ -74,7 +91,6 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 				return json({ success: false, message: '密码至少6个字符' }, 400);
 			}
 			
-			// 检查用户名是否已存在
 			const existing = await env.DB_0.prepare('SELECT id FROM users WHERE username = ?').bind(body.username).first();
 			if (existing) {
 				return json({ success: false, message: '用户名已存在' }, 400);
@@ -86,16 +102,8 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 			
 			await env.DB_0.prepare(
 				'INSERT INTO users (user_id, username, password_hash, nickname, avatar, created_at) VALUES (?, ?, ?, ?, ?, ?)'
-			).bind(
-				userId,
-				body.username,
-				passwordHash,
-				body.nickname || body.username,
-				'',
-				now
-			).run();
+			).bind(userId, body.username, passwordHash, body.nickname || body.username, '', now).run();
 			
-			// 生成 token
 			const token = generateToken();
 			await env.CACHE.put('token:' + token, JSON.stringify({ user_id: userId, username: body.username }), { expirationTtl: 86400 * 30 });
 			
@@ -131,7 +139,6 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 				return json({ success: false, message: '用户名或密码错误' }, 401);
 			}
 			
-			// 生成 token
 			const token = generateToken();
 			await env.CACHE.put('token:' + token, JSON.stringify({ user_id: user.user_id, username: user.username }), { expirationTtl: 86400 * 30 });
 			

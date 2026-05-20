@@ -2,8 +2,8 @@ User-agent: *
 Allow: /
 
 # Sitemaps
-Sitemap: https://vvideos.pages.dev/api/sitemap.xml
-Sitemap: https://vvideos.pages.dev/api/video-sitemap.xml
+Sitemap: https://evideos.pages.dev/api/sitemap.xml
+Sitemap: https://evideos.pages.dev/api/video-sitemap.xml
 
 # Disallow admin and search
 Disallow: /admin/

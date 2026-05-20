@@ -1,6 +1,6 @@
 // SEO 工具函数 - 生成动态描述、关键词、TAG等
 
-export const SITE_URL = 'https://vvideos.pages.dev';
+export const SITE_URL = 'https://evideos.pages.dev';
 export const SITE_NAME = '必爱必爱';
 
 export interface VideoSEOData {
@@ -283,7 +283,7 @@ export function generateSearchActionSchema() {
       '@type': 'SearchAction',
       target: {
         '@type': 'EntryPoint',
-        urlTemplate: `${SITE_URL}/search?q={search_term_string}`
+        urlTemplate: `${SITE_URL}/search/{search_term_string}/1`
       },
       'query-input': 'required name=search_term_string'
     }

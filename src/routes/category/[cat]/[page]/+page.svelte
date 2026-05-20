@@ -85,10 +85,10 @@
   <meta property="og:description" content={seo.description} />
   <meta property="og:type" content="website" />
   {#if currentPage > 1}
-    <link rel="prev" href="https://vvideos.pages.dev/category/{encodeURIComponent(activeCategory)}/{currentPage - 1}" />
+    <link rel="prev" href="https://evideos.pages.dev/category/{encodeURIComponent(activeCategory)}/{currentPage - 1}" />
   {/if}
   {#if currentPage < totalPages}
-    <link rel="next" href="https://vvideos.pages.dev/category/{encodeURIComponent(activeCategory)}/{currentPage + 1}" />
+    <link rel="next" href="https://evideos.pages.dev/category/{encodeURIComponent(activeCategory)}/{currentPage + 1}" />
   {/if}
 </svelte:head>
 

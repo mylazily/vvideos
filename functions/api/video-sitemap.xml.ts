@@ -12,7 +12,7 @@ export interface Env {
   DB_9: D1Database;
 }
 
-const SITE_URL = 'https://vvideos.pages.dev';
+const SITE_URL = 'https://evideos.pages.dev';
 
 function getAllShards(env: Env): D1Database[] {
   return [env.DB_0, env.DB_1, env.DB_2, env.DB_3, env.DB_4, env.DB_5, env.DB_6, env.DB_7, env.DB_8, env.DB_9];

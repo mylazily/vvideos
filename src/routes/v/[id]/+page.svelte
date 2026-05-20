@@ -247,9 +247,9 @@
       vod_lang: video.vod_lang, cover: video.cover, play_url: video.play_url, vod_id: video.vod_id
     }))}</script>`}
     {@html `<script type="application/ld+json">${JSON.stringify(generateBreadcrumbSchema([
-      { name: '首页', url: 'https://vvideos.pages.dev/' },
-      { name: video.category || '视频', url: 'https://vvideos.pages.dev/category' },
-      { name: video.title, url: `https://vvideos.pages.dev/v/${video.vod_id}` }
+      { name: '首页', url: 'https://evideos.pages.dev/' },
+      { name: video.category || '视频', url: 'https://evideos.pages.dev/category/全部/1' },
+      { name: video.title, url: `https://evideos.pages.dev/v/${video.vod_id}` }
     ]))}</script>`}
   {:else}
     <title>视频详情 - 必爱必爱</title>
