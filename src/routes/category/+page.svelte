@@ -8,7 +8,7 @@
   let activeCategory = '全部';
   let videos: Video[] = [];
   let loading = true;
-  let loadingMore = false;
+
   let categoriesLoading = true;
   let currentPage = 1;
   let hasMore = true;
@@ -35,12 +35,8 @@
   }
 
   async function loadVideos(category: string, page: number) {
-    if (page === 1) {
-      loading = true;
-      videos = [];
-    } else {
-      loadingMore = true;
-    }
+    loading = true;
+    videos = [];
     activeCategory = category;
     currentPage = page;
 
@@ -52,12 +48,7 @@
       const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
       if (res.ok) {
         const data = await res.json();
-        const list = data.data?.videos || [];
-        if (page === 1) {
-          videos = list;
-        } else {
-          videos = [...videos, ...list];
-        }
+        videos = data.data?.videos || [];
         const pagination = data.data?.pagination;
         hasMore = pagination ? page < pagination.totalPages : false;
         totalPages = pagination?.totalPages || 1;
@@ -66,7 +57,6 @@
       // ignore
     } finally {
       loading = false;
-      loadingMore = false;
     }
   }
 
@@ -74,11 +64,7 @@
     loadVideos(cat, 1);
   }
 
-  function loadNextPage() {
-    if (!loadingMore && hasMore) {
-      loadVideos(activeCategory, currentPage + 1);
-    }
-  }
+
 </script>
 
 <svelte:head>
@@ -136,7 +122,7 @@
       <div class="flex items-center justify-center gap-4 mt-6">
         <button
           onclick={() => loadVideos(activeCategory, currentPage - 1)}
-          disabled={currentPage <= 1 || loadingMore}
+          disabled={currentPage <= 1 || loading}
           class="px-4 py-2 bg-gray-100 text-gray-700 text-sm rounded-lg disabled:bg-gray-200 disabled:text-gray-400 disabled:cursor-not-allowed hover:bg-gray-200 transition-colors"
         >
           上一页
@@ -144,10 +130,10 @@
         <span class="text-sm text-gray-500">第 {currentPage} 页 / 共 {totalPages} 页</span>
         <button
           onclick={() => loadVideos(activeCategory, currentPage + 1)}
-          disabled={!hasMore || loadingMore}
+          disabled={!hasMore || loading}
           class="px-4 py-2 bg-pink-500 text-white text-sm rounded-lg disabled:bg-gray-300 disabled:cursor-not-allowed hover:bg-pink-600 transition-colors"
         >
-          {loadingMore ? '加载中...' : '下一页'}
+          {loading ? '加载中...' : '下一页'}
         </button>
       </div>
     {/if}

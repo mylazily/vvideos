@@ -8,7 +8,7 @@
 
   let videos: Video[] = [];
   let loading = false;
-  let loadingMore = false;
+
   let keyword = '';
   let hasSearched = false;
   let currentPage = 1;
@@ -27,13 +27,10 @@
   async function doSearch(page: number) {
     if (!keyword.trim()) return;
 
-    if (page === 1) {
-      loading = true;
-      videos = [];
-    } else {
-      loadingMore = true;
-    }
+    loading = true;
+    videos = [];
     hasSearched = true;
+    currentPage = page;
 
     try {
       const res = await fetch(
@@ -42,13 +39,7 @@
       );
       if (res.ok) {
         const data = await res.json();
-        const list = data.data?.videos || [];
-        if (page === 1) {
-          videos = list;
-        } else {
-          videos = [...videos, ...list];
-        }
-        currentPage = page;
+        videos = data.data?.videos || [];
         const pagination = data.data?.pagination;
         hasMore = pagination ? page < pagination.totalPages : false;
         totalPages = pagination?.totalPages || 1;
@@ -57,7 +48,6 @@
       console.error(e);
     } finally {
       loading = false;
-      loadingMore = false;
     }
   }
 
@@ -68,11 +58,7 @@
     }
   }
 
-  function loadNextPage() {
-    if (!loadingMore && hasMore) {
-      doSearch(currentPage + 1);
-    }
-  }
+
 </script>
 
 <svelte:head>
@@ -118,7 +104,7 @@
       <div class="flex items-center justify-center gap-4 mt-6">
         <button
           onclick={() => doSearch(currentPage - 1)}
-          disabled={currentPage <= 1 || loadingMore}
+          disabled={currentPage <= 1 || loading}
           class="px-4 py-2 bg-gray-100 text-gray-700 text-sm rounded-lg disabled:bg-gray-200 disabled:text-gray-400 disabled:cursor-not-allowed hover:bg-gray-200 transition-colors"
         >
           上一页
@@ -126,10 +112,10 @@
         <span class="text-sm text-gray-500">第 {currentPage} 页 / 共 {totalPages} 页</span>
         <button
           onclick={() => doSearch(currentPage + 1)}
-          disabled={!hasMore || loadingMore}
+          disabled={!hasMore || loading}
           class="px-4 py-2 bg-pink-500 text-white text-sm rounded-lg disabled:bg-gray-300 disabled:cursor-not-allowed hover:bg-pink-600 transition-colors"
         >
-          {loadingMore ? '加载中...' : '下一页'}
+          {loading ? '加载中...' : '下一页'}
         </button>
       </div>
     {:else}
