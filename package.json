@@ -18,5 +18,9 @@
     "typescript": "^5.0.0",
     "vite": "^5.0.0"
   },
-  "type": "module"
+  "type": "module",
+  "dependencies": {
+    "hls.js": "^1.6.16",
+    "p2p-media-loader-hlsjs": "^2.3.1"
+  }
 }
