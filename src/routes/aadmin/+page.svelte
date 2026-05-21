@@ -70,7 +70,7 @@
     loginLoading = true;
     authError = '';
     try {
-      const res = await fetch('/api/admin/auth', {
+      const res = await fetch('/api/aadmin/auth', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ password: passwordInput })
@@ -104,9 +104,9 @@
     loading = true;
     try {
       const [statsRes, sourcesRes, logsRes] = await Promise.all([
-        authFetch('/api/admin/stats'),
-        authFetch('/api/admin/sources'),
-        authFetch('/api/admin/logs?limit=20')
+        authFetch('/api/aadmin/stats'),
+        authFetch('/api/aadmin/sources'),
+        authFetch('/api/aadmin/logs?limit=20')
       ]);
 
       // 检查是否认证失败
@@ -135,7 +135,7 @@
     collecting = true;
     message = '';
     try {
-      const res = await authFetch('/api/admin/collect', {
+      const res = await authFetch('/api/aadmin/collect', {
         method: 'POST',
         body: JSON.stringify({ source_id: sourceId })
       });
@@ -157,7 +157,7 @@
       return;
     }
     try {
-      const res = await authFetch('/api/admin/sources', {
+      const res = await authFetch('/api/aadmin/sources', {
         method: 'POST',
         body: JSON.stringify({ name: newSourceName, api_url: newSourceUrl })
       });
@@ -178,7 +178,7 @@
   async function deleteSource(id: number) {
     if (!confirm('确定删除这个采集源吗？')) return;
     try {
-      const res = await authFetch('/api/admin/sources?id=' + id, { method: 'DELETE' });
+      const res = await authFetch('/api/aadmin/sources?id=' + id, { method: 'DELETE' });
       const data = await res.json();
       if (data.success) {
         await loadData();

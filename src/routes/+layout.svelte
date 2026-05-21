@@ -1,5 +1,6 @@
 <script lang="ts">
 	import '../app.css';
+	import type { Snippet } from 'svelte';
 	import { onMount } from 'svelte';
 	import { browser } from '$app/environment';
 	import { applySubdomainSEO } from '$lib/subdomain';
@@ -7,6 +8,8 @@
 	import { detectBrowser } from '$lib/browser-detect';
 	import UserGuide from '$components/UserGuide.svelte';
 	import { pwaManager, shouldShowInstallPrompt } from '$lib/pwa-manager';
+
+	let { children }: { children: Snippet } = $props();
 
 	// 0: 检测中, 1: 正常显示, 2: 显示引导
 	let displayMode = $state(0);
@@ -93,7 +96,7 @@
 		<p class="text-white/70 text-sm mt-4">加载中...</p>
 	</div>
 {:else if displayMode === 1}
-	<slot />
+	{@render children()}
 	<UserGuide blocked={false} />
 
 	<!-- 更新提示 -->

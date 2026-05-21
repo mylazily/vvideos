@@ -46,6 +46,9 @@
   <meta name="description" content="必爱必爱视频排行榜，最热门的电影、电视剧、综艺、动漫排行" />
   <meta name="keywords" content="排行榜,热门电影,热播电视剧,综艺排行,动漫排行" />
   <link rel="canonical" href="https://evideos.pages.dev/rank" />
+  <meta property="og:title" content="排行榜 - 必爱必爱" />
+  <meta property="og:description" content="必爱必爱视频排行榜，最热门的电影、电视剧、综艺、动漫排行" />
+  <meta property="og:url" content="https://evideos.pages.dev/rank" />
 </svelte:head>
 
 <PageLayout title="排行榜">

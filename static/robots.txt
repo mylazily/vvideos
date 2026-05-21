@@ -6,7 +6,7 @@ Sitemap: https://evideos.pages.dev/api/sitemap.xml
 Sitemap: https://evideos.pages.dev/api/video-sitemap.xml
 
 # Disallow admin and search
-Disallow: /admin/
+Disallow: /aadmin/
 Disallow: /search
 
 # Crawl delay

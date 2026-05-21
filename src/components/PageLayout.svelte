@@ -1,4 +1,5 @@
 <script lang="ts">
+  import type { Snippet } from 'svelte';
   import NavBar from './NavBar.svelte';
   
   interface Props {
@@ -8,6 +9,7 @@
     searchPlaceholder?: string;
     searchValue?: string;
     onSearch?: (value: string) => void;
+    children?: Snippet;
   }
   
   let { 
@@ -16,7 +18,8 @@
     showSearch = false,
     searchPlaceholder = '搜索影片',
     searchValue = '',
-    onSearch
+    onSearch,
+    children
   }: Props = $props();
   
   let keyword = $state(searchValue);
@@ -54,7 +57,7 @@
   </header>
   
   <main class="p-2 pb-16">
-    <slot />
+    {@render children()}
   </main>
   
   <NavBar />

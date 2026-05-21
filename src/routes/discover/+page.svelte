@@ -55,6 +55,8 @@
   <meta property="og:title" content={seo.title} />
   <meta property="og:description" content={seo.description} />
   <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://evideos.pages.dev/discover" />
+  <meta property="og:image" content="https://evideos.pages.dev/icon.svg" />
 </svelte:head>
 
 <div class="min-h-screen bg-gray-50">

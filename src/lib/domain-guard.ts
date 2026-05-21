@@ -24,7 +24,7 @@ export async function checkDomainAccessible(domain: string): Promise<boolean> {
     const res = await fetch(`https://${domain}/api/health`, {
       method: 'HEAD',
       signal: controller.signal,
-      mode: 'no-cors'
+      mode: 'cors'
     });
     
     clearTimeout(timeoutId);
