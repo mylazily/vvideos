@@ -27,6 +27,10 @@
     createPlaybackMonitor,
     createAutoSwitchManager,
     preloadNextVideo,
+    getOptimizedHLSConfig,
+    analyzeAdsFromSources,
+    recordHourlySpeed,
+    getCurrentHourWeight,
     type PlaySource,
     type AdSegment,
     type SourceHealth
@@ -260,12 +264,21 @@
     }
   }
 
-  // 检测M3U8中的广告段
+  // 检测M3U8中的广告段（增强版：多源对比）
   async function detectAdsInM3U8(url: string) {
     try {
-      const ads = await parseM3U8ForAds(url);
-      if (ads.length > 0) {
-        detectedAdSegments = ads;
+      // 单源解析
+      const singleAds = await parseM3U8ForAds(url);
+      
+      // 多源对比分析
+      if (playSources.length >= 2) {
+        const multiAds = await analyzeAdsFromSources(playSources);
+        // 合并结果，多源检测优先级更高
+        detectedAdSegments = [...multiAds, ...singleAds.filter(s => 
+          !multiAds.some(m => Math.abs(m.start - s.start) < 5)
+        )];
+      } else {
+        detectedAdSegments = singleAds;
       }
     } catch {
       // 静默失败
@@ -297,24 +310,9 @@
       const { default: Hls } = await import('hls.js');
 
       if (Hls.isSupported()) {
-        hlsPlayer = new Hls({
-          enableWorker: true,
-          lowLatencyMode: false,
-          maxBufferLength: 30,
-          maxMaxBufferLength: 90,
-          maxBufferSize: 50 * 1000 * 1000,
-          maxBufferHole: 0.5,
-          startLevel: -1,
-          abrEwmaDefaultEstimate: 1000000,
-          abrBandWidthFactor: 0.7,
-          abrBandWidthUpFactor: 0.5,
-          fragLoadingTimeOut: 30000,
-          manifestLoadingTimeOut: 15000,
-          levelLoadingTimeOut: 15000,
-          fragLoadingMaxRetry: 6,
-          manifestLoadingMaxRetry: 3,
-          levelLoadingMaxRetry: 3,
-        });
+        // 使用优化的HLS配置（根据时间段自动调整）
+        const hlsConfig = getOptimizedHLSConfig();
+        hlsPlayer = new Hls(hlsConfig);
 
         hlsPlayer.on(Hls.Events.FRAG_LOADED, (_: any, data: any) => {
           // 更新带宽估算
@@ -322,6 +320,10 @@
             const duration = data.stats.tload - data.stats.trequest;
             if (duration > 0 && data.frag._byteRange) {
               bandwidth = Math.round((data.frag._byteRange / duration) * 8 / 1000);
+              // 记录当前时间段的速度
+              if (currentSource) {
+                recordHourlySpeed(currentSource.id, bandwidth * 1000);
+              }
             }
           }
         });
