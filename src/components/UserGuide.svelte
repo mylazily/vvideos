@@ -10,7 +10,8 @@
 
   let { blocked = false }: Props = $props();
 
-  let visible = $state(false);
+  // 当 blocked=true 时，直接显示引导（不等待onMount）
+  let visible = $state(blocked);
   let browserInfo = $state<BrowserInfo | null>(null);
   let pwaInfo = $state<{ isInstallable: boolean; isInstalled: boolean; platform: string } | null>(null);
   let backupLinks = $state<{ domain: string; name: string; url: string }[]>([]);
@@ -26,9 +27,8 @@
     backupLinks = getBackupLinks();
     installGuide = getPWAInstallGuide();
 
-    // 国产APP内打开 → 直接全屏引导（layout 已隐藏页面内容）
+    // 国产APP内打开 → 全屏引导（layout已隐藏页面内容）
     if (blocked) {
-      visible = true;
       // 优先显示 PWA 安装引导
       guideStep = (pwaInfo && !pwaInfo.isInstalled) ? 'pwa' : 'browser';
       return;
@@ -96,17 +96,23 @@
     <div class="fixed inset-0 bg-gradient-to-b from-pink-500 to-rose-600 z-[9999] flex flex-col">
       <!-- 顶部区域 -->
       <div class="flex-1 flex flex-col items-center justify-center px-6 text-center text-white">
-        {#if guideStep === 'pwa' && pwaInfo && !pwaInfo.isInstalled}
+        {#if guideStep === 'pwa'}
           <!-- PWA 安装引导 -->
           <div class="text-6xl mb-4">📲</div>
           <h2 class="text-2xl font-bold mb-2">安装到手机桌面</h2>
           <p class="text-white/80 text-sm mb-6">离线可用，永不失联，体验更佳</p>
 
-          {#if pwaInfo.platform === 'ios'}
+          {#if !pwaInfo}
+            <!-- 加载中 -->
+            <div class="w-full max-w-sm py-8">
+              <div class="w-8 h-8 border-2 border-white/30 border-t-white rounded-full animate-spin mx-auto"></div>
+              <p class="text-white/70 text-sm mt-4">检测浏览器环境...</p>
+            </div>
+          {:else if pwaInfo.platform === 'ios'}
             <div class="w-full max-w-sm bg-white/15 backdrop-blur-sm rounded-2xl p-5 mb-6">
               <p class="text-sm font-medium mb-3">iOS 安装步骤：</p>
               <div class="text-sm space-y-2 text-white/90 text-left">
-                {#each installGuide?.steps || [] as step, i}
+                {#each installGuide?.steps || ['点击底部分享按钮', '选择"添加到主屏幕"', '点击"添加"完成安装'] as step, i}
                   <div class="flex gap-2">
                     <span class="flex-shrink-0 w-5 h-5 bg-white/20 rounded-full flex items-center justify-center text-xs">{i + 1}</span>
                     <span>{step}</span>
@@ -126,7 +132,7 @@
             <div class="w-full max-w-sm bg-white/15 backdrop-blur-sm rounded-2xl p-5 mb-6">
               <p class="text-sm font-medium mb-3">安装步骤：</p>
               <div class="text-sm space-y-2 text-white/90 text-left">
-                {#each installGuide?.steps || [] as step, i}
+                {#each installGuide?.steps || ['点击右上角菜单', '选择"安装应用"或"添加到主屏幕"', '完成安装'] as step, i}
                   <div class="flex gap-2">
                     <span class="flex-shrink-0 w-5 h-5 bg-white/20 rounded-full flex items-center justify-center text-xs">{i + 1}</span>
                     <span>{step}</span>
@@ -139,7 +145,7 @@
           <!-- 切换到浏览器推荐 -->
           <button
             onclick={() => guideStep = 'browser'}
-            class="text-white/70 text-sm underline underline-offset-2"
+            class="text-white/70 text-sm underline underline-offset-2 mt-4"
           >
             无法安装？查看推荐浏览器 →
           </button>
@@ -178,14 +184,12 @@
           </div>
 
           <!-- 切换到 PWA 安装 -->
-          {#if pwaInfo && !pwaInfo.isInstalled}
-            <button
-              onclick={() => guideStep = 'pwa'}
-              class="text-white/70 text-sm underline underline-offset-2"
-            >
-              ← 返回安装到桌面
-            </button>
-          {/if}
+          <button
+            onclick={() => guideStep = 'pwa'}
+            class="text-white/70 text-sm underline underline-offset-2"
+          >
+            ← 返回安装到桌面
+          </button>
         {/if}
       </div>
 
