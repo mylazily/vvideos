@@ -344,7 +344,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 		if (path === '/api/search') {
 			const q = url.searchParams.get('q') || '';
 			const page = parseInt(url.searchParams.get('page') || '1');
-			const limit = Math.min(parseInt(url.searchParams.get('limit') || '20'), 100);
+			const limit = Math.min(Math.max(1, parseInt(url.searchParams.get('limit') || '20') || 20), 100);
 			if (!q.trim()) return json({ success: true, data: { videos: [], pagination: { page: 1, limit, total: 0, totalPages: 0 } } });
 
 			const cacheKey = `srch:${CACHE_VERSION}:${q}:p${page}:l${limit}`;
@@ -398,9 +398,23 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 
 		// ======== 管理后台认证 ========
 		if (path === '/api/aadmin/auth' && request.method === 'POST') {
+			const clientIP = request.headers.get('CF-Connecting-IP') || 'unknown';
+			const rateLimitKey = `admin_login_rate:${clientIP}`;
+			const rateLimitData = await env.CACHE.get(rateLimitKey);
+			if (rateLimitData) {
+				const attempts = parseInt(rateLimitData);
+				if (attempts >= 5) {
+					return json({ success: false, message: '尝试次数过多，请稍后再试' }, 429);
+				}
+			}
 			const { password } = await request.json<{ password?: string }>();
 			if (!password) return json({ success: false, message: '缺少密码' }, 400);
-			if (password !== env.ADMIN_PASSWORD) return json({ success: false, message: '密码错误' }, 401);
+			if (password !== env.ADMIN_PASSWORD) {
+				const current = rateLimitData ? parseInt(rateLimitData) : 0;
+				await env.CACHE.put(rateLimitKey, String(current + 1), { expirationTtl: 60 });
+				return json({ success: false, message: '密码错误' }, 401);
+			}
+			await env.CACHE.delete(rateLimitKey);
 			const bytes = new Uint8Array(32);
 			crypto.getRandomValues(bytes);
 			const token = Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
@@ -449,8 +463,18 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 			if (!source_id) return json({ success: false, message: '缺少source_id' }, 400);
 			const source = await env.DB_0.prepare('SELECT * FROM sources WHERE id = ?').bind(source_id).first<{ id: number; name: string; api_url: string }>();
 			if (!source) return json({ success: false, message: '采集源不存在' }, 404);
-			await env.DB_0.prepare('INSERT INTO collect_logs (source_id, action, details, new_count, created_at) VALUES (?, ?, ?, ?, ?)').bind(source_id, 'collect_start', '开始采集: ' + source.name, 0, Math.floor(Date.now() / 1000)).run();
-			return json({ success: true, message: '采集任务已启动' });
+			const collectUrl = new URL('/api/collect', url.origin);
+			const collectRes = await fetch(collectUrl.toString(), {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json', 'Authorization': request.headers.get('Authorization') || '' },
+				body: JSON.stringify({ source_url: source.api_url, pages: 1, source_id: source_id }),
+				signal: AbortSignal.timeout(120000)
+			});
+			const collectData = await collectRes.json();
+			const newCount = collectData.data?.new || 0;
+			await env.DB_0.prepare('INSERT INTO collect_logs (source_id, action, details, new_count, created_at) VALUES (?, ?, ?, ?, ?)').bind(source_id, 'collect_complete', '采集完成: ' + source.name + '，新增 ' + newCount + ' 条', newCount, Math.floor(Date.now() / 1000)).run();
+			await env.DB_0.prepare('UPDATE sources SET last_collect_at = ?, total_videos = total_videos + ? WHERE id = ?').bind(Math.floor(Date.now() / 1000), newCount, source_id).run();
+			return json({ success: true, message: '采集完成', data: { new: newCount } });
 		}
 
 		if (path === '/api/aadmin/stats') {
@@ -467,3 +491,4 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 		return json({ success: false, message: err.message || '服务器错误' }, 500);
 	}
 };
+
