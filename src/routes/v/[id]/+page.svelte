@@ -28,8 +28,8 @@
   let loading = $state(true);
   let errorMsg = $state('');
   let playLines = $state<PlayLine[]>([]);
-  let currentLineIndex = 0;
-  let currentEpisodeIndex = 0;
+  let currentLineIndex = $state(0);
+  let currentEpisodeIndex = $state(0);
   let hlsInstance: Hls | null = null;
   let videoEl: HTMLVideoElement | null = null;
   let showPlayButton = $state(false);
