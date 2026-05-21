@@ -100,23 +100,36 @@
   }
 
   function parsePlayUrl(playUrl: string | undefined): PlayLine[] {
+    console.log('parsePlayUrl input:', playUrl?.substring(0, 100));
     if (!playUrl) return [];
     const lines: PlayLine[] = [];
     const lineGroups = playUrl.split('$$$');
+    console.log('lineGroups count:', lineGroups.length);
+    
     lineGroups.forEach((group, idx) => {
       const episodes: { name: string; url: string }[] = [];
       const items = group.split('#');
-      items.forEach((item) => {
-        const dollarIdx = item.indexOf('$');
+      console.log('Group', idx, 'items count:', items.length);
+      
+      items.forEach((item, itemIdx) => {
+        const trimmed = item.trim();
+        if (!trimmed) return;
+        
+        const dollarIdx = trimmed.indexOf('$');
         if (dollarIdx > 0) {
           episodes.push({
-            name: item.substring(0, dollarIdx),
-            url: item.substring(dollarIdx + 1)
+            name: trimmed.substring(0, dollarIdx),
+            url: trimmed.substring(dollarIdx + 1)
           });
-        } else if (item.includes('http')) {
-          episodes.push({ name: '第' + (episodes.length + 1) + '集', url: item });
+        } else if (trimmed.startsWith('http')) {
+          // 直接是 URL，没有 $ 分隔
+          episodes.push({ 
+            name: '第' + (itemIdx + 1) + '集', 
+            url: trimmed 
+          });
         }
       });
+      
       if (episodes.length > 0) {
         lines.push({
           name: lineGroups.length > 1 ? '线路' + (idx + 1) : '默认线路',
@@ -124,6 +137,8 @@
         });
       }
     });
+    
+    console.log('parsePlayUrl result:', lines.length, 'lines');
     return lines;
   }
 
