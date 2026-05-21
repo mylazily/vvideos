@@ -23,57 +23,60 @@
   // ============ 类型定义 ============
   interface PlaySource {
     name: string;
-    episodes: Episode[];
+    url: string;
+    duration: number;
     priority: number;
     latency?: number;
   }
 
-  interface Episode {
-    name: string;
-    url: string;
+  interface AdSegment {
+    start: number;
+    end: number;
+    type: 'pre' | 'mid' | 'post';
   }
 
-  interface LineStatus {
-    index: number;
-    available: boolean;
-    latency: number;
+  interface VideoDetail extends Video {
+    play_sources: Array<{ url: string; duration: number }>;
+    ad_segments: AdSegment[];
   }
 
   // ============ 状态管理 ============
-  let video = $state<Video | null>(null);
+  let video = $state<VideoDetail | null>(null);
   let loading = $state(true);
   let errorMsg = $state('');
   let playSources = $state<PlaySource[]>([]);
   let currentSourceIndex = $state(0);
-  let currentEpisodeIndex = $state(0);
   let hlsPlayer: any = null;
   let showPlayButton = $state(false);
   let isPlaying = $state(false);
   let isLoadingVideo = false;
   let relatedVideos = $state<Video[]>([]);
-  let lineStatuses = $state<LineStatus[]>([]);
+  let lineStatuses = $state<Array<{ index: number; available: boolean; latency: number }>>([]);
   let isCheckingLines = $state(false);
   let bufferHealth = $state(100);
+  let skippedAds = $state<AdSegment[]>([]);
+  let isSkippingAd = $state(false);
 
   // ============ 派生状态 ============
   let videoId = $derived($page.params.id);
-  let currentEpisode = $derived(playSources[currentSourceIndex]?.episodes[currentEpisodeIndex]);
-  
+  let currentSource = $derived(playSources[currentSourceIndex]);
+  let adSegments = $derived(video?.ad_segments || []);
+
   // ============ SEO 数据 ============
   let autoDescription = $derived(video ? generateAutoDescription(video) : '');
-  let seoTitle = $derived(video ? generatePageTitle({ 
-    title: video.title, 
-    category: video.category, 
-    vod_year: video.vod_year, 
-    vod_area: video.vod_area 
+  let seoTitle = $derived(video ? generatePageTitle({
+    title: video.title,
+    category: video.category,
+    vod_year: video.vod_year,
+    vod_area: video.vod_area
   }) : '');
-  let seoDesc = $derived(video ? generateSEODescription({ 
-    title: video.title, 
-    category: video.category, 
-    vod_year: video.vod_year, 
-    vod_area: video.vod_area, 
-    vod_actor: video.vod_actor, 
-    vod_director: video.vod_director 
+  let seoDesc = $derived(video ? generateSEODescription({
+    title: video.title,
+    category: video.category,
+    vod_year: video.vod_year,
+    vod_area: video.vod_area,
+    vod_actor: video.vod_actor,
+    vod_director: video.vod_director
   }) : '');
   let breadcrumbs = $derived(video ? [
     { name: '首页', url: SITE_URL },
@@ -89,10 +92,11 @@
   // ============ 生命周期 ============
   onMount(() => {
     loadVideo();
+    return () => destroyPlayer();
   });
 
   // ============ 核心函数 ============
-  function generateAutoDescription(video: Video): string {
+  function generateAutoDescription(video: VideoDetail): string {
     const parts: string[] = [];
     parts.push(`《${video.title}》`);
     if (video.category) parts.push(`是一部${video.category}作品`);
@@ -114,16 +118,16 @@
     errorMsg = '';
     playSources = [];
     currentSourceIndex = 0;
-    currentEpisodeIndex = 0;
     isPlaying = false;
     showPlayButton = false;
+    skippedAds = [];
     destroyPlayer();
 
     try {
-      const res = await fetch(`/api/video/${videoId}`, { 
-        signal: AbortSignal.timeout(10000) 
+      const res = await fetch(`/api/video/${videoId}`, {
+        signal: AbortSignal.timeout(10000)
       });
-      
+
       if (!res.ok) {
         errorMsg = `请求失败 (${res.status})`;
         return;
@@ -136,7 +140,14 @@
       }
 
       video = data.data;
-      playSources = parsePlayUrl(video.play_url);
+
+      // 转换播放源
+      playSources = (video.play_sources || []).map((s, i) => ({
+        name: `线路${i + 1}`,
+        url: s.url,
+        duration: s.duration || 0,
+        priority: 5 - i
+      }));
 
       // 添加到历史记录
       addToHistory({
@@ -163,45 +174,10 @@
     }
   }
 
-  function parsePlayUrl(playUrl: string | undefined): PlaySource[] {
-    if (!playUrl) return [];
-    const sources: PlaySource[] = [];
-    const sourceGroups = playUrl.split('$$$');
-    
-    for (let i = 0; i < sourceGroups.length; i++) {
-      const episodes: Episode[] = [];
-      const items = sourceGroups[i].split('#');
-      
-      for (let j = 0; j < items.length; j++) {
-        const item = items[j].trim();
-        if (!item) continue;
-        
-        const dollarIdx = item.indexOf('$');
-        if (dollarIdx > 0) {
-          episodes.push({ 
-            name: item.substring(0, dollarIdx), 
-            url: item.substring(dollarIdx + 1) 
-          });
-        } else if (item.startsWith('http')) {
-          episodes.push({ name: `第${j + 1}集`, url: item });
-        }
-      }
-      
-      if (episodes.length > 0) {
-        sources.push({ 
-          name: sourceGroups.length > 1 ? `线路${i + 1}` : '默认线路', 
-          episodes,
-          priority: sourceGroups.length - i // 默认优先级
-        });
-      }
-    }
-    return sources;
-  }
-
   // 智能选择最佳线路
   async function selectBestSource() {
     if (playSources.length === 1) {
-      playEpisode(0, 0);
+      playSource(0);
       return;
     }
 
@@ -209,27 +185,20 @@
     const checks = playSources.map(async (source, index) => {
       const startTime = performance.now();
       try {
-        // 检测第一集可用性
-        const testUrl = source.episodes[0]?.url;
-        if (!testUrl) return { index, available: false, latency: Infinity };
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 3000);
 
-        // 对于m3u8，尝试获取playlist
-        if (testUrl.includes('.m3u8')) {
-          const controller = new AbortController();
-          const timeout = setTimeout(() => controller.abort(), 3000);
-          
-          const res = await fetch(testUrl, { 
-            method: 'HEAD',
-            signal: controller.signal,
-            mode: 'no-cors'
-          });
-          clearTimeout(timeout);
-        }
-        
-        return { 
-          index, 
-          available: true, 
-          latency: performance.now() - startTime 
+        await fetch(source.url, {
+          method: 'HEAD',
+          signal: controller.signal,
+          mode: 'no-cors'
+        });
+        clearTimeout(timeout);
+
+        return {
+          index,
+          available: true,
+          latency: performance.now() - startTime
         };
       } catch {
         return { index, available: false, latency: Infinity };
@@ -246,61 +215,78 @@
 
     if (bestLine) {
       currentSourceIndex = bestLine.index;
-      playEpisode(bestLine.index, 0);
+      playSource(bestLine.index);
     } else {
-      // 都不可用，尝试第一个
-      playEpisode(0, 0);
+      playSource(0);
     }
   }
 
-  async function playEpisode(sourceIdx: number, episodeIdx: number) {
-    currentSourceIndex = sourceIdx;
-    currentEpisodeIndex = episodeIdx;
-    
-    const episode = playSources[sourceIdx]?.episodes[episodeIdx];
-    if (!episode) return;
+  async function playSource(index: number) {
+    currentSourceIndex = index;
+    const source = playSources[index];
+    if (!source) return;
 
     const videoEl = document.querySelector('video') as HTMLVideoElement | null;
     if (!videoEl) {
-      requestAnimationFrame(() => playEpisode(sourceIdx, episodeIdx));
+      requestAnimationFrame(() => playSource(index));
       return;
     }
 
     destroyPlayer();
-    const url = episode.url;
 
-    // 预加载下一集
-    preloadNextEpisode();
+    // 设置广告跳过监听
+    setupAdSkipper(videoEl);
 
-    if (url.includes('.m3u8')) {
-      await playHls(videoEl, url, sourceIdx);
+    if (source.url.includes('.m3u8')) {
+      await playHls(videoEl, source.url);
     } else {
-      playMp4(videoEl, url);
+      playMp4(videoEl, source.url);
     }
   }
 
-  async function playHls(videoEl: HTMLVideoElement, url: string, sourceIdx: number) {
+  // 广告跳过逻辑
+  function setupAdSkipper(videoEl: HTMLVideoElement) {
+    if (!adSegments.length) return;
+
+    const checkAndSkip = () => {
+      if (isSkippingAd) return;
+
+      const currentTime = videoEl.currentTime;
+      for (const seg of adSegments) {
+        if (currentTime >= seg.start && currentTime < seg.end) {
+          // 在广告段内，跳到广告结束
+          isSkippingAd = true;
+          videoEl.currentTime = seg.end;
+          skippedAds = [...skippedAds, seg];
+          setTimeout(() => { isSkippingAd = false; }, 500);
+          break;
+        }
+      }
+    };
+
+    videoEl.addEventListener('timeupdate', checkAndSkip);
+  }
+
+  async function playHls(videoEl: HTMLVideoElement, url: string) {
     try {
       const { default: Hls } = await import('hls.js');
-      
+
       if (Hls.isSupported()) {
-        // 优化的HLS配置
         hlsPlayer = new Hls({
           enableWorker: true,
           lowLatencyMode: false,
-          maxBufferLength: 30,        // 增加到30秒缓冲
-          maxMaxBufferLength: 60,     // 最大60秒
-          maxBufferSize: 30 * 1000 * 1000, // 30MB缓冲
-          startLevel: -1,             // 自动选择清晰度
+          maxBufferLength: 30,
+          maxMaxBufferLength: 60,
+          maxBufferSize: 30 * 1000 * 1000,
+          startLevel: -1,
           abrEwmaDefaultEstimate: 500000,
           abrBandWidthFactor: 0.95,
           abrBandWidthUpFactor: 0.7,
-          fragLoadingTimeOut: 20000,  // 片段加载超时20秒
+          fragLoadingTimeOut: 20000,
           manifestLoadingTimeOut: 10000,
           levelLoadingTimeOut: 10000,
         });
 
-        // 缓冲监控
         hlsPlayer.on(Hls.Events.BUFFER_APPENDED, () => {
           updateBufferHealth(videoEl);
         });
@@ -317,13 +303,12 @@
         });
 
         hlsPlayer.on(Hls.Events.ERROR, (_event: any, data: any) => {
-          handleHlsError(data, sourceIdx);
+          handleHlsError(data);
         });
 
         hlsPlayer.attachMedia(videoEl);
         hlsPlayer.loadSource(url);
       } else if (videoEl.canPlayType('application/vnd.apple.mpegurl')) {
-        // Safari原生HLS
         videoEl.src = url;
         videoEl.play().catch(() => { showPlayButton = true; });
       } else {
@@ -339,29 +324,26 @@
     videoEl.play().catch(() => { showPlayButton = true; });
   }
 
-  function handleHlsError(data: any, currentIdx: number) {
+  function handleHlsError(data: any) {
     if (!data.fatal) return;
 
     switch (data.type) {
       case Hls.ErrorTypes.NETWORK_ERROR:
-        // 网络错误，尝试恢复
         hlsPlayer?.startLoad();
         break;
       case Hls.ErrorTypes.MEDIA_ERROR:
-        // 媒体错误，尝试恢复
         hlsPlayer?.recoverMediaError();
         break;
       default:
-        // 致命错误，切换线路
-        switchToNextSource(currentIdx);
+        switchToNextSource();
         break;
     }
   }
 
-  function switchToNextSource(currentIdx: number) {
-    const nextIdx = currentIdx + 1;
+  function switchToNextSource() {
+    const nextIdx = currentSourceIndex + 1;
     if (nextIdx < playSources.length) {
-      playEpisode(nextIdx, currentEpisodeIndex);
+      playSource(nextIdx);
     } else {
       errorMsg = '所有线路均不可用，请稍后重试';
     }
@@ -369,35 +351,18 @@
 
   function updateBufferHealth(videoEl: HTMLVideoElement) {
     if (!videoEl.buffered.length) return;
-    
+
     const bufferedEnd = videoEl.buffered.end(videoEl.buffered.length - 1);
     const currentTime = videoEl.currentTime;
     const bufferedAhead = bufferedEnd - currentTime;
-    
+
     bufferHealth = Math.min(100, (bufferedAhead / 30) * 100);
-  }
-
-  function preloadNextEpisode() {
-    const nextEp = playSources[currentSourceIndex]?.episodes[currentEpisodeIndex + 1];
-    if (!nextEp) return;
-
-    const link = document.createElement('link');
-    link.rel = 'prefetch';
-    link.href = nextEp.url;
-    document.head.appendChild(link);
   }
 
   function destroyPlayer() {
     if (hlsPlayer) {
       hlsPlayer.destroy();
       hlsPlayer = null;
-    }
-  }
-
-  function onVideoEnded() {
-    const source = playSources[currentSourceIndex];
-    if (source && currentEpisodeIndex < source.episodes.length - 1) {
-      playEpisode(currentSourceIndex, currentEpisodeIndex + 1);
     }
   }
 
@@ -408,8 +373,8 @@
 
   async function loadRelatedVideos(id: string) {
     try {
-      const res = await fetch(`/api/video/${id}/related`, { 
-        signal: AbortSignal.timeout(5000) 
+      const res = await fetch(`/api/video/${id}/related`, {
+        signal: AbortSignal.timeout(5000)
       });
       if (res.ok) {
         const data = await res.json();
@@ -419,20 +384,27 @@
       // 静默失败
     }
   }
+
+  function formatDuration(seconds: number): string {
+    if (seconds <= 0) return '';
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  }
 </script>
 
 <svelte:head>
   {#if video}
     <title>{seoTitle}</title>
     <meta name="description" content={seoDesc} />
-    <meta name="keywords" content={generateSEOKeywords({ 
-      title: video.title, 
-      category: video.category, 
-      vod_year: video.vod_year, 
-      vod_area: video.vod_area, 
-      vod_actor: video.vod_actor, 
-      vod_director: video.vod_director, 
-      vod_lang: video.vod_lang 
+    <meta name="keywords" content={generateSEOKeywords({
+      title: video.title,
+      category: video.category,
+      vod_year: video.vod_year,
+      vod_area: video.vod_area,
+      vod_actor: video.vod_actor,
+      vod_director: video.vod_director,
+      vod_lang: video.vod_lang
     }).join(',')} />
     <link rel="canonical" href={canonicalUrl(`/v/${video.vod_id}`)} />
 
@@ -440,10 +412,10 @@
     <meta property="og:title" content={video.title} />
     <meta property="og:description" content={seoDesc} />
     <meta property="og:image" content={video.cover} />
-    <meta property="og:image:alt" content={generateImageAlt({ 
-      title: video.title, 
-      category: video.category, 
-      vod_year: video.vod_year 
+    <meta property="og:image:alt" content={generateImageAlt({
+      title: video.title,
+      category: video.category,
+      vod_year: video.vod_year
     })} />
     <meta property="og:type" content="video.movie" />
     <meta property="og:url" content={canonicalUrl(`/v/${video.vod_id}`)} />
@@ -458,24 +430,24 @@
     <meta name="twitter:image" content={video.cover} />
 
     <!-- 结构化数据 -->
-    {@html `<script type="application/ld+json">${JSON.stringify(generateVideoSchema({ 
-      title: video.title, 
-      category: video.category, 
-      vod_year: video.vod_year, 
-      vod_area: video.vod_area, 
-      vod_actor: video.vod_actor, 
-      vod_director: video.vod_director, 
-      vod_lang: video.vod_lang, 
-      cover: video.cover, 
-      play_url: video.play_url, 
-      vod_id: video.vod_id 
+    {@html `<script type="application/ld+json">${JSON.stringify(generateVideoSchema({
+      title: video.title,
+      category: video.category,
+      vod_year: video.vod_year,
+      vod_area: video.vod_area,
+      vod_actor: video.vod_actor,
+      vod_director: video.vod_director,
+      vod_lang: video.vod_lang,
+      cover: video.cover,
+      play_url: playSources[0]?.url || '',
+      vod_id: video.vod_id
     }))}</script>`}
     {@html `<script type="application/ld+json">${JSON.stringify(generateBreadcrumbSchema(breadcrumbs))}</script>`}
     {@html `<script type="application/ld+json">${JSON.stringify(generateOrganizationSchema())}</script>`}
-    {@html `<script type="application/ld+json">${JSON.stringify(generateWebPageSchema({ 
-      title: seoTitle, 
-      description: seoDesc, 
-      url: canonicalUrl(`/v/${video.vod_id}`) 
+    {@html `<script type="application/ld+json">${JSON.stringify(generateWebPageSchema({
+      title: seoTitle,
+      description: seoDesc,
+      url: canonicalUrl(`/v/${video.vod_id}`)
     }))}</script>`}
     {@html `<script type="application/ld+json">${JSON.stringify(generateFAQSchema(faqs))}</script>`}
   {:else}
@@ -527,22 +499,21 @@
 
       <!-- 播放器 -->
       <div class="aspect-video bg-black relative">
-        <video 
-          controls 
-          playsinline 
-          preload="auto" 
-          class="w-full h-full" 
-          poster={video.cover} 
-          onended={onVideoEnded}
+        <video
+          controls
+          playsinline
+          preload="auto"
+          class="w-full h-full"
+          poster={video.cover}
         >
           您的浏览器不支持视频播放
         </video>
-        
+
         {#if showPlayButton && !isPlaying}
-          <div 
+          <div
             class="absolute inset-0 flex items-center justify-center bg-black/50 cursor-pointer"
-            role="button" 
-            tabindex="0" 
+            role="button"
+            tabindex="0"
             aria-label="点击播放"
             onclick={() => {
               const el = document.querySelector('video') as HTMLVideoElement;
@@ -557,6 +528,13 @@
           </div>
         {/if}
 
+        <!-- 广告跳过提示 -->
+        {#if skippedAds.length > 0 && !isSkippingAd}
+          <div class="absolute top-4 right-4 bg-green-500/90 text-white text-xs px-3 py-1 rounded-full">
+            已跳过 {skippedAds.length} 段广告
+          </div>
+        {/if}
+
         <!-- 缓冲状态指示器 -->
         {#if bufferHealth < 30 && isPlaying}
           <div class="absolute bottom-16 left-4 right-4 bg-black/70 text-white text-xs px-3 py-1 rounded">
@@ -566,10 +544,13 @@
       </div>
 
       <!-- 播放信息 -->
-      {#if currentEpisode}
+      {#if currentSource}
         <div class="px-3 py-2 bg-white border-b flex items-center justify-between">
           <span class="text-sm text-gray-500">
-            {playSources[currentSourceIndex]?.name} - {currentEpisode.name}
+            {currentSource.name}
+            {#if currentSource.duration > 0}
+              <span class="text-xs text-gray-400 ml-1">({formatDuration(currentSource.duration)})</span>
+            {/if}
           </span>
           {#if isCheckingLines}
             <span class="text-xs text-pink-500">检测线路中...</span>
@@ -600,23 +581,6 @@
         {/if}
       </article>
 
-      <!-- 选集 -->
-      {#if playSources[currentSourceIndex]?.episodes.length > 0}
-        <section class="mt-2 bg-white p-3">
-          <h3 class="font-medium mb-2">选集 ({playSources[currentSourceIndex].episodes.length})</h3>
-          <div class="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
-            {#each playSources[currentSourceIndex].episodes as ep, idx}
-              <button 
-                onclick={() => playEpisode(currentSourceIndex, idx)}
-                class="flex-shrink-0 px-3 py-1.5 text-sm rounded transition-colors {currentEpisodeIndex === idx ? 'bg-pink-500 text-white' : 'bg-gray-100 active:bg-gray-200'}"
-              >
-                {ep.name}
-              </button>
-            {/each}
-          </div>
-        </section>
-      {/if}
-
       <!-- 线路选择 -->
       {#if playSources.length > 1}
         <section class="mt-2 bg-white p-3">
@@ -624,17 +588,25 @@
           <div class="flex gap-2 flex-wrap">
             {#each playSources as source, idx}
               {@const status = lineStatuses.find(s => s.index === idx)}
-              <button 
-                onclick={() => playEpisode(idx, 0)}
+              <button
+                onclick={() => playSource(idx)}
                 class="px-3 py-1.5 text-sm rounded transition-colors flex items-center gap-1 {currentSourceIndex === idx ? 'bg-pink-500 text-white' : 'bg-gray-100 active:bg-gray-200'}"
               >
                 {source.name}
+                {#if source.duration > 0}
+                  <span class="text-xs opacity-70">{formatDuration(source.duration)}</span>
+                {/if}
                 {#if status}
                   <span class="w-2 h-2 rounded-full {status.available ? 'bg-green-400' : 'bg-red-400'}"></span>
                 {/if}
               </button>
             {/each}
           </div>
+          {#if adSegments.length > 0}
+            <p class="text-xs text-gray-500 mt-2">
+              检测到 {adSegments.length} 段广告，将自动跳过
+            </p>
+          {/if}
         </section>
       {/if}
 

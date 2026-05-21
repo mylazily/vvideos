@@ -10,19 +10,17 @@ export interface Env {
 	DB_8: D1Database;
 	DB_9: D1Database;
 	CACHE: KVNamespace;
-	ADMIN_PASSWORD: string; // CF 环境变量设置
+	ADMIN_PASSWORD: string;
 }
 
 interface VideoRow {
 	id: number;
 	vod_id: string;
+	fingerprint_id: number;
 	title: string;
+	title_normalized: string;
 	cover: string;
 	category: string;
-	duration: string;
-	description: string | null;
-	play_url: string | null;
-	status: number;
 	views: number;
 	created_at: number;
 	updated_at: number;
@@ -31,15 +29,24 @@ interface VideoRow {
 	vod_director: string;
 	vod_actor: string;
 	vod_remarks: string;
+	vod_lang: string;
+	// 多源播放
+	play_url_1: string;
+	play_url_2: string;
+	play_url_3: string;
+	play_url_4: string;
+	play_url_5: string;
+	duration_1: number;
+	duration_2: number;
+	duration_3: number;
+	duration_4: number;
+	duration_5: number;
+	ad_segments: string;
 }
 
-// ======== 缓存策略：Cache API 为主（边缘缓存，不计入 KV 额度），KV 为辅 ========
-// Cache API 限制：每个请求只能访问自己的缓存，但 10万日活下完全够用
-// KV 限制：1000 写入/天，仅用于持久化缓存和跨请求共享
+const CACHE_VERSION = 'v3';
 
-const CACHE_VERSION = 'v2';
-
-function json(data: any, status = 200, extraHeaders: Record<string, string> = {}): Response {
+function json(data: any, status = 200, extraHeaders: Record<string, string> = {}) {
 	return new Response(JSON.stringify(data), {
 		status,
 		headers: {
@@ -52,7 +59,6 @@ function json(data: any, status = 200, extraHeaders: Record<string, string> = {}
 	});
 }
 
-// 强缓存头 - 让 CF CDN 边缘节点缓存，减少 Workers 请求
 function strongCacheHeaders(maxAge: number) {
 	return { 
 		'Cache-Control': `public, max-age=${maxAge}`,
@@ -64,15 +70,13 @@ function getShards(env: Env): D1Database[] {
 	return [env.DB_0, env.DB_1, env.DB_2, env.DB_3, env.DB_4, env.DB_5, env.DB_6, env.DB_7, env.DB_8, env.DB_9];
 }
 
-const VIDEO_COLS = 'id, vod_id, title, cover, category, duration, views, created_at';
-const VIDEO_DETAIL_COLS = 'id, vod_id, title, cover, category, duration, description, play_url, status, views, created_at, updated_at, vod_year, vod_area, vod_director, vod_actor, vod_remarks';
+// 视频列表列（不包含播放URL）
+const VIDEO_COLS = 'id, vod_id, title, cover, category, views, created_at, vod_year, vod_area, vod_actor';
+// 视频详情列（包含多源播放URL）
+const VIDEO_DETAIL_COLS = 'id, vod_id, fingerprint_id, title, title_normalized, cover, category, views, created_at, updated_at, vod_year, vod_area, vod_director, vod_actor, vod_remarks, vod_lang, play_url_1, play_url_2, play_url_3, play_url_4, play_url_5, duration_1, duration_2, duration_3, duration_4, duration_5, ad_segments';
 
-// ======== 双层缓存系统 ========
-// L1: Cache API (边缘缓存，快，不计入 KV 额度)
-// L2: KV (持久化，慢，计入额度)
-
+// 双层缓存系统
 async function getCache(request: Request, env: Env, key: string): Promise<any | null> {
-	// 1. 先查 Cache API (L1)
 	try {
 		const cache = await caches.open('api-cache-v1');
 		const cached = await cache.match(request);
@@ -80,14 +84,12 @@ async function getCache(request: Request, env: Env, key: string): Promise<any | 
 			const data = await cached.json();
 			return data;
 		}
-	} catch { /* Cache API 失败继续查 KV */ }
+	} catch { }
 	
-	// 2. 再查 KV (L2) - 仅用于持久化
 	try {
 		const val = await env.CACHE.get(key);
 		if (val) {
 			const data = JSON.parse(val);
-			// 回填到 Cache API
 			try {
 				const cache = await caches.open('api-cache-v1');
 				const response = new Response(val, { 
@@ -104,7 +106,6 @@ async function getCache(request: Request, env: Env, key: string): Promise<any | 
 async function setCache(request: Request, env: Env, key: string, data: any, cacheSeconds: number, persistToKV: boolean = false): Promise<void> {
 	const jsonStr = JSON.stringify(data);
 	
-	// 1. 写入 Cache API (L1) - 主要缓存层
 	try {
 		const cache = await caches.open('api-cache-v1');
 		const response = new Response(jsonStr, { 
@@ -116,12 +117,46 @@ async function setCache(request: Request, env: Env, key: string, data: any, cach
 		await cache.put(request, response);
 	} catch { }
 	
-	// 2. 选择性写入 KV (L2) - 仅重要数据且低频写入
 	if (persistToKV && cacheSeconds > 3600) {
 		try { 
 			await env.CACHE.put(key, jsonStr, { expirationTtl: cacheSeconds }); 
 		} catch { }
 	}
+}
+
+// 格式化视频数据（提取播放源列表）
+function formatVideoDetail(row: VideoRow) {
+	const playSources = [];
+	if (row.play_url_1) playSources.push({ url: row.play_url_1, duration: row.duration_1 });
+	if (row.play_url_2) playSources.push({ url: row.play_url_2, duration: row.duration_2 });
+	if (row.play_url_3) playSources.push({ url: row.play_url_3, duration: row.duration_3 });
+	if (row.play_url_4) playSources.push({ url: row.play_url_4, duration: row.duration_4 });
+	if (row.play_url_5) playSources.push({ url: row.play_url_5, duration: row.duration_5 });
+	
+	// 解析广告段
+	let adSegments = [];
+	try {
+		if (row.ad_segments) adSegments = JSON.parse(row.ad_segments);
+	} catch { }
+	
+	return {
+		id: row.id,
+		vod_id: row.vod_id,
+		title: row.title,
+		cover: row.cover,
+		category: row.category,
+		views: row.views,
+		created_at: row.created_at,
+		updated_at: row.updated_at,
+		vod_year: row.vod_year,
+		vod_area: row.vod_area,
+		vod_director: row.vod_director,
+		vod_actor: row.vod_actor,
+		vod_remarks: row.vod_remarks,
+		vod_lang: row.vod_lang,
+		play_sources: playSources,
+		ad_segments: adSegments
+	};
 }
 
 export const onRequest: PagesFunction<Env> = async (context) => {
@@ -161,7 +196,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 			for (const r of results) if (r.results) related.push(...r.results);
 			const unique = Array.from(new Map(related.map(v => [v.vod_id, v])).values()).slice(0, 12);
 
-			await setCache(request, env, cacheKey, unique, 1800, false); // 只走 Cache API，不入 KV
+			await setCache(request, env, cacheKey, unique, 1800, false);
 			return json({ success: true, data: unique }, 200, strongCacheHeaders(1800));
 		}
 
@@ -176,16 +211,18 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 			const results = await Promise.all(shards.map(db =>
 				db.prepare('SELECT ' + VIDEO_DETAIL_COLS + ' FROM videos WHERE vod_id = ? AND status = 1').bind(vodId).first<VideoRow>()
 			));
-			const video = results.find(r => r !== null);
-			if (!video) return json({ success: false, message: '视频不存在' }, 404);
+			const row = results.find(r => r !== null);
+			if (!row) return json({ success: false, message: '视频不存在' }, 404);
+
+			const video = formatVideoDetail(row);
 
 			// 异步更新浏览量
-			const shardIdx = results.indexOf(video);
+			const shardIdx = results.indexOf(row);
 			if (shardIdx >= 0) {
 				context.waitUntil(shards[shardIdx].prepare('UPDATE videos SET views = views + 1 WHERE vod_id = ?').bind(vodId).run());
 			}
 
-			await setCache(request, env, cacheKey, video, 3600, true); // 入 KV 持久化
+			await setCache(request, env, cacheKey, video, 3600, true);
 			return json({ success: true, data: video }, 200, strongCacheHeaders(3600));
 		}
 
@@ -310,66 +347,11 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 			return json({ success: true, data: top50 }, 200, strongCacheHeaders(21600));
 		}
 
-		// ======== 标签 ========
-		if (path === '/api/tags') {
-			const type = url.searchParams.get('type') || '';
-			const limit = Math.min(parseInt(url.searchParams.get('limit') || '50'), 200);
-			const cacheKey = `tags:${CACHE_VERSION}:${type || 'all'}:l${limit}`;
-			const cached = await getCache(request, env, cacheKey);
-			if (cached) return json({ success: true, data: cached }, 200, strongCacheHeaders(86400));
-
-			let sql = 'SELECT id, name, slug, type, video_count FROM tags';
-			if (type) sql += ' WHERE type = ?';
-			sql += ' ORDER BY video_count DESC LIMIT ?';
-			const params = type ? [type, limit] : [limit];
-			const results = await env.DB_0.prepare(sql).bind(...params).all();
-
-			await setCache(request, env, cacheKey, results.results || [], 86400, true);
-			return json({ success: true, data: results.results || [] }, 200, strongCacheHeaders(86400));
-		}
-
-		// ======== 标签视频 ========
-		if (path === '/api/tag/videos') {
-			const tagId = parseInt(url.searchParams.get('tag_id') || '0');
-			const page = parseInt(url.searchParams.get('page') || '1');
-			const limit = Math.min(parseInt(url.searchParams.get('limit') || '20'), 100);
-			if (!tagId) return json({ success: false, message: '缺少tag_id' }, 400);
-
-			const cacheKey = `tagv:${CACHE_VERSION}:${tagId}:p${page}`;
-			const cached = await getCache(request, env, cacheKey);
-			if (cached) return json({ success: true, data: cached }, 200, strongCacheHeaders(3600));
-
-			const offset = (page - 1) * limit;
-			const vodIdResult = await env.DB_0.prepare(
-				'SELECT video_vod_id FROM video_tags WHERE tag_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?'
-			).bind(tagId, limit, offset).all<{ video_vod_id: string }>();
-
-			const vodIds = (vodIdResult.results || []).map(r => r.video_vod_id);
-			if (vodIds.length === 0) return json({ success: true, data: { videos: [], pagination: { page, limit, total: 0, totalPages: 0 } } });
-
-			const shards = getShards(env);
-			const placeholders = vodIds.map(() => '?').join(',');
-			const videoResults = await Promise.all(
-				shards.map(db => db.prepare('SELECT ' + VIDEO_COLS + ' FROM videos WHERE vod_id IN (' + placeholders + ') AND status = 1').bind(...vodIds).all<VideoRow>())
-			);
-
-			const videoMap = new Map<string, VideoRow>();
-			for (const r of videoResults) if (r.results) for (const v of r.results) videoMap.set(v.vod_id, v);
-			const videos = vodIds.map(id => videoMap.get(id)).filter(Boolean) as VideoRow[];
-			const countResult = await env.DB_0.prepare('SELECT COUNT(*) as total FROM video_tags WHERE tag_id = ?').bind(tagId).first<{ total: number }>();
-			const total = countResult?.total || 0;
-
-			const responseData = { videos, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } };
-			await setCache(request, env, cacheKey, responseData, 3600, false);
-			return json({ success: true, data: responseData }, 200, strongCacheHeaders(3600));
-		}
-
 		// ======== 管理后台认证 ========
 		if (path === '/api/aadmin/auth' && request.method === 'POST') {
 			const { password } = await request.json<{ password?: string }>();
 			if (!password) return json({ success: false, message: '缺少密码' }, 400);
 			if (password !== env.ADMIN_PASSWORD) return json({ success: false, message: '密码错误' }, 401);
-			// 生成安全随机 token（24小时有效，存入 KV）
 			const bytes = new Uint8Array(32);
 			crypto.getRandomValues(bytes);
 			const token = Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
@@ -378,12 +360,10 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 		}
 
 		// ======== 管理后台（低频，不缓存） ========
-		// 所有 /api/aadmin/* 请求需要验证 token
 		if (path.startsWith('/api/aadmin/') && path !== '/api/aadmin/auth') {
 			const authHeader = request.headers.get('Authorization') || '';
 			const token = authHeader.replace('Bearer ', '');
 			if (!token) return json({ success: false, message: '未登录' }, 401);
-			// 从 KV 检查 token 是否存在
 			const tokenData = await env.CACHE.get(`admin_token:${token}`);
 			if (!tokenData) return json({ success: false, message: '无效凭证或已过期' }, 401);
 		}
