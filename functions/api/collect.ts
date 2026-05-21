@@ -72,13 +72,33 @@ function fnv1aHash(str: string): string {
 function normalizeTitle(title: string): string {
 	if (!title) return '';
 	return title
+		.trim()
+		// 统一全角/半角
+		.replace(/[\uFF01-\uFF5E]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0))
+		// 罗马数字转阿拉伯数字：Ⅱ→2, Ⅲ→3, Ⅳ→4, Ⅴ→5, Ⅵ→6, Ⅶ→7, Ⅷ→8, Ⅸ→9, Ⅹ→10
+		.replace(/Ⅹ/g, '10').replace(/Ⅸ/g, '9').replace(/Ⅷ/g, '8')
+		.replace(/Ⅶ/g, '7').replace(/Ⅵ/g, '6').replace(/Ⅴ/g, '5')
+		.replace(/Ⅳ/g, '4').replace(/Ⅲ/g, '3').replace(/Ⅱ/g, '2').replace(/Ⅰ/g, '1')
+		// 去掉空格
 		.replace(/\s+/g, '')
+		// 去掉画质标签
 		.replace(/(\d{3,4}[Pp]|HD|BD|UHD|4K|1080|720|蓝光|高清|超清|标清|DVD|TS|TC|CAM|枪版)/gi, '')
-		.replace(/(国语|粤语|英语|日语|韩语|中字|中英双字|双语|版)/g, '')
-		.replace(/(全\d+集|共\d+集|\d+集全)/g, '')
+		// 去掉语言/字幕标签
+		.replace(/(国语|粤语|英语|日语|韩语|中字|中英双字|双语|版|未删减|加长版|导演版|完整版)/g, '')
+		// 去掉集数标签
+		.replace(/(全\d+集|共\d+集|\d+集全|第[一二三四五六七八九十百\d]+季|第[一二三四五六七八九十百\d]+期)/g, '')
+		// 去掉年份括号 (2024) 【2024】
 		.replace(/[\[\(（【]\d{4}[\]\)）】]/g, '')
+		// 去掉尾部年份
+		.replace(/(19|20)\d{2}$/, '')
+		// 去掉 "电影"/"电视剧"/"动漫" 等类型后缀
+		.replace(/(电影|电视剧|动漫|综艺|纪录片|微电影|网剧|院线|热映|在线观看|免费观看|高清在线)$/g, '')
+		// 只保留中文、字母、数字
 		.replace(/[^\u4e00-\u9fa5a-zA-Z0-9]/g, '')
 		.toLowerCase()
+		// 去掉开头的数字（如 "2024流浪地球" → "流浪地球"）
+		.replace(/^(19|20)\d{2}/, '')
+		// 去掉开头的纯数字序号
 		.replace(/^\d+/, '');
 }
 
@@ -127,10 +147,9 @@ function normalizeCategory(category: string): string {
 	return cat;
 }
 
-function generateFingerprint(title: string, year: string): string {
+function generateFingerprint(title: string): string {
 	const normalized = normalizeTitle(title);
-	const content = `${normalized}|${year || ''}`;
-	return fnv1aHash(content);
+	return fnv1aHash(normalized);
 }
 
 function extractDuration(url: string): number {
@@ -268,7 +287,7 @@ async function collectPageDetails(sourceUrl: string, ids: string[], signal?: Abo
 // ============ 数据入库 ============
 
 async function findOrCreateFingerprint(video: VideoData, env: Env): Promise<{ fingerprintId: number; mainVodId: string; isNew: boolean }> {
-	const fingerprint = generateFingerprint(video.vod_name, video.vod_year || '');
+	const fingerprint = generateFingerprint(video.vod_name);
 	const titleNormalized = normalizeTitle(video.vod_name);
 	const normalizedCat = normalizeCategory(video.type_name);
 	const existing = await env.DB_0.prepare('SELECT id, main_vod_id FROM video_fingerprints WHERE fingerprint = ?').bind(fingerprint).first<{ id: number; main_vod_id: string }>();
