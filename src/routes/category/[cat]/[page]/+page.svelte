@@ -15,14 +15,24 @@
   let categoriesLoading = $state(true);
   let currentPage = $state(1);
   let totalPages = $state(1);
-
-  let catParam = $derived(decodeURIComponent($page.params.cat || '全部'));
-  let pageParam = $derived(parseInt($page.params.page || '1'));
+  let initialized = $state(false);
 
   let seo = $derived(generateCategorySEO(activeCategory, currentPage));
 
+  // 监听 URL 参数变化
+  $effect(() => {
+    const cat = decodeURIComponent($page.params.cat || '全部');
+    const pg = parseInt($page.params.page || '1') || 1;
+    
+    if (initialized) {
+      // URL 变化时重新加载
+      loadVideos(cat, pg);
+    }
+  });
+
   onMount(async () => {
     await loadCategories();
+    initialized = true;
   });
 
   async function loadCategories() {
@@ -32,8 +42,10 @@
       if (res.ok) {
         const data = await res.json();
         categories = data.data || [];
-        const initCat = catParam !== '全部' ? catParam : '全部';
-        loadVideos(initCat, pageParam || 1);
+        // 首次加载
+        const cat = decodeURIComponent($page.params.cat || '全部');
+        const pg = parseInt($page.params.page || '1') || 1;
+        await loadVideos(cat, pg);
       }
     } catch {
       categories = [];
