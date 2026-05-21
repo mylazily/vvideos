@@ -88,6 +88,17 @@
     }
   }
 
+  // 搜索防抖（300ms）
+  let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+  function debouncedSearch(value: string) {
+    if (debounceTimer) clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => {
+      if (value.trim()) {
+        goto('/search/' + encodeURIComponent(value.trim()) + '/1', { replaceState: true });
+      }
+    }, 300);
+  }
+
   function handlePageChange(pg: number) {
     goto('/search/' + encodeURIComponent(searchQuery.trim()) + '/' + pg);
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -124,7 +135,7 @@
         <input
           value={searchQuery}
           onkeydown={(e) => e.key === 'Enter' && handleSearch()}
-          oninput={(e) => goto('/search/' + encodeURIComponent(e.currentTarget.value.trim()) + '/1', { replaceState: true })}
+          oninput={(e) => debouncedSearch(e.currentTarget.value)}
           type="text"
           placeholder="搜索影片"
           class="flex-1 bg-transparent text-sm outline-none"

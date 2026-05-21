@@ -70,8 +70,14 @@ function getShards(env: Env): D1Database[] {
 	return [env.DB_0, env.DB_1, env.DB_2, env.DB_3, env.DB_4, env.DB_5, env.DB_6, env.DB_7, env.DB_8, env.DB_9];
 }
 
+function getShardForVodId(vodId: string, env: Env): D1Database {
+	const hash = vodId.split('').reduce((a, b) => a + b.charCodeAt(0), 0);
+	const shards = getShards(env);
+	return shards[hash % 10];
+}
+
 // 视频列表列（不包含播放URL）
-const VIDEO_COLS = 'id, vod_id, title, cover, category, views, created_at, vod_year, vod_area, vod_actor';
+const VIDEO_COLS = 'id, vod_id, title, cover, category, views, created_at, vod_year, vod_area';
 // 视频详情列（包含多源播放URL）
 const VIDEO_DETAIL_COLS = 'id, vod_id, fingerprint_id, title, title_normalized, cover, category, views, created_at, updated_at, vod_year, vod_area, vod_director, vod_actor, vod_remarks, vod_lang, play_url_1, play_url_2, play_url_3, play_url_4, play_url_5, duration_1, duration_2, duration_3, duration_4, duration_5, ad_segments';
 
@@ -179,10 +185,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 			if (cached) return json({ success: true, data: cached }, 200, strongCacheHeaders(1800));
 
 			const shards = getShards(env);
-			const videoResult = await Promise.all(shards.map(db =>
-				db.prepare('SELECT category, vod_area FROM videos WHERE vod_id = ? AND status = 1').bind(vodId).first<{ category: string; vod_area: string }>()
-			));
-			const videoInfo = videoResult.find(r => r !== null);
+			const videoInfo = await getShardForVodId(vodId, env).prepare('SELECT category, vod_area FROM videos WHERE vod_id = ? AND status = 1').bind(vodId).first<{ category: string; vod_area: string }>();
 			if (!videoInfo) return json({ success: true, data: [] });
 
 			const conditions: string[] = ['status = 1', 'vod_id != ?'];
@@ -207,20 +210,14 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 			const cached = await getCache(request, env, cacheKey);
 			if (cached) return json({ success: true, data: cached }, 200, strongCacheHeaders(3600));
 
-			const shards = getShards(env);
-			const results = await Promise.all(shards.map(db =>
-				db.prepare('SELECT ' + VIDEO_DETAIL_COLS + ' FROM videos WHERE vod_id = ? AND status = 1').bind(vodId).first<VideoRow>()
-			));
-			const row = results.find(r => r !== null);
+			const shard = getShardForVodId(vodId, env);
+			const row = await shard.prepare('SELECT ' + VIDEO_DETAIL_COLS + ' FROM videos WHERE vod_id = ? AND status = 1').bind(vodId).first<VideoRow>();
 			if (!row) return json({ success: false, message: '视频不存在' }, 404);
 
 			const video = formatVideoDetail(row);
 
 			// 异步更新浏览量
-			const shardIdx = results.indexOf(row);
-			if (shardIdx >= 0) {
-				context.waitUntil(shards[shardIdx].prepare('UPDATE videos SET views = views + 1 WHERE vod_id = ?').bind(vodId).run());
-			}
+			context.waitUntil(shard.prepare('UPDATE videos SET views = views + 1 WHERE vod_id = ?').bind(vodId).run());
 
 			await setCache(request, env, cacheKey, video, 3600, true);
 			return json({ success: true, data: video }, 200, strongCacheHeaders(3600));
@@ -229,19 +226,21 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 		// ======== 首页 ========
 		if (path === '/api/home') {
 			const hour = Math.floor(Date.now() / 3600000);
-			const shardIndex = Math.floor(hour / 2) % 10;
 			const cacheKey = `home:${CACHE_VERSION}:h${hour}`;
 			const cached = await getCache(request, env, cacheKey);
-			if (cached) return json({ success: true, data: { videos: cached, shard: shardIndex } }, 200, strongCacheHeaders(3600));
+			if (cached) return json({ success: true, data: cached }, 200, strongCacheHeaders(3600));
 
 			const shards = getShards(env);
-			const result = await shards[shardIndex].prepare(
-				'SELECT ' + VIDEO_COLS + ' FROM videos WHERE status = 1 ORDER BY created_at DESC LIMIT 24'
-			).all<VideoRow>();
-			const videos = result.results || [];
+			const results = await Promise.all(shards.map(db =>
+				db.prepare('SELECT ' + VIDEO_COLS + ' FROM videos WHERE status = 1 ORDER BY created_at DESC LIMIT 24').all<VideoRow>()
+			));
+			let allVideos: VideoRow[] = [];
+			for (const r of results) if (r.results) allVideos.push(...r.results);
+			allVideos.sort((a, b) => b.created_at - a.created_at);
+			const videos = allVideos.slice(0, 24);
 
 			await setCache(request, env, cacheKey, videos, 7200, true);
-			return json({ success: true, data: { videos, shard: shardIndex } }, 200, strongCacheHeaders(3600));
+			return json({ success: true, data: { videos } }, 200, strongCacheHeaders(3600));
 		}
 
 		// ======== 通用视频列表 ========
@@ -258,7 +257,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 			const shards = getShards(env);
 
 			const [videoResults, countResults] = await Promise.all([
-				Promise.all(shards.map(db => db.prepare('SELECT ' + VIDEO_COLS + ' FROM videos ' + where + ' ORDER BY created_at DESC LIMIT 200').bind(...params).all<VideoRow>())),
+				Promise.all(shards.map(db => db.prepare('SELECT ' + VIDEO_COLS + ' FROM videos ' + where + ' ORDER BY created_at DESC LIMIT 100').bind(...params).all<VideoRow>())),
 				Promise.all(shards.map(db => db.prepare('SELECT COUNT(*) as total FROM videos ' + where).bind(...params).first<{ total: number }>()))
 			]);
 
@@ -269,7 +268,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 			const offset = (page - 1) * limit;
 
 			const responseData = { videos: allVideos.slice(offset, offset + limit), pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } };
-			await setCache(request, env, cacheKey, responseData, 1800, false);
+			await setCache(request, env, cacheKey, responseData, 1800, true);
 			return json({ success: true, data: responseData }, 200, strongCacheHeaders(1800));
 		}
 
@@ -356,7 +355,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 			const shards = getShards(env);
 
 			const [videoResults, countResults] = await Promise.all([
-				Promise.all(shards.map(db => db.prepare('SELECT ' + VIDEO_COLS + ' FROM videos WHERE status = 1 AND title LIKE ? ORDER BY created_at DESC LIMIT 200').bind(pattern).all<VideoRow>())),
+				Promise.all(shards.map(db => db.prepare('SELECT ' + VIDEO_COLS + ' FROM videos WHERE status = 1 AND title LIKE ? ORDER BY created_at DESC LIMIT 100').bind(pattern).all<VideoRow>())),
 				Promise.all(shards.map(db => db.prepare('SELECT COUNT(*) as total FROM videos WHERE status = 1 AND title LIKE ?').bind(pattern).first<{ total: number }>()))
 			]);
 
@@ -367,7 +366,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 			const offset = (page - 1) * limit;
 
 			const responseData = { videos: allVideos.slice(offset, offset + limit), pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } };
-			await setCache(request, env, cacheKey, responseData, 600, false);
+			await setCache(request, env, cacheKey, responseData, 600, true);
 			return json({ success: true, data: responseData }, 200, strongCacheHeaders(600));
 		}
 
@@ -380,8 +379,8 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 
 			const shards = getShards(env);
 			const sql = category
-				? 'SELECT ' + VIDEO_COLS + ' FROM videos WHERE status = 1 AND category = ? ORDER BY views DESC LIMIT 50'
-				: 'SELECT ' + VIDEO_COLS + ' FROM videos WHERE status = 1 ORDER BY views DESC LIMIT 50';
+				? 'SELECT ' + VIDEO_COLS + ' FROM videos WHERE status = 1 AND category = ? ORDER BY views DESC LIMIT 10'
+				: 'SELECT ' + VIDEO_COLS + ' FROM videos WHERE status = 1 ORDER BY views DESC LIMIT 10';
 
 			const results = category
 				? await Promise.all(shards.map(db => db.prepare(sql).bind(category).all<VideoRow>()))
