@@ -1,11 +1,10 @@
-// Service Worker v3 - 原生级 PWA 体验
-const STATIC_CACHE = 'evideos-static-v3';
-const API_CACHE = 'evideos-api-v3';
-const IMAGE_CACHE = 'evideos-images-v3';
-const VIDEO_CACHE = 'evideos-video-v3';
-const OFFLINE_URL = '/';
+// Service Worker v4 - 极速 PWA
+const STATIC_CACHE = 'evideos-static-v4';
+const API_CACHE = 'evideos-api-v4';
+const IMAGE_CACHE = 'evideos-images-v4';
+const CACHE_VERSION = 'v4';
 
-// 核心页面和资源（安装时预缓存）
+// 核心资源（安装时预缓存）
 const CORE_ASSETS = [
   '/',
   '/manifest.json',
@@ -13,7 +12,7 @@ const CORE_ASSETS = [
   '/icon-512.png'
 ];
 
-// ======== 安装阶段 ========
+// ======== 安装：预缓存核心资源 ========
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(STATIC_CACHE)
@@ -22,84 +21,62 @@ self.addEventListener('install', (event) => {
   );
 });
 
-// ======== 激活阶段 ========
+// ======== 激活：清理旧缓存 ========
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((keys) => {
       return Promise.all(
         keys
-          .filter((key) => !key.startsWith('evideos-'))
+          .filter((key) => key.startsWith('evideos-') && !key.includes(CACHE_VERSION))
           .map((key) => caches.delete(key))
       );
     }).then(() => self.clients.claim())
   );
 });
 
-// ======== 智能缓存策略 ========
+// ======== 快速响应策略 ========
 
-// 1. 静态资源 - 缓存优先，后台更新
-async function cacheFirstWithRefresh(request, cacheName) {
-  const cache = await caches.open(cacheName);
+// 1. 静态资源：缓存优先，极速响应
+async function staticStrategy(request) {
+  const cache = await caches.open(STATIC_CACHE);
   const cached = await cache.match(request);
   
-  // 后台更新缓存
-  const fetchPromise = fetch(request).then((response) => {
-    if (response.ok) {
-      cache.put(request, response.clone());
-    }
-    return response;
-  }).catch(() => cached);
+  if (cached) {
+    // 后台更新
+    fetch(request).then((response) => {
+      if (response.ok) cache.put(request, response);
+    }).catch(() => {});
+    return cached;
+  }
   
-  // 立即返回缓存（如果有）
-  return cached || fetchPromise;
+  const response = await fetch(request);
+  if (response.ok) cache.put(request, response.clone());
+  return response;
 }
 
-// 2. API 请求 - 网络优先，失败回退缓存
-async function networkFirstWithCache(request, cacheName, maxAge = 3600000) {
-  const cache = await caches.open(cacheName);
+// 2. API：网络优先，快速回退
+async function apiStrategy(request) {
+  const cache = await caches.open(API_CACHE);
   
   try {
     const networkResponse = await fetch(request);
     if (networkResponse.ok) {
-      // 缓存响应
-      const clone = networkResponse.clone();
-      const metadata = { timestamp: Date.now() };
-      const headers = new Headers(clone.headers);
-      headers.set('X-SW-Cached-At', metadata.timestamp.toString());
-      
-      const responseToCache = new Response(clone.body, {
-        status: clone.status,
-        statusText: clone.statusText,
-        headers
-      });
-      cache.put(request, responseToCache);
+      cache.put(request, networkResponse.clone());
     }
     return networkResponse;
   } catch (error) {
-    // 网络失败，尝试缓存
     const cached = await cache.match(request);
-    if (cached) {
-      const cachedAt = parseInt(cached.headers.get('X-SW-Cached-At') || '0');
-      const age = Date.now() - cachedAt;
-      
-      // 缓存未过期，直接返回
-      if (age < maxAge) {
-        return cached;
-      }
-      // 缓存过期但返回（Stale-While-Revalidate）
-      return cached;
-    }
+    if (cached) return cached;
     
-    // 完全离线
     return new Response(
-      JSON.stringify({ success: false, message: '网络不可用，请检查连接' }),
+      JSON.stringify({ success: false, message: '离线模式' }),
       { status: 503, headers: { 'Content-Type': 'application/json' } }
     );
   }
 }
 
-// 3. 图片资源 - 缓存优先，限制数量
-async function imageCacheStrategy(request) {
+// 3. 图片：缓存优先，LRU 清理
+async function imageStrategy(request) {
   const cache = await caches.open(IMAGE_CACHE);
   const cached = await cache.match(request);
   
@@ -108,20 +85,16 @@ async function imageCacheStrategy(request) {
   try {
     const response = await fetch(request);
     if (response.ok) {
-      // 限制缓存数量（LRU）
+      // LRU：限制 100 张图片
       const keys = await cache.keys();
-      if (keys.length > 200) {
+      if (keys.length > 100) {
         await cache.delete(keys[0]);
       }
       cache.put(request, response.clone());
     }
     return response;
   } catch {
-    // 返回占位图
-    return new Response(
-      '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="150"><rect fill="#f5f5f5" width="100" height="150"/><text x="50" y="75" text-anchor="middle" fill="#999" font-size="12">离线</text></svg>',
-      { headers: { 'Content-Type': 'image/svg+xml' } }
-    );
+    return new Response('', { status: 404 });
   }
 }
 
@@ -134,71 +107,48 @@ self.addEventListener('fetch', (event) => {
   
   // API 请求
   if (url.pathname.startsWith('/api/')) {
-    // 视频详情 API 缓存 10 分钟
-    if (url.pathname.startsWith('/api/video/')) {
-      event.respondWith(networkFirstWithCache(request, API_CACHE, 600000));
-      return;
-    }
-    // 首页 API 缓存 1 小时
-    if (url.pathname === '/api/home') {
-      event.respondWith(networkFirstWithCache(request, API_CACHE, 3600000));
-      return;
-    }
-    // 其他 API 缓存 5 分钟
-    event.respondWith(networkFirstWithCache(request, API_CACHE, 300000));
+    event.respondWith(apiStrategy(request));
     return;
   }
   
-  // 图片资源
-  if (url.pathname.match(/\.(png|jpg|jpeg|webp|gif|svg|ico)$/i)) {
-    event.respondWith(imageCacheStrategy(request));
+  // 图片
+  if (/\.(png|jpg|jpeg|webp|gif|svg|ico)$/i.test(url.pathname)) {
+    event.respondWith(imageStrategy(request));
     return;
   }
   
-  // 静态资源（JS/CSS/字体）
-  if (url.pathname.match(/\.(js|css|woff2?)$/)) {
-    event.respondWith(cacheFirstWithRefresh(request, STATIC_CACHE));
+  // 静态资源
+  if (/\.(js|css|woff2?)$/.test(url.pathname)) {
+    event.respondWith(staticStrategy(request));
     return;
   }
   
-  // HTML 页面 - 网络优先，离线回退
+  // HTML 页面
   event.respondWith(
     fetch(request)
       .then((response) => {
         if (response.ok) {
           const clone = response.clone();
-          caches.open(STATIC_CACHE).then((cache) => {
-            cache.put(request, clone);
-          });
+          caches.open(STATIC_CACHE).then((c) => c.put(request, clone));
         }
         return response;
       })
-      .catch(() => {
-        return caches.match(request).then((cached) => {
-          return cached || caches.match(OFFLINE_URL);
-        });
-      })
+      .catch(() => caches.match(request).then((c) => c || caches.match('/')))
   );
 });
 
 // ======== 后台同步 ========
 self.addEventListener('sync', (event) => {
   if (event.tag === 'sync-favorites') {
-    event.waitUntil(syncFavorites());
-  }
-  if (event.tag === 'sync-history') {
-    event.waitUntil(syncHistory());
+    event.waitUntil(syncData('favorites'));
+  } else if (event.tag === 'sync-history') {
+    event.waitUntil(syncData('history'));
   }
 });
 
-async function syncFavorites() {
-  // 从 IndexedDB 读取离线收藏并同步到服务器
-  // 简化实现，实际项目中需要完整的 IndexedDB 操作
-  console.log('[SW] Syncing favorites...');
-}
-
-async function syncHistory() {
-  console.log('[SW] Syncing history...');
+async function syncData(type) {
+  // 从 IndexedDB 读取离线数据并同步
+  console.log(`[SW] Syncing ${type}...`);
 }
 
 // ======== 推送通知 ========
@@ -214,11 +164,9 @@ self.addEventListener('push', (event) => {
     requireInteraction: false,
     actions: [
       { action: 'open', title: '立即观看' },
-      { action: 'close', title: '稍后' }
+      { action: 'close', title: '关闭' }
     ],
-    data: {
-      url: data.url || '/'
-    }
+    data: { url: data.url || '/' }
   };
   
   event.waitUntil(
@@ -226,89 +174,45 @@ self.addEventListener('push', (event) => {
   );
 });
 
-// ======== 通知点击 ========
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
+  const url = event.notification.data?.url || '/';
   
-  const { action, data } = event.notification;
-  const url = data?.url || '/';
-  
-  if (action === 'close') return;
-  
-  event.waitUntil(
-    clients.matchAll({ type: 'window' }).then((clientList) => {
-      // 查找已打开的窗口
-      for (const client of clientList) {
-        if (client.url === url && 'focus' in client) {
-          return client.focus();
+  if (event.action !== 'close') {
+    event.waitUntil(
+      clients.matchAll({ type: 'window' }).then((clientList) => {
+        for (const client of clientList) {
+          if (client.url === url && 'focus' in client) {
+            return client.focus();
+          }
         }
-      }
-      // 打开新窗口
-      if (clients.openWindow) {
-        return clients.openWindow(url);
-      }
-    })
-  );
-});
-
-// ======== 周期性后台同步（更新缓存） ========
-self.addEventListener('periodicsync', (event) => {
-  if (event.tag === 'update-cache') {
-    event.waitUntil(updateCache());
+        if (clients.openWindow) return clients.openWindow(url);
+      })
+    );
   }
 });
 
-async function updateCache() {
-  // 后台更新首页缓存
-  try {
-    const cache = await caches.open(API_CACHE);
-    const response = await fetch('/api/home');
-    if (response.ok) {
-      await cache.put('/api/home', response.clone());
-    }
-  } catch (e) {
-    console.log('[SW] Background cache update failed:', e);
-  }
-}
-
-// ======== 消息通信（与主线程通信） ========
+// ======== 消息通信 ========
 self.addEventListener('message', (event) => {
-  const { type, payload } = event.data;
+  const { type } = event.data;
   
   switch (type) {
     case 'SKIP_WAITING':
       self.skipWaiting();
       break;
-    case 'CACHE_VIDEO':
-      // 预缓存视频（离线观看）
-      cacheVideoForOffline(payload.url);
-      break;
     case 'GET_CACHE_STATUS':
       getCacheStatus().then((status) => {
-        event.ports[0].postMessage(status);
+        event.ports[0]?.postMessage(status);
       });
       break;
   }
 });
 
-async function cacheVideoForOffline(videoUrl) {
-  const cache = await caches.open(VIDEO_CACHE);
-  try {
-    const response = await fetch(videoUrl);
-    if (response.ok) {
-      await cache.put(videoUrl, response);
-      console.log('[SW] Video cached for offline:', videoUrl);
-    }
-  } catch (e) {
-    console.error('[SW] Failed to cache video:', e);
-  }
-}
-
 async function getCacheStatus() {
   const [staticCache, apiCache, imageCache] = await Promise.all([
-    caches.open(STATIC_CACHE).then(c => c.keys()),
-    caches.open(API_CACHE).then(c => c.keys()),
-    caches.open(IMAGE_CACHE).then(c => c.keys())
+    caches.open(STATIC_CACHE).then((c) => c.keys()),
+    caches.open(API_CACHE).then((c) => c.keys()),
+    caches.open(IMAGE_CACHE).then((c) => c.keys())
   ]);
   
   return {
@@ -318,4 +222,4 @@ async function getCacheStatus() {
   };
 }
 
-console.log('[SW] Service Worker v3 loaded');
+console.log('[SW] Service Worker v4 active');
