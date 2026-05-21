@@ -2,16 +2,18 @@
   "name": "必爱必爱",
   "id": "/",
   "short_name": "必爱必爱",
-  "description": "高清电影电视剧在线观看",
+  "description": "高清电影电视剧在线观看 - 离线可用，永不失联",
   "start_url": "/",
   "display": "standalone",
+  "display_override": ["standalone", "minimal-ui", "browser"],
   "background_color": "#f9fafb",
   "theme_color": "#ec4899",
-  "orientation": "portrait-primary",
+  "orientation": "any",
   "scope": "/",
   "lang": "zh-CN",
   "dir": "ltr",
   "categories": ["entertainment", "video"],
+  "prefer_related_applications": false,
   "icons": [
     {
       "src": "/icon-192.png",
@@ -26,6 +28,57 @@
       "purpose": "any maskable"
     }
   ],
-  "screenshots": [],
-  "prefer_related_applications": false
+  "screenshots": [
+    {
+      "src": "/screenshot-1.png",
+      "sizes": "1280x720",
+      "type": "image/png",
+      "form_factor": "wide"
+    },
+    {
+      "src": "/screenshot-2.png",
+      "sizes": "750x1334",
+      "type": "image/png",
+      "form_factor": "narrow"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "搜索",
+      "short_name": "搜索",
+      "description": "快速搜索影片",
+      "url": "/search",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "排行榜",
+      "short_name": "排行",
+      "description": "查看热门排行榜",
+      "url": "/rank",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "我的收藏",
+      "short_name": "收藏",
+      "description": "查看收藏的视频",
+      "url": "/favorite",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+    }
+  ],
+  "share_target": {
+    "action": "/search",
+    "method": "GET",
+    "params": {
+      "title": "title",
+      "text": "text",
+      "url": "url"
+    }
+  },
+  "handle_links": "preferred",
+  "launch_handler": {
+    "client_mode": ["navigate-existing", "auto"]
+  },
+  "edge_side_panel": {
+    "preferred_width": 400
+  }
 }
