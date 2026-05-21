@@ -125,6 +125,22 @@
     }
   }
 
+  // 预加载下一集
+  function preloadNextEpisode() {
+    const currentLine = playLines[currentLineIndex];
+    if (currentLine && currentEpisodeIndex < currentLine.episodes.length - 1) {
+      const nextUrl = currentLine.episodes[currentEpisodeIndex + 1].url;
+      // 使用 link preload 预加载
+      if (nextUrl && typeof document !== 'undefined') {
+        const link = document.createElement('link');
+        link.rel = 'preload';
+        link.as = 'video';
+        link.href = nextUrl;
+        document.head.appendChild(link);
+      }
+    }
+  }
+
   function playEpisode(lineIdx: number, episodeIdx: number) {
     currentLineIndex = lineIdx;
     currentEpisodeIndex = episodeIdx;
@@ -137,27 +153,35 @@
     if (url.includes('.m3u8') && Hls.isSupported()) {
       hlsInstance = new Hls({
         enableWorker: true,
-        lowLatencyMode: true
+        lowLatencyMode: true,
+        // 高峰期优化：降低缓冲延迟
+        maxBufferLength: 30,
+        maxMaxBufferLength: 60
       });
       hlsInstance.loadSource(url);
       hlsInstance.attachMedia(videoEl);
       hlsInstance.on(Hls.Events.MANIFEST_PARSED, () => {
         videoEl.play().catch(() => {});
+        // 预加载下一集
+        setTimeout(preloadNextEpisode, 1000);
       });
       hlsInstance.on(Hls.Events.ERROR, (_event, data) => {
         if (data.fatal) {
           console.error('HLS fatal error:', data);
           switch (data.type) {
             case Hls.ErrorTypes.NETWORK_ERROR:
-              console.error('网络错误，尝试恢复...');
               hlsInstance?.startLoad();
               break;
             case Hls.ErrorTypes.MEDIA_ERROR:
-              console.error('媒体错误，尝试恢复...');
               hlsInstance?.recoverMediaError();
               break;
             default:
-              destroyHls();
+              // 多源回退：尝试其他线路
+              if (lineIdx < playLines.length - 1) {
+                playEpisode(lineIdx + 1, 0);
+              } else {
+                destroyHls();
+              }
               break;
           }
         }
@@ -166,9 +190,11 @@
       // Safari 原生 HLS
       videoEl.src = url;
       videoEl.play().catch(() => {});
+      setTimeout(preloadNextEpisode, 1000);
     } else {
       videoEl.src = url;
       videoEl.play().catch(() => {});
+      setTimeout(preloadNextEpisode, 1000);
     }
   }
 

@@ -37,12 +37,22 @@ function json(data: any, status = 200, extraHeaders: Record<string, string> = {}
 		status,
 		headers: {
 			'Content-Type': 'application/json',
+			'Content-Encoding': 'gzip', // 暗示响应已压缩
 			'Access-Control-Allow-Origin': '*',
 			'Access-Control-Allow-Methods': 'GET, OPTIONS',
 			'Access-Control-Allow-Headers': 'Content-Type',
+			// 高峰期保护：CDN 边缘节点缓存
+			'Cache-Tag': 'api,video,home',
 			...extraHeaders
 		}
 	});
+}
+
+// Stale-While-Revalidate 缓存头（高峰期保护）
+function swrHeaders(maxAge: number) {
+	return {
+		'Cache-Control': `public, max-age=${maxAge}, s-maxage=${maxAge * 2}, stale-while-revalidate=${maxAge}`
+	};
 }
 
 function getShards(env: Env): D1Database[] {
@@ -66,6 +76,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 		// ======== 首页专用 API ========
 		// 每2小时轮换一个库，固定24个视频，KV 缓存 1 小时
 		// 10万日活下，每小时只消耗 1 次 Worker 请求
+		// 使用 SWR 模式：高峰期返回旧缓存同时后台更新
 		if (path === '/api/home') {
 			// 基于时间计算当前应该查哪个库（每2小时切换）
 			const hour = Math.floor(Date.now() / 3600000);
@@ -74,9 +85,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 			
 			const cached = await env.CACHE.get(cacheKey);
 			if (cached) {
-				return json({ success: true, data: { videos: JSON.parse(cached), shard: shardIndex } }, 200, {
-					'Cache-Control': 'public, max-age=3600, s-maxage=3600'
-				});
+				return json({ success: true, data: { videos: JSON.parse(cached), shard: shardIndex } }, 200, swrHeaders(3600));
 			}
 
 			// 从当前轮换的库取24个视频
@@ -86,10 +95,8 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 			).all<VideoRow>();
 
 			const videos = result.results || [];
-			await env.CACHE.put(cacheKey, JSON.stringify(videos), { expirationTtl: 3600 });
-			return json({ success: true, data: { videos, shard: shardIndex } }, 200, {
-				'Cache-Control': 'public, max-age=3600, s-maxage=3600'
-			});
+			await env.CACHE.put(cacheKey, JSON.stringify(videos), { expirationTtl: 7200 }); // 缓存2小时
+			return json({ success: true, data: { videos, shard: shardIndex } }, 200, swrHeaders(3600));
 		}
 
 		// ======== 通用视频列表（分类/翻页用） ========
@@ -129,12 +136,12 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 			});
 		}
 
-		// ======== 视频详情（KV 缓存 10 分钟） ========
+		// ======== 视频详情（KV 缓存，SWR模式） ========
 		if (path.startsWith('/api/video/')) {
 			const vodId = path.replace('/api/video/', '');
 			const cacheKey = 'video:' + vodId;
 			const cached = await env.CACHE.get(cacheKey);
-			if (cached) return json({ success: true, data: JSON.parse(cached) }, 200, { 'Cache-Control': 'public, max-age=600' });
+			if (cached) return json({ success: true, data: JSON.parse(cached) }, 200, swrHeaders(600));
 
 			const shards = getShards(env);
 			const results = await Promise.all(shards.map(db => db.prepare('SELECT * FROM videos WHERE vod_id = ? AND status = 1').bind(vodId).first<VideoRow>()));

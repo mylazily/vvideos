@@ -404,6 +404,15 @@ export function generateOrganizationSchema() {
   };
 }
 
+// 首页 SEO
+export function generateHomeSEO(): { title: string; description: string; keywords: string } {
+  return {
+    title: `${SITE_NAME} - 免费在线观看最新电影、电视剧、综艺、动漫`,
+    description: `${SITE_NAME}提供最新最全的电影、电视剧、综艺、动漫在线观看，高清流畅速度快，支持手机免会员观看。`,
+    keywords: `${SITE_NAME},免费电影,在线观看,电视剧,综艺,动漫,高清视频,手机看电影`
+  };
+}
+
 // 发现页 SEO
 export function generateDiscoverSEO(): { title: string; description: string; keywords: string } {
   return {

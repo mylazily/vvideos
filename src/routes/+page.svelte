@@ -1,69 +1,89 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { goto } from '$app/navigation';
   import NavBar from '$components/NavBar.svelte';
   import VideoCard from '$components/VideoCard.svelte';
-  import type { Video } from '$lib/types';
-  import { generateSearchActionSchema, generateOrganizationSchema, generateFAQSchema } from '$lib/seo';
+  import type { PageData } from './$types';
+  import { generateHomeSEO, generateOrganizationSchema, SITE_NAME, SITE_URL } from '$lib/seo';
 
-  let videos = $state<Video[]>([]);
-  let loading = $state(true);
-  let errorMsg = $state('');
+  interface Props {
+    data: PageData;
+  }
+
+  let { data }: Props = $props();
+
+  // 服务端预加载的数据
+  let homeVideos = $state(data.homeVideos || []);
+  let categories = $state(data.categories || []);
+
+  // 客户端额外加载的数据（懒加载）
+  let allVideos = $state<any[]>([]);
+  let loading = $state(false);
   let searchKeyword = $state('');
 
-  onMount(async () => {
+  let seo = $derived(generateHomeSEO());
+
+  // SEO 结构化数据
+  const orgSchema = generateOrganizationSchema();
+
+  // 首屏渲染后，客户端加载剩余数据
+  onMount(() => {
+    loadMoreVideos();
+  });
+
+  async function loadMoreVideos() {
+    // 跳过已加载的视频
+    if (loading || allVideos.length >= 24) return;
+    loading = true;
+
     try {
-      const res = await fetch('/api/home', {
-        signal: AbortSignal.timeout(10000)
-      });
+      const res = await fetch('/api/home');
       if (res.ok) {
         const data = await res.json();
-        videos = data.data?.videos || [];
-      } else {
-        errorMsg = '加载失败';
+        if (data.success) {
+          allVideos = data.data.videos || [];
+        }
       }
-    } catch (e: any) {
-      errorMsg = '网络错误';
+    } catch (e) {
+      console.error(e);
     } finally {
       loading = false;
     }
-  });
+  }
 
   function handleSearch() {
     if (searchKeyword.trim()) {
-      goto('/search/' + encodeURIComponent(searchKeyword.trim()) + '/1');
+      window.location.href = '/search/' + encodeURIComponent(searchKeyword.trim()) + '/1';
     }
   }
+
+  // 合并预加载和客户端加载的视频
+  let displayedVideos = $derived(
+    homeVideos.length > 0 ? (allVideos.length > 0 ? allVideos : homeVideos) : allVideos
+  );
 </script>
 
 <svelte:head>
-  <title>必爱必爱 - 高清电影电视剧在线观看</title>
-  <meta name="description" content="必爱必爱提供最新高清电影、热播电视剧、综艺节目、动漫纪录片在线观看。免费高清视频，支持手机播放，更新速度快，片源齐全。" />
-  <meta name="keywords" content="在线观看,免费电影,电视剧,综艺节目,动漫,高清视频,手机播放" />
-  <link rel="canonical" href="https://evideos.pages.dev/" />
-  
-  <!-- Open Graph -->
-  <meta property="og:title" content="必爱必爱 - 高清电影电视剧在线观看" />
-  <meta property="og:description" content="最新高清电影、热播电视剧、综艺节目在线观看" />
+  <title>{seo.title}</title>
+  <meta name="description" content={seo.description} />
+  <meta name="keywords" content={seo.keywords} />
+  <link rel="canonical" href={SITE_URL} />
+  <meta property="og:title" content={seo.title} />
+  <meta property="og:description" content={seo.description} />
   <meta property="og:type" content="website" />
-  <meta property="og:url" content="https://evideos.pages.dev/" />
-  
-  <!-- JSON-LD: WebSite + SearchAction + Organization + FAQ -->
-  {@html `<script type="application/ld+json">${JSON.stringify(generateSearchActionSchema())}</script>`}
-  {@html `<script type="application/ld+json">${JSON.stringify(generateOrganizationSchema())}</script>`}
-  {@html `<script type="application/ld+json">${JSON.stringify(generateFAQSchema([
-    { question: '必爱必爱是什么？', answer: '必爱必爱是一个免费的高清视频在线观看平台，提供电影、电视剧、综艺、动漫等多种类型的视频内容。' },
-    { question: '必爱必爱收费吗？', answer: '必爱必爱完全免费，无需注册即可观看所有视频内容。' },
-    { question: '如何在线观看视频？', answer: '在必爱必爱搜索或浏览找到想看的视频，点击进入详情页即可在线播放，支持手机和电脑观看。' },
-    { question: '视频可以下载吗？', answer: '必爱必爱仅提供在线播放服务，不支持视频下载。' }
-  ]))}</script>`}
+  <meta property="og:image" content="{SITE_URL}/icon-512.png" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <!-- 结构化数据 -->
+  {@html `<script type="application/ld+json">${JSON.stringify(orgSchema)}</script>`}
 </svelte:head>
 
 <div class="min-h-screen bg-gray-50">
   <header class="sticky top-0 bg-white border-b border-gray-100 px-3 py-2 z-50">
     <div class="flex items-center gap-2">
-      <h1 class="text-lg font-bold text-pink-500 flex-shrink-0">必爱必爱</h1>
-      <div class="flex-1 flex items-center h-9 px-3 bg-gray-100 rounded-lg">
+      <h1 class="text-lg font-bold text-pink-500">{SITE_NAME}</h1>
+      <div class="flex-1 flex items-center h-9 px-3 bg-gray-100 rounded-lg ml-2">
+        <svg class="w-4 h-4 text-gray-400 mr-2 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+        </svg>
         <input
           bind:value={searchKeyword}
           onkeydown={(e) => e.key === 'Enter' && handleSearch()}
@@ -71,27 +91,77 @@
           placeholder="搜索影片"
           class="flex-1 bg-transparent text-sm outline-none"
         />
-        <button onclick={handleSearch} class="text-pink-500 text-sm ml-2">搜索</button>
+        <button onclick={handleSearch} class="text-pink-500 text-sm">搜索</button>
       </div>
     </div>
   </header>
 
-  <main class="p-2 pb-16">
-    {#if loading}
+  <main class="pb-16">
+    <!-- 分类快捷入口 -->
+    {#if categories.length > 0}
+      <section class="bg-white mt-2">
+        <div class="flex gap-2 px-3 py-3 overflow-x-auto scrollbar-hide">
+          {#each categories as cat}
+            <a
+              href="/category/{encodeURIComponent(cat.name)}/1"
+              class="flex-shrink-0 px-4 py-2 bg-gray-100 text-sm text-gray-700 rounded-full hover:bg-pink-50 hover:text-pink-500 transition-colors"
+            >
+              {cat.name}
+              <span class="text-xs text-gray-400 ml-1">{cat.count}</span>
+            </a>
+          {/each}
+        </div>
+      </section>
+    {/if}
+
+    <!-- 热门推荐 -->
+    {#if displayedVideos.length > 0}
+      <section class="mt-2">
+        <div class="bg-white px-3 py-2 border-b border-gray-100">
+          <h2 class="text-sm font-medium text-gray-800">最新更新</h2>
+        </div>
+        <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2 p-2">
+          {#each displayedVideos as video, i (video.vod_id)}
+            <!-- 首屏前4个图片 eager loading，之后 lazy -->
+            <VideoCard {video} loading={i < 4 ? 'eager' : 'lazy'} />
+          {/each}
+        </div>
+
+        {#if loading}
+          <div class="flex items-center justify-center py-8">
+            <div class="w-6 h-6 border-2 border-pink-200 border-t-pink-500 rounded-full animate-spin"></div>
+          </div>
+        {/if}
+      </section>
+    {:else if loading}
       <div class="flex items-center justify-center py-20">
         <div class="w-8 h-8 border-2 border-pink-200 border-t-pink-500 rounded-full animate-spin"></div>
       </div>
-    {:else if errorMsg}
-      <div class="text-center py-20 text-red-500">{errorMsg}</div>
-    {:else if videos.length === 0}
-      <div class="text-center py-20 text-gray-400">暂无内容</div>
     {:else}
-      <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2">
-        {#each videos as video, i (video.vod_id)}
-          <VideoCard {video} eager={i < 4} />
-        {/each}
-      </div>
+      <div class="text-center py-20 text-gray-400">暂无内容</div>
     {/if}
+
+    <!-- 快捷入口 -->
+    <section class="mt-2 bg-white">
+      <div class="grid grid-cols-4 gap-4 p-4">
+        <a href="/rank" class="flex flex-col items-center gap-1">
+          <div class="w-12 h-12 bg-red-50 rounded-full flex items-center justify-center text-red-500 text-xl">🔥</div>
+          <span class="text-xs text-gray-600">排行榜</span>
+        </a>
+        <a href="/discover" class="flex flex-col items-center gap-1">
+          <div class="w-12 h-12 bg-blue-50 rounded-full flex items-center justify-center text-blue-500 text-xl">🔍</div>
+          <span class="text-xs text-gray-600">发现</span>
+        </a>
+        <a href="/favorite" class="flex flex-col items-center gap-1">
+          <div class="w-12 h-12 bg-yellow-50 rounded-full flex items-center justify-center text-yellow-500 text-xl">❤️</div>
+          <span class="text-xs text-gray-600">收藏</span>
+        </a>
+        <a href="/history" class="flex flex-col items-center gap-1">
+          <div class="w-12 h-12 bg-green-50 rounded-full flex items-center justify-center text-green-500 text-xl">📜</div>
+          <span class="text-xs text-gray-600">历史</span>
+        </a>
+      </div>
+    </section>
   </main>
 
   <NavBar />
