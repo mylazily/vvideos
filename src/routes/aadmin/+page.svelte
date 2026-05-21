@@ -131,13 +131,15 @@
     }
   }
 
-  async function startCollect(sourceId: number) {
+  let collectMode = $state<'single' | 'full'>('single');
+
+  async function startCollect(sourceId: number, mode: 'single' | 'full' = 'single') {
     collecting = true;
-    message = '';
+    message = mode === 'full' ? '正在全量采集...' : '正在采集...';
     try {
       const res = await authFetch('/api/aadmin/collect', {
         method: 'POST',
-        body: JSON.stringify({ source_id: sourceId })
+        body: JSON.stringify({ source_id: sourceId, mode })
       });
       const data = await res.json();
       message = data.message || '操作完成';
@@ -366,11 +368,19 @@
                 </div>
                 <div class="flex gap-2">
                   <button
-                    onclick={() => startCollect(source.id)}
+                    onclick={() => startCollect(source.id, 'single')}
                     disabled={collecting || source.status !== 1}
                     class="px-3 py-1.5 bg-pink-500 text-white text-sm rounded disabled:bg-gray-300"
                   >
                     {collecting ? '采集中...' : '采集'}
+                  </button>
+                  <button
+                    onclick={() => startCollect(source.id, 'full')}
+                    disabled={collecting || source.status !== 1}
+                    class="px-3 py-1.5 bg-purple-500 text-white text-sm rounded disabled:bg-gray-300"
+                    title="全量采集所有页面"
+                  >
+                    全量
                   </button>
                   <button
                     onclick={() => deleteSource(source.id)}
