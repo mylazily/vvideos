@@ -4,6 +4,7 @@
   import VideoCard from '$components/VideoCard.svelte';
   import type { PageData } from './$types';
   import { generateHomeSEO, generateOrganizationSchema, SITE_NAME, SITE_URL } from '$lib/seo';
+  import { nativeFetch, lazyLoadImages, requestPool } from '$lib/native-utils';
 
   interface Props {
     data: PageData;
@@ -22,7 +23,7 @@
   // SEO 结构化数据
   const orgSchema = generateOrganizationSchema();
 
-  // 客户端加载数据
+  // 客户端加载数据 - 使用原生工具
   onMount(() => {
     loadHomeData();
   });
@@ -30,10 +31,10 @@
   async function loadHomeData() {
     loading = true;
     try {
-      // 并行加载首页视频和分类
+      // 使用原生 fetch 封装，带缓存和请求池控制
       const [homeRes, categoriesRes] = await Promise.all([
-        fetch('/api/home').then(r => r.json()).catch(() => ({ success: false, data: { videos: [] } })),
-        fetch('/api/categories').then(r => r.json()).catch(() => ({ success: false, data: [] }))
+        requestPool.add(() => nativeFetch('/api/home', { cache: true, cacheTTL: 300000 })),
+        requestPool.add(() => nativeFetch('/api/categories', { cache: true, cacheTTL: 600000 }))
       ]);
 
       if (homeRes.success) {
@@ -42,6 +43,9 @@
       if (categoriesRes.success) {
         categories = categoriesRes.data.slice(0, 10);
       }
+      
+      // 延迟执行图片懒加载
+      setTimeout(() => lazyLoadImages(), 100);
     } catch (e) {
       console.error('Failed to load home data:', e);
     } finally {

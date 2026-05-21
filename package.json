@@ -21,7 +21,6 @@
   },
   "type": "module",
   "dependencies": {
-    "hls.js": "^1.6.16",
-    "p2p-media-loader-hlsjs": "^2.3.1"
+    "hls.js": "^1.6.16"
   }
 }
