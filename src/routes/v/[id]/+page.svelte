@@ -14,10 +14,6 @@
   } from '$lib/seo';
   import { addToHistory } from '$lib/storage';
 
-  // 动态导入非关键组件
-  const Breadcrumb = $derived(import('$components/Breadcrumb.svelte'));
-  const Comments = $derived(import('$components/Comments.svelte'));
-
   interface PlayLine {
     name: string;
     episodes: { name: string; url: string }[];
@@ -33,48 +29,24 @@
   let videoEl = $state<HTMLVideoElement | null>(null);
   let showPlayButton = $state(false);
   let isPlaying = $state(false);
-  let hasAttemptedPlay = $state(false);
 
   let vodId = $derived($page.params.id);
   let currentEpisode = $derived(playLines[currentLineIndex]?.episodes[currentEpisodeIndex]);
 
   onMount(async () => {
     if (!vodId) return;
-    // 并行加载视频数据和预加载HLS
-    await Promise.all([
-      loadVideo(),
-      preloadHls()
-    ]);
+    await loadVideo();
   });
 
   onDestroy(() => {
     destroyHls();
   });
 
-  // 预加载HLS配置
-  async function preloadHls() {
-    // HLS.js 已经通过import加载，这里可以添加额外的预加载逻辑
-  }
-
-  // 监听 videoEl 和 playLines 变化，自动播放
-  $effect(() => {
-    const el = videoEl;
-    const lines = playLines;
-    
-    if (el && lines.length > 0 && !hasAttemptedPlay) {
-      hasAttemptedPlay = true;
-      // 使用 requestAnimationFrame 确保 DOM 更新完成
-      requestAnimationFrame(() => playEpisode(0, 0));
-    }
-  });
-
   async function loadVideo() {
     loading = true;
     errorMsg = '';
-    hasAttemptedPlay = false;
     
     try {
-      // 使用 AbortController 控制超时
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 8000);
       
@@ -94,7 +66,15 @@
         video = data.data;
         playLines = parsePlayUrl(video.play_url);
         
-        // 异步添加到历史记录，不阻塞播放
+        // 数据加载完成后，尝试播放
+        // 使用 setTimeout 确保 DOM 已更新
+        setTimeout(() => {
+          if (videoEl && playLines.length > 0) {
+            playEpisode(0, 0);
+          }
+        }, 100);
+        
+        // 异步添加到历史记录
         setTimeout(() => {
           addToHistory({
             vod_id: video!.vod_id,
@@ -169,8 +149,12 @@
     currentEpisodeIndex = episodeIdx;
     
     const episode = playLines[lineIdx]?.episodes[episodeIdx];
-    if (!episode || !videoEl) return;
+    if (!episode || !videoEl) {
+      console.log('Cannot play: missing episode or video element');
+      return;
+    }
 
+    console.log('Playing:', episode.name, episode.url.substring(0, 50));
     destroyHls();
 
     const url = episode.url;
@@ -178,36 +162,38 @@
     if (url.includes('.m3u8')) {
       if (Hls.isSupported()) {
         try {
-          // 优化HLS配置，加快起播速度
           hlsInstance = new Hls({
             enableWorker: true,
             lowLatencyMode: true,
-            maxBufferLength: 10,        // 减少初始缓冲时间
+            maxBufferLength: 10,
             maxMaxBufferLength: 30,
-            startLevel: -1,             // 自动选择开始级别
-            abrEwmaDefaultEstimate: 500000,  // 默认带宽估计
+            startLevel: -1,
+            abrEwmaDefaultEstimate: 500000,
             fragLoadingMaxRetry: 2,
             manifestLoadingMaxRetry: 2,
             levelLoadingMaxRetry: 2
           });
           
           hlsInstance.on(Hls.Events.MANIFEST_PARSED, () => {
+            console.log('HLS manifest parsed, playing...');
             if (videoEl) {
               videoEl.muted = true;
               videoEl.play().then(() => {
+                console.log('Play success');
                 isPlaying = true;
                 showPlayButton = false;
-                // 延迟取消静音
                 setTimeout(() => {
                   if (videoEl) videoEl.muted = false;
                 }, 2000);
-              }).catch(() => {
+              }).catch((e) => {
+                console.log('Play failed:', e);
                 showPlayButton = true;
               });
             }
           });
           
           hlsInstance.on(Hls.Events.ERROR, (_event, data) => {
+            console.error('HLS error:', data.type, data.details);
             if (data.fatal) {
               switch (data.type) {
                 case Hls.ErrorTypes.NETWORK_ERROR:
@@ -255,16 +241,6 @@
 
   function retryLoad() {
     loadVideo();
-  }
-
-  // 生成标签（简化版）
-  function generateSimpleTags(video: Video): string[] {
-    const tags: string[] = [];
-    if (video.title) tags.push(video.title);
-    if (video.category) tags.push(video.category);
-    if (video.vod_year) tags.push(String(video.vod_year));
-    if (video.vod_area) tags.push(video.vod_area);
-    return tags.slice(0, 5);
   }
 </script>
 
