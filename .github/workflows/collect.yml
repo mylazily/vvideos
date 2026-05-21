@@ -1,0 +1,72 @@
+name: 定时采集
+
+on:
+  # 每日凌晨 3 点（北京时间 11 点）自动执行
+  schedule:
+    - cron: '0 3 * * *'
+  # 支持手动触发
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: '采集模式'
+        required: true
+        default: 'daily'
+        type: choice
+        options:
+          - daily
+          - full
+
+env:
+  SITE_URL: ${{ vars.SITE_URL || 'https://evideos.pages.dev' }}
+
+jobs:
+  collect-daily:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    if: github.event_name == 'schedule' || github.event.inputs.mode == 'daily'
+
+    steps:
+      - name: 触发每日增量采集
+        run: |
+          echo "站点: ${{ env.SITE_URL }}"
+          echo "调用 /api/timming?_cron=1"
+
+          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
+            "${{ env.SITE_URL }}/api/timming?_cron=1" \
+            -H "Authorization: Bearer ${{ secrets.CRON_TOKEN }}" \
+            -H "Content-Type: application/json")
+
+          HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+          BODY=$(echo "$RESPONSE" | sed '$d')
+
+          echo "状态码: $HTTP_CODE"
+          echo "$BODY" | python3 -m json.tool 2>/dev/null || echo "$BODY"
+
+          if [ "$HTTP_CODE" = "200" ]; then
+            echo "✅ 每日采集任务已触发"
+          else
+            echo "❌ 触发失败 (HTTP $HTTP_CODE)"
+            exit 1
+          fi
+
+  collect-full:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    if: github.event.inputs.mode == 'full'
+
+    steps:
+      - name: 触发全量采集
+        run: |
+          echo "全量采集模式：强制所有源全量采集"
+          echo "调用 /api/timming?_cron=1"
+
+          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
+            "${{ env.SITE_URL }}/api/timming?_cron=1" \
+            -H "Authorization: Bearer ${{ secrets.CRON_TOKEN }}" \
+            -H "Content-Type: application/json")
+
+          HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+          BODY=$(echo "$RESPONSE" | sed '$d')
+
+          echo "状态码: $HTTP_CODE"
+          echo "$BODY" | python3 -m json.tool 2>/dev/null || echo "$BODY"

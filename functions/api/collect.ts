@@ -27,6 +27,24 @@ interface VideoData {
   duration?: number;
 }
 
+interface CollectOptions {
+  sourceUrl: string;
+  sourceId: number;
+  env: Env;
+  mode: 'full' | 'single';
+  pages?: number;
+  signal?: AbortSignal;
+}
+
+interface CollectResult {
+  total: number;
+  new: number;
+  merged: number;
+  fail: number;
+  pagesCollected: number;
+  totalPages: number;
+}
+
 function fnv1aHash(str: string): string {
   let hash = 2166136261;
   for (let i = 0; i < str.length; i++) {
@@ -50,9 +68,7 @@ function normalizeTitle(title: string): string {
 }
 
 function generateFingerprint(title: string, year: string, category: string): string {
-  const normalized = normalizeTitle(title);
-  const content = `${normalized}|${year || ''}|${category || ''}`;
-  return fnv1aHash(content);
+  return fnv1aHash(`${normalizeTitle(title)}|${year || ''}|${category || ''}`);
 }
 
 function extractDuration(url: string): number {
@@ -64,16 +80,13 @@ function extractDuration(url: string): number {
 }
 
 function getShard(vodId: string, env: Env): D1Database {
-  const hash = fnv1aHash(vodId);
-  const hashNum = parseInt(hash.slice(0, 8), 16);
+  const hashNum = parseInt(fnv1aHash(vodId).slice(0, 8), 16);
   const shards = [env.DB_0, env.DB_1, env.DB_2, env.DB_3, env.DB_4, env.DB_5, env.DB_6, env.DB_7, env.DB_8, env.DB_9];
   return shards[hashNum % 10];
 }
 
 function generateVodId(): string {
-  const timestamp = Date.now().toString(36);
-  const random = Math.random().toString(36).substring(2, 7);
-  return `${timestamp}${random}`;
+  return Date.now().toString(36) + Math.random().toString(36).substring(2, 7);
 }
 
 function jsonResponse(data: any, status = 200) {
@@ -83,7 +96,6 @@ function jsonResponse(data: any, status = 200) {
   });
 }
 
-// SSRF 防护：检查 URL 是否指向内网地址
 function isPrivateUrl(urlStr: string): boolean {
   try {
     const urlObj = new URL(urlStr);
@@ -103,54 +115,61 @@ function isPrivateUrl(urlStr: string): boolean {
     if (hostname === '::1' || hostname === '[::1]') return true;
     if (hostname.startsWith('fe80:') || hostname.startsWith('fc') || hostname.startsWith('fd')) return true;
     return false;
-  } catch {
-    return true;
-  }
+  } catch { return true; }
 }
 
-// 验证管理后台 token
 async function verifyAdminToken(request: Request, env: Env): Promise<boolean> {
-  const authHeader = request.headers.get('Authorization') || '';
-  const token = authHeader.replace('Bearer ', '');
+  const token = (request.headers.get('Authorization') || '').replace('Bearer ', '');
   if (!token) return false;
-  const tokenData = await env.CACHE.get(`admin_token:${token}`);
-  return !!tokenData;
+  return !!(await env.CACHE.get(`admin_token:${token}`));
 }
 
-async function collectFromSource(sourceUrl: string, page = 1, env: Env): Promise<{ success: number; fail: number; videos: VideoData[] }> {
-  const result = { success: 0, fail: 0, videos: [] as VideoData[] };
-  try {
-    if (isPrivateUrl(sourceUrl)) throw new Error('不允许访问内网地址');
-    const listUrl = sourceUrl + (sourceUrl.includes('?') ? '&' : '?') + 'ac=list&pg=' + page;
-    if (isPrivateUrl(listUrl)) throw new Error('不允许访问内网地址');
-    const listRes = await fetch(listUrl, { signal: AbortSignal.timeout(30000) });
-    if (!listRes.ok) throw new Error('获取列表失败');
-    const listData = await listRes.json();
-    if (!listData.list || listData.list.length === 0) return result;
-    const ids = listData.list.map((v: any) => v.vod_id).join(',');
-    const detailUrl = sourceUrl + (sourceUrl.includes('?') ? '&' : '?') + 'ac=detail&ids=' + ids;
-    if (isPrivateUrl(detailUrl)) throw new Error('不允许访问内网地址');
-    const detailRes = await fetch(detailUrl, { signal: AbortSignal.timeout(60000) });
-    if (!detailRes.ok) throw new Error('获取详情失败');
-    const detailData = await detailRes.json();
-    if (!detailData.list) return result;
-    for (const v of detailData.list) {
-      if (!v.vod_play_url) continue;
-      const video: VideoData = {
-        vod_id: v.vod_id?.toString(), vod_name: v.vod_name || v.title || '', type_name: v.type_name || v.category || '其他',
-        vod_pic: v.vod_pic || v.cover || '', vod_year: v.vod_year || '', vod_area: v.vod_area || '',
-        vod_actor: v.vod_actor || '', vod_director: v.vod_director || '', vod_play_url: v.vod_play_url,
-        vod_remarks: v.vod_remarks || '', vod_lang: v.vod_lang || '', duration: extractDuration(v.vod_play_url)
-      };
-      result.videos.push(video);
-      result.success++;
-    }
-    return result;
-  } catch (e: any) {
-    console.error('采集失败:', e.message);
-    result.fail++;
-    return result;
+async function collectPageList(sourceUrl: string, page: number, signal?: AbortSignal): Promise<{ totalPages: number; videoIds: string[] }> {
+  const listUrl = sourceUrl + (sourceUrl.includes('?') ? '&' : '?') + `ac=list&pg=${page}`;
+  if (isPrivateUrl(listUrl)) throw new Error('不允许访问内网地址');
+  const listRes = await fetch(listUrl, { signal: signal || AbortSignal.timeout(30000) });
+  if (!listRes.ok) throw new Error(`获取列表失败(${listRes.status})`);
+  const listData = await listRes.json();
+  if (!listData.list || listData.list.length === 0) return { totalPages: 1, videoIds: [] };
+
+  let totalPages = 1;
+  if (listData.pagecount) {
+    totalPages = parseInt(listData.pagecount) || 1;
+  } else if (listData.total && listData.limit) {
+    totalPages = Math.ceil(listData.total / listData.limit);
+  } else if (listData.page) {
+    totalPages = parseInt(listData.page) || 1;
   }
+
+  const videoIds = listData.list.map((v: any) => v.vod_id).filter(Boolean);
+  return { totalPages, videoIds };
+}
+
+async function collectPageDetails(sourceUrl: string, ids: string[], signal?: AbortSignal): Promise<VideoData[]> {
+  if (ids.length === 0) return [];
+  const detailUrl = sourceUrl + (sourceUrl.includes('?') ? '&' : '?') + `ac=detail&ids=${ids.slice(0, 100).join(',')}`;
+  if (isPrivateUrl(detailUrl)) throw new Error('不允许访问内网地址');
+  const detailRes = await fetch(detailUrl, { signal: signal || AbortSignal.timeout(60000) });
+  if (!detailRes.ok) throw new Error(`获取详情失败(${detailRes.status})`);
+  const detailData = await detailRes.json();
+  if (!detailData.list) return [];
+
+  return detailData.list
+    .filter((v: any) => v.vod_play_url)
+    .map((v: any) => ({
+      vod_id: v.vod_id?.toString(),
+      vod_name: v.vod_name || v.title || '',
+      type_name: v.type_name || v.category || '其他',
+      vod_pic: v.vod_pic || v.cover || '',
+      vod_year: v.vod_year || '',
+      vod_area: v.vod_area || '',
+      vod_actor: v.vod_actor || '',
+      vod_director: v.vod_director || '',
+      vod_play_url: v.vod_play_url,
+      vod_remarks: v.vod_remarks || '',
+      vod_lang: v.vod_lang || '',
+      duration: extractDuration(v.vod_play_url)
+    }));
 }
 
 async function findOrCreateFingerprint(video: VideoData, env: Env): Promise<{ fingerprintId: number; mainVodId: string; isNew: boolean }> {
@@ -164,33 +183,31 @@ async function findOrCreateFingerprint(video: VideoData, env: Env): Promise<{ fi
 }
 
 function detectAdSegments(durations: number[]): string {
-  const validDurations = durations.filter(d => d > 0);
-  if (validDurations.length < 2) return '';
-  const minDuration = Math.min(...validDurations);
-  const maxDuration = Math.max(...validDurations);
+  const valid = durations.filter(d => d > 0);
+  if (valid.length < 2) return '';
+  const minDuration = Math.min(...valid);
+  const maxDuration = Math.max(...valid);
   if (maxDuration - minDuration < 5) return '';
-  const adSegments: Array<{start: number, end: number, type: string}> = [];
   const avgExtra = (maxDuration - minDuration) / 2;
-  if (avgExtra > 5) adSegments.push({ start: 0, end: Math.floor(avgExtra), type: 'pre' });
-  return JSON.stringify(adSegments);
+  if (avgExtra > 5) return JSON.stringify([{ start: 0, end: Math.floor(avgExtra), type: 'pre' }]);
+  return '';
 }
 
 async function saveVideo(video: VideoData, sourceId: number, env: Env): Promise<{ success: boolean; isNew: boolean }> {
   try {
-    const { fingerprintId, mainVodId } = await findOrCreateFingerprint(video, env);
+    const { fingerprintId, mainVodId, isNew: isNewFingerprint } = await findOrCreateFingerprint(video, env);
     const shard = getShard(mainVodId, env);
-    const existing = await shard.prepare('SELECT id, play_url_1, play_url_2, play_url_3, play_url_4, play_url_5, duration_1, duration_2, duration_3, duration_4, duration_5 FROM videos WHERE vod_id = ?').bind(mainVodId).first<any>();
+    const existing = await shard.prepare('SELECT * FROM videos WHERE vod_id = ?').bind(mainVodId).first<any>();
     const now = Math.floor(Date.now() / 1000);
+
     if (existing) {
       const urls = [existing.play_url_1, existing.play_url_2, existing.play_url_3, existing.play_url_4, existing.play_url_5];
       const durations = [existing.duration_1, existing.duration_2, existing.duration_3, existing.duration_4, existing.duration_5];
       let slotIndex = urls.findIndex(u => !u || u === video.vod_play_url);
       if (slotIndex === -1) slotIndex = 0;
-      const urlCol = `play_url_${slotIndex + 1}`;
-      const durationCol = `duration_${slotIndex + 1}`;
       durations[slotIndex] = video.duration || 0;
       const adSegments = detectAdSegments(durations);
-      await shard.prepare(`UPDATE videos SET ${urlCol} = ?, ${durationCol} = ?, ad_segments = ?, updated_at = ? WHERE vod_id = ?`).bind(video.vod_play_url, video.duration || 0, adSegments, now, mainVodId).run();
+      await shard.prepare(`UPDATE videos SET play_url_${slotIndex + 1} = ?, duration_${slotIndex + 1} = ?, ad_segments = ?, updated_at = ? WHERE vod_id = ?`).bind(video.vod_play_url, video.duration || 0, adSegments, now, mainVodId).run();
       return { success: true, isNew: false };
     } else {
       const adSegments = detectAdSegments([video.duration || 0]);
@@ -203,28 +220,75 @@ async function saveVideo(video: VideoData, sourceId: number, env: Env): Promise<
   }
 }
 
+async function collectAll(options: CollectOptions): Promise<CollectResult> {
+  const { sourceUrl, sourceId, env, mode, pages, signal } = options;
+  const result: CollectResult = { total: 0, new: 0, merged: 0, fail: 0, pagesCollected: 0, totalPages: 0 };
+
+  // 1. 自动发现总页数
+  const { totalPages } = await collectPageList(sourceUrl, 1, signal);
+  result.totalPages = totalPages;
+  const maxPages = mode === 'full' ? totalPages : Math.min(pages || totalPages, totalPages);
+
+  // 2. 逐页采集直到最后一页
+  for (let page = 1; page <= maxPages; page++) {
+    try {
+      const { videoIds } = await collectPageList(sourceUrl, page, signal);
+      if (videoIds.length === 0) break;
+
+      const batchSize = 100;
+      for (let i = 0; i < videoIds.length; i += batchSize) {
+        const batch = videoIds.slice(i, i + batchSize);
+        const videos = await collectPageDetails(sourceUrl, batch, signal);
+        result.total += videos.length;
+        for (const video of videos) {
+          const saved = await saveVideo(video, sourceId, env);
+          if (saved.success) {
+            if (saved.isNew) result.new++;
+            else result.merged++;
+          } else {
+            result.fail++;
+          }
+        }
+      }
+
+      result.pagesCollected = page;
+
+      // 翻页间隔，避免对源站压力过大
+      if (page < maxPages) await new Promise(r => setTimeout(r, 1500));
+    } catch (e: any) {
+      console.error(`第${page}页采集失败:`, e.message);
+      result.fail++;
+    }
+  }
+
+  return result;
+}
+
 export const onRequest: PagesFunction<Env> = async (context) => {
   const { request, env } = context;
   if (request.method !== 'POST') return jsonResponse({ code: 0, msg: '只支持POST请求' }, 405);
-  const isAdmin = await verifyAdminToken(request, env);
-  if (!isAdmin) return jsonResponse({ code: 0, msg: '未授权访问' }, 401);
+  if (!await verifyAdminToken(request, env)) return jsonResponse({ code: 0, msg: '未授权访问' }, 401);
+
   try {
-    const body = await request.json<{ source_url?: string; pages?: number; source_id?: number }>();
+    const body = await request.json<{ source_url?: string; source_id?: number; mode?: 'full' | 'single'; pages?: number }>();
     const sourceUrl = body.source_url;
-    const pages = Math.min(Math.max(1, body.pages || 1), 10);
     const sourceId = body.source_id || 0;
+    const mode = body.mode || 'single';
+    const pages = body.pages || 1;
+
     if (!sourceUrl) return jsonResponse({ code: 0, msg: '缺少source_url' }, 400);
-    const result = { total: 0, new: 0, merged: 0, fail: 0 };
-    for (let page = 1; page <= pages; page++) {
-      const collectResult = await collectFromSource(sourceUrl, page, env);
-      result.total += collectResult.videos.length;
-      for (const video of collectResult.videos) {
-        const saved = await saveVideo(video, sourceId, env);
-        if (saved.success) { if (saved.isNew) result.new++; else result.merged++; } else result.fail++;
-      }
-      if (page < pages) await new Promise(r => setTimeout(r, 1000));
-    }
-    return jsonResponse({ code: 1, msg: '采集完成', data: result });
+    if (isPrivateUrl(sourceUrl)) return jsonResponse({ code: 0, msg: '不允许访问内网地址' }, 400);
+
+    const result = await collectAll({
+      sourceUrl, sourceId, env, mode, pages,
+      signal: AbortSignal.timeout(mode === 'full' ? 3600000 : 300000)
+    });
+
+    return jsonResponse({
+      code: 1,
+      msg: `采集完成，共 ${result.pagesCollected}/${result.totalPages} 页，新增 ${result.new} 条，更新 ${result.merged} 条`,
+      data: result
+    });
   } catch (err: any) {
     return jsonResponse({ code: 0, msg: err.message || '采集失败' }, 500);
   }
