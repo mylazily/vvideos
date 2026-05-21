@@ -403,3 +403,23 @@ export function generateOrganizationSchema() {
     sameAs: []
   };
 }
+
+// 发现页 SEO
+export function generateDiscoverSEO(): { title: string; description: string; keywords: string } {
+  return {
+    title: `发现 - 探索精彩内容 - ${SITE_NAME}`,
+    description: `发现最新热门电影、电视剧、综艺、动漫。按分类、地区、年份、演员、导演浏览，找到你喜爱的内容。`,
+    keywords: `发现,热门视频,最新电影,电视剧,综艺,动漫,演员,导演,分类,地区,年份`
+  };
+}
+
+// TAG 页 SEO
+export function generateTagSEO(tagName: string, page: number = 1, totalCount: number = 0): { title: string; description: string; keywords: string } {
+  const suffix = page > 1 ? ` 第${page}页` : '';
+  const countText = totalCount > 0 ? `共${totalCount}部` : '';
+  return {
+    title: `${tagName}相关视频${suffix} - ${SITE_NAME}`,
+    description: `${tagName}相关视频在线观看${countText}，高清完整版免费播放。探索更多${tagName}内容，支持手机在线观看。`,
+    keywords: `${tagName},${tagName}视频,${tagName}在线观看,${tagName}相关,${tagName}推荐`
+  };
+}
