@@ -10,6 +10,7 @@ export interface Env {
 	DB_8: D1Database;
 	DB_9: D1Database;
 	CACHE: KVNamespace;
+	ADMIN_PASSWORD: string; // CF 环境变量设置
 }
 
 interface VideoRow {
@@ -370,7 +371,30 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 			return json({ success: true, data: responseData }, 200, strongCacheHeaders(3600));
 		}
 
+		// ======== 管理后台认证 ========
+		if (path === '/api/admin/auth' && request.method === 'POST') {
+			const { password } = await request.json<{ password?: string }>();
+			if (!password) return json({ success: false, message: '缺少密码' }, 400);
+			if (password !== env.ADMIN_PASSWORD) return json({ success: false, message: '密码错误' }, 401);
+			// 生成简单 token（24小时有效）
+			const token = btoa(JSON.stringify({ t: Date.now(), r: Math.random().toString(36).slice(2) }));
+			return json({ success: true, token });
+		}
+
 		// ======== 管理后台（低频，不缓存） ========
+		// 所有 /api/admin/* 请求需要验证 token
+		if (path.startsWith('/api/admin/') && path !== '/api/admin/auth') {
+			const authHeader = request.headers.get('Authorization') || '';
+			const token = authHeader.replace('Bearer ', '');
+			if (!token) return json({ success: false, message: '未登录' }, 401);
+			try {
+				const payload = JSON.parse(atob(token));
+				if (Date.now() - payload.t > 24 * 60 * 60 * 1000) return json({ success: false, message: '登录已过期' }, 401);
+			} catch {
+				return json({ success: false, message: '无效凭证' }, 401);
+			}
+		}
+
 		if (path === '/api/admin/sources' && request.method === 'GET') {
 			const results = await env.DB_0.prepare('SELECT id, name, api_url, status, last_collect_at, total_videos, created_at FROM sources ORDER BY id').all();
 			return json({ success: true, data: results.results || [] });

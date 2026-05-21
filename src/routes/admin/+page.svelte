@@ -1,8 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
 
-  const ADMIN_PASSWORD = 'yao123';
-  const AUTH_KEY = 'admin_auth';
+  const AUTH_KEY = 'admin_token';
 
   interface Source {
     id: number;
@@ -35,6 +34,7 @@
   let isAuthenticated = $state(false);
   let passwordInput = $state('');
   let authError = $state('');
+  let loginLoading = $state(false);
   let stats = $state<Stats | null>(null);
   let sources = $state<Source[]>([]);
   let logs = $state<Log[]>([]);
@@ -44,24 +44,50 @@
   let newSourceName = $state('');
   let newSourceUrl = $state('');
 
+  // 带认证的 fetch 封装
+  function authFetch(url: string, options: RequestInit = {}): Promise<Response> {
+    const token = sessionStorage.getItem(AUTH_KEY);
+    return fetch(url, {
+      ...options,
+      headers: {
+        ...options.headers,
+        'Authorization': 'Bearer ' + (token || ''),
+        'Content-Type': options.headers?.['Content-Type'] || 'application/json'
+      }
+    });
+  }
+
   onMount(() => {
-    // 检查是否已登录
-    const auth = sessionStorage.getItem(AUTH_KEY);
-    if (auth === 'true') {
+    const token = sessionStorage.getItem(AUTH_KEY);
+    if (token) {
       isAuthenticated = true;
       loadData();
     }
   });
 
-  function handleLogin() {
-    if (passwordInput === ADMIN_PASSWORD) {
-      sessionStorage.setItem(AUTH_KEY, 'true');
-      isAuthenticated = true;
-      authError = '';
-      loadData();
-    } else {
-      authError = '密码错误';
-      passwordInput = '';
+  async function handleLogin() {
+    if (!passwordInput) return;
+    loginLoading = true;
+    authError = '';
+    try {
+      const res = await fetch('/api/admin/auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: passwordInput })
+      });
+      const data = await res.json();
+      if (data.success) {
+        sessionStorage.setItem(AUTH_KEY, data.token);
+        isAuthenticated = true;
+        loadData();
+      } else {
+        authError = data.message || '密码错误';
+        passwordInput = '';
+      }
+    } catch {
+      authError = '网络错误';
+    } finally {
+      loginLoading = false;
     }
   }
 
@@ -69,16 +95,25 @@
     sessionStorage.removeItem(AUTH_KEY);
     isAuthenticated = false;
     passwordInput = '';
+    stats = null;
+    sources = [];
+    logs = [];
   }
 
   async function loadData() {
     loading = true;
     try {
       const [statsRes, sourcesRes, logsRes] = await Promise.all([
-        fetch('/api/admin/stats'),
-        fetch('/api/admin/sources'),
-        fetch('/api/admin/logs?limit=20')
+        authFetch('/api/admin/stats'),
+        authFetch('/api/admin/sources'),
+        authFetch('/api/admin/logs?limit=20')
       ]);
+
+      // 检查是否认证失败
+      if (statsRes.status === 401 || sourcesRes.status === 401) {
+        handleLogout();
+        return;
+      }
 
       const [statsData, sourcesData, logsData] = await Promise.all([
         statsRes.json(),
@@ -100,17 +135,16 @@
     collecting = true;
     message = '';
     try {
-      const res = await fetch('/api/admin/collect', {
+      const res = await authFetch('/api/admin/collect', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ source_id: sourceId })
       });
       const data = await res.json();
-      message = data.message || data.error || '操作完成';
+      message = data.message || '操作完成';
       if (data.success) {
         setTimeout(loadData, 1000);
       }
-    } catch (e) {
+    } catch {
       message = '请求失败';
     } finally {
       collecting = false;
@@ -123,9 +157,8 @@
       return;
     }
     try {
-      const res = await fetch('/api/admin/sources', {
+      const res = await authFetch('/api/admin/sources', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: newSourceName, api_url: newSourceUrl })
       });
       const data = await res.json();
@@ -137,7 +170,7 @@
       } else {
         message = data.message || '添加失败';
       }
-    } catch (e) {
+    } catch {
       message = '请求失败';
     }
   }
@@ -145,13 +178,13 @@
   async function deleteSource(id: number) {
     if (!confirm('确定删除这个采集源吗？')) return;
     try {
-      const res = await fetch('/api/admin/sources?id=' + id, { method: 'DELETE' });
+      const res = await authFetch('/api/admin/sources?id=' + id, { method: 'DELETE' });
       const data = await res.json();
       if (data.success) {
         await loadData();
         message = '删除成功';
       }
-    } catch (e) {
+    } catch {
       message = '删除失败';
     }
   }
@@ -160,13 +193,13 @@
     collecting = true;
     message = '正在执行定时采集...';
     try {
-      const res = await fetch('/api/timming?enforce=1');
+      const res = await authFetch('/api/timming?enforce=1');
       const data = await res.json();
       message = data.msg;
       if (data.success) {
         setTimeout(loadData, 2000);
       }
-    } catch (e) {
+    } catch {
       message = '执行失败';
     } finally {
       collecting = false;
@@ -212,9 +245,10 @@
         {/if}
         <button
           type="submit"
-          class="w-full mt-4 py-3 bg-pink-500 text-white rounded-xl font-medium hover:bg-pink-600 transition-colors"
+          disabled={loginLoading}
+          class="w-full mt-4 py-3 bg-pink-500 text-white rounded-xl font-medium hover:bg-pink-600 transition-colors disabled:bg-pink-300"
         >
-          进入后台
+          {loginLoading ? '验证中...' : '进入后台'}
         </button>
       </form>
 
