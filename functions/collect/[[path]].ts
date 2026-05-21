@@ -60,6 +60,10 @@ function xmlResponse(xml: string, status = 200) {
   });
 }
 
+function escapeXml(str: string): string {
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;');
+}
+
 export const onRequest: PagesFunction<Env> = async (context) => {
   const { request, env } = context;
   const url = new URL(request.url);
@@ -98,15 +102,15 @@ export const onRequest: PagesFunction<Env> = async (context) => {
           xml += `    <id>${v.id}</id>\n`;
           xml += `    <tid>1</tid>\n`;
           xml += `    <name><![CDATA[${v.title}]]></name>\n`;
-          xml += `    <type>${v.category}</type>\n`;
-          xml += `    <pic>${v.cover}</pic>\n`;
-          xml += `    <note>${v.duration}</note>\n`;
+          xml += `    <type>${escapeXml(v.category)}</type>\n`;
+          xml += `    <pic>${escapeXml(v.cover)}</pic>\n`;
+          xml += `    <note>${escapeXml(v.duration)}</note>\n`;
           xml += `    <last>${new Date(v.created_at * 1000).toISOString()}</last>\n`;
           xml += `  </video>\n`;
         }
         xml += '</list>\n<class>\n';
         for (const c of classList) {
-          xml += `  <ty id="${c.type_id}">${c.type_name}</ty>\n`;
+          xml += `  <ty id="${c.type_id}">${escapeXml(c.type_name)}</ty>\n`;
         }
         xml += '</class>\n</rss>';
         return xmlResponse(xml);
@@ -157,14 +161,14 @@ export const onRequest: PagesFunction<Env> = async (context) => {
           xml += `    <id>${v.id}</id>\n`;
           xml += `    <tid>1</tid>\n`;
           xml += `    <name><![CDATA[${v.title}]]></name>\n`;
-          xml += `    <type>${v.category}</type>\n`;
-          xml += `    <pic>${v.cover}</pic>\n`;
-          xml += `    <year>${v.vod_year}</year>\n`;
-          xml += `    <area>${v.vod_area}</area>\n`;
+          xml += `    <type>${escapeXml(v.category)}</type>\n`;
+          xml += `    <pic>${escapeXml(v.cover)}</pic>\n`;
+          xml += `    <year>${escapeXml(v.vod_year)}</year>\n`;
+          xml += `    <area>${escapeXml(v.vod_area)}</area>\n`;
           xml += `    <actor><![CDATA[${v.vod_actor}]]></actor>\n`;
           xml += `    <director><![CDATA[${v.vod_director}]]></director>\n`;
           xml += `    <des><![CDATA[${v.description || ''}]]></des>\n`;
-          xml += `    <dl><dd flag="m3u8"><![CDATA[${v.play_url || ''}]]></dd></dl>\n`;
+          xml += `    <dl><dd flag="m3u8"><![CDATA[${escapeXml(v.play_url || '')}]]></dd></dl>\n`;
           xml += `  </video>\n`;
         }
         xml += '</list></rss>';
