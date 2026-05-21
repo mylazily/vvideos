@@ -135,16 +135,22 @@
     destroyPlayer();
 
     try {
-      const res = await fetch(`/api/video/${videoId}`, {
-        signal: AbortSignal.timeout(10000)
-      });
+      // 并行加载视频数据和相关视频
+      const [videoRes, relatedRes] = await Promise.all([
+        fetch(`/api/video/${videoId}`, {
+          signal: AbortSignal.timeout(10000)
+        }),
+        fetch(`/api/video/${videoId}/related`, {
+          signal: AbortSignal.timeout(5000)
+        }).catch(() => null)
+      ]);
 
-      if (!res.ok) {
-        errorMsg = `请求失败 (${res.status})`;
+      if (!videoRes.ok) {
+        errorMsg = `请求失败 (${videoRes.status})`;
         return;
       }
 
-      const data = await res.json();
+      const data = await videoRes.json();
       if (!data.success || !data.data) {
         errorMsg = data.message || '视频不存在';
         return;
@@ -171,8 +177,15 @@
         vod_area: video.vod_area
       });
 
-      // 后台加载相关视频
-      loadRelatedVideos(videoId);
+      // 处理并行加载的相关视频数据
+      if (relatedRes && relatedRes.ok) {
+        try {
+          const relatedData = await relatedRes.json();
+          relatedVideos = relatedData.data || [];
+        } catch {
+          // 静默失败
+        }
+      }
 
       // 初始化自动切换管理器
       autoSwitchManager = createAutoSwitchManager(playSources, (idx) => {
@@ -464,6 +477,7 @@
       vod_lang: video.vod_lang
     }).join(',')} />
     <link rel="canonical" href={canonicalUrl(`/v/${video.vod_id}`)} />
+    <link rel="preload" href={video.cover} as="image" fetchpriority="high" />
 
     <!-- Open Graph -->
     <meta property="og:title" content={video.title} />
