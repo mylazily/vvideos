@@ -573,7 +573,7 @@
         <video
           controls
           playsinline
-          preload="auto"
+          preload="metadata"
           class="w-full h-full"
           poster={video.cover}
         >
@@ -789,5 +789,4 @@
     {/if}
   </main>
 
-  <NavBar />
-</div>
+  <NavBar />\n</div>
