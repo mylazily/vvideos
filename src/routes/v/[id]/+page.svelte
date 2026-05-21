@@ -149,62 +149,99 @@
     
     const episode = playLines[lineIdx]?.episodes[episodeIdx];
     if (!episode || !videoEl) {
-      console.log('Cannot play: no episode or video element');
+      console.log('Cannot play: no episode or video element', { episode: !!episode, videoEl: !!videoEl });
       return;
     }
 
-    console.log('Playing:', episode.name, episode.url);
+    console.log('Playing:', episode.name, episode.url.substring(0, 50) + '...');
     
     destroyHls();
 
     const url = episode.url;
     
+    // 确保视频元素已准备好
+    if (videoEl.readyState === 0) {
+      console.log('Video element not ready, waiting...');
+      videoEl.addEventListener('loadedmetadata', () => {
+        console.log('Video element ready');
+      }, { once: true });
+    }
+    
     // HLS 播放
     if (url.includes('.m3u8')) {
       if (Hls.isSupported()) {
-        console.log('Using HLS.js');
-        hlsInstance = new Hls({
-          enableWorker: true,
-          lowLatencyMode: true,
-          maxBufferLength: 30,
-          maxMaxBufferLength: 60
-        });
-        hlsInstance.loadSource(url);
-        hlsInstance.attachMedia(videoEl);
-        hlsInstance.on(Hls.Events.MANIFEST_PARSED, () => {
-          console.log('HLS manifest parsed, playing...');
-          videoEl?.play().catch((e) => console.log('Play error:', e));
-        });
-        hlsInstance.on(Hls.Events.ERROR, (_event, data) => {
-          console.error('HLS error:', data);
-          if (data.fatal) {
-            switch (data.type) {
-              case Hls.ErrorTypes.NETWORK_ERROR:
-                hlsInstance?.startLoad();
-                break;
-              case Hls.ErrorTypes.MEDIA_ERROR:
-                hlsInstance?.recoverMediaError();
-                break;
-              default:
-                // 尝试其他线路
-                if (lineIdx < playLines.length - 1) {
-                  playEpisode(lineIdx + 1, 0);
-                }
-                break;
+        console.log('Using HLS.js for:', url.substring(0, 50));
+        try {
+          hlsInstance = new Hls({
+            enableWorker: true,
+            lowLatencyMode: true,
+            maxBufferLength: 30,
+            maxMaxBufferLength: 60,
+            debug: false
+          });
+          
+          hlsInstance.on(Hls.Events.MEDIA_ATTACHED, () => {
+            console.log('HLS media attached');
+          });
+          
+          hlsInstance.on(Hls.Events.MANIFEST_LOADING, () => {
+            console.log('HLS manifest loading...');
+          });
+          
+          hlsInstance.on(Hls.Events.MANIFEST_PARSED, () => {
+            console.log('HLS manifest parsed, attempting play...');
+            videoEl?.play().catch((e) => {
+              console.log('Play error:', e.message);
+            });
+          });
+          
+          hlsInstance.on(Hls.Events.ERROR, (_event, data) => {
+            console.error('HLS error:', data.type, data.details);
+            if (data.fatal) {
+              console.error('Fatal error:', data.type);
+              switch (data.type) {
+                case Hls.ErrorTypes.NETWORK_ERROR:
+                  console.log('Network error, retrying...');
+                  hlsInstance?.startLoad();
+                  break;
+                case Hls.ErrorTypes.MEDIA_ERROR:
+                  console.log('Media error, recovering...');
+                  hlsInstance?.recoverMediaError();
+                  break;
+                default:
+                  console.log('Other fatal error, trying next line...');
+                  // 尝试其他线路
+                  const currentLineIdx = currentLineIndex;
+                  if (currentLineIdx < playLines.length - 1) {
+                    playEpisode(currentLineIdx + 1, 0);
+                  } else {
+                    errorMsg = '视频加载失败，请尝试其他线路';
+                  }
+                  break;
+              }
             }
-          }
-        });
+          });
+          
+          // 先 attach 再 loadSource
+          hlsInstance.attachMedia(videoEl);
+          hlsInstance.loadSource(url);
+          
+        } catch (e) {
+          console.error('HLS init error:', e);
+          errorMsg = '播放器初始化失败';
+        }
       } else if (videoEl.canPlayType('application/vnd.apple.mpegurl')) {
         // Safari 原生 HLS
         console.log('Using native HLS');
         videoEl.src = url;
         videoEl.play().catch((e) => console.log('Play error:', e));
       } else {
+        console.error('HLS not supported');
         errorMsg = '您的浏览器不支持 HLS 播放';
       }
     } else {
       // 直接播放 MP4 等格式
-      console.log('Using native video');
+      console.log('Using native video player');
       videoEl.src = url;
       videoEl.play().catch((e) => console.log('Play error:', e));
     }
