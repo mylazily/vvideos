@@ -11,13 +11,10 @@
 
   let { data }: Props = $props();
 
-  // 服务端预加载的数据
-  let homeVideos = $state(data.homeVideos || []);
-  let categories = $state(data.categories || []);
-
-  // 客户端额外加载的数据（懒加载）
-  let allVideos = $state<any[]>([]);
-  let loading = $state(false);
+  // 视频数据
+  let videos = $state<any[]>([]);
+  let categories = $state<any[]>([]);
+  let loading = $state(true);
   let searchKeyword = $state('');
 
   let seo = $derived(generateHomeSEO());
@@ -25,26 +22,28 @@
   // SEO 结构化数据
   const orgSchema = generateOrganizationSchema();
 
-  // 首屏渲染后，客户端加载剩余数据
+  // 客户端加载数据
   onMount(() => {
-    loadMoreVideos();
+    loadHomeData();
   });
 
-  async function loadMoreVideos() {
-    // 跳过已加载的视频
-    if (loading || allVideos.length >= 24) return;
+  async function loadHomeData() {
     loading = true;
-
     try {
-      const res = await fetch('/api/home');
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success) {
-          allVideos = data.data.videos || [];
-        }
+      // 并行加载首页视频和分类
+      const [homeRes, categoriesRes] = await Promise.all([
+        fetch('/api/home').then(r => r.json()).catch(() => ({ success: false, data: { videos: [] } })),
+        fetch('/api/categories').then(r => r.json()).catch(() => ({ success: false, data: [] }))
+      ]);
+
+      if (homeRes.success) {
+        videos = homeRes.data.videos || [];
+      }
+      if (categoriesRes.success) {
+        categories = categoriesRes.data.slice(0, 10);
       }
     } catch (e) {
-      console.error(e);
+      console.error('Failed to load home data:', e);
     } finally {
       loading = false;
     }
@@ -55,11 +54,6 @@
       window.location.href = '/search/' + encodeURIComponent(searchKeyword.trim()) + '/1';
     }
   }
-
-  // 合并预加载和客户端加载的视频
-  let displayedVideos = $derived(
-    homeVideos.length > 0 ? (allVideos.length > 0 ? allVideos : homeVideos) : allVideos
-  );
 </script>
 
 <svelte:head>
@@ -115,28 +109,22 @@
     {/if}
 
     <!-- 热门推荐 -->
-    {#if displayedVideos.length > 0}
+    {#if loading}
+      <div class="flex items-center justify-center py-20">
+        <div class="w-8 h-8 border-2 border-pink-200 border-t-pink-500 rounded-full animate-spin"></div>
+      </div>
+    {:else if videos.length > 0}
       <section class="mt-2">
         <div class="bg-white px-3 py-2 border-b border-gray-100">
           <h2 class="text-sm font-medium text-gray-800">最新更新</h2>
         </div>
         <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2 p-2">
-          {#each displayedVideos as video, i (video.vod_id)}
+          {#each videos as video, i (video.vod_id)}
             <!-- 首屏前4个图片 eager loading，之后 lazy -->
             <VideoCard {video} loading={i < 4 ? 'eager' : 'lazy'} />
           {/each}
         </div>
-
-        {#if loading}
-          <div class="flex items-center justify-center py-8">
-            <div class="w-6 h-6 border-2 border-pink-200 border-t-pink-500 rounded-full animate-spin"></div>
-          </div>
-        {/if}
       </section>
-    {:else if loading}
-      <div class="flex items-center justify-center py-20">
-        <div class="w-8 h-8 border-2 border-pink-200 border-t-pink-500 rounded-full animate-spin"></div>
-      </div>
     {:else}
       <div class="text-center py-20 text-gray-400">暂无内容</div>
     {/if}
