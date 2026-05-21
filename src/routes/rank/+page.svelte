@@ -6,14 +6,32 @@
   import VideoCard from '$components/VideoCard.svelte';
   import type { Video } from '$lib/types';
 
-  let categories = ['全部', '电影', '电视剧', '综艺', '动漫', '纪录片'];
+  // 不再内置分类，从资源站动态获取
+  let categories = $state<string[]>(['全部']);
   let activeCategory = $state('全部');
   let videos = $state<Video[]>([]);
   let loading = $state(true);
 
   onMount(async () => {
+    // 先加载分类，再加载排行
+    await loadCategories();
     await loadRank();
   });
+
+  async function loadCategories() {
+    try {
+      const res = await fetch('/api/categories', { signal: AbortSignal.timeout(5000) });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.data && data.data.length > 0) {
+          categories = ['全部', ...data.data];
+        }
+      }
+    } catch (e) {
+      console.error('加载分类失败:', e);
+      // 失败时使用默认分类（从资源站采集的数据）
+    }
+  }
 
   async function loadRank() {
     loading = true;
@@ -43,11 +61,11 @@
 
 <svelte:head>
   <title>排行榜 - 必爱必爱</title>
-  <meta name="description" content="必爱必爱视频排行榜，最热门的电影、电视剧、综艺、动漫排行" />
-  <meta name="keywords" content="排行榜,热门电影,热播电视剧,综艺排行,动漫排行" />
+  <meta name="description" content="必爱必爱视频排行榜，最热门的内容排行" />
+  <meta name="keywords" content="排行榜,热门视频,热播排行" />
   <link rel="canonical" href="https://evideos.pages.dev/rank" />
   <meta property="og:title" content="排行榜 - 必爱必爱" />
-  <meta property="og:description" content="必爱必爱视频排行榜，最热门的电影、电视剧、综艺、动漫排行" />
+  <meta property="og:description" content="必爱必爱视频排行榜，最热门的内容排行" />
   <meta property="og:url" content="https://evideos.pages.dev/rank" />
 </svelte:head>
 

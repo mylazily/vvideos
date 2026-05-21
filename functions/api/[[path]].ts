@@ -273,22 +273,71 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 			return json({ success: true, data: responseData }, 200, strongCacheHeaders(1800));
 		}
 
-		// ======== 分类（低频，长缓存） ========
+		// ======== 分类列表（用于排行页等，只返回分类名称数组） ========
 		if (path === '/api/categories') {
-			const cacheKey = `cats:${CACHE_VERSION}`;
+			const cacheKey = `catlist:${CACHE_VERSION}`;
 			const cached = await getCache(request, env, cacheKey);
 			if (cached) return json({ success: true, data: cached }, 200, strongCacheHeaders(86400));
 
 			const shards = getShards(env);
 			const results = await Promise.all(shards.map(db =>
-				db.prepare('SELECT category, COUNT(*) as count FROM videos WHERE status = 1 GROUP BY category').all<{ category: string; count: number }>()
+				db.prepare('SELECT DISTINCT category FROM videos WHERE status = 1 AND category IS NOT NULL AND category != ""').all<{ category: string }>()
 			));
-			const map = new Map<string, number>();
-			for (const r of results) if (r.results) for (const row of r.results) if (row.category) map.set(row.category, (map.get(row.category) || 0) + row.count);
-			const categories = Array.from(map.entries()).map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count);
+			const categorySet = new Set<string>();
+			for (const r of results) {
+				if (r.results) {
+					for (const row of r.results) {
+						if (row.category) categorySet.add(row.category);
+					}
+				}
+			}
+			const categories = Array.from(categorySet).sort();
 
 			await setCache(request, env, cacheKey, categories, 86400, true);
 			return json({ success: true, data: categories }, 200, strongCacheHeaders(86400));
+		}
+
+		// ======== 动态筛选条件（分类+地区，用于交叉聚合页） ========
+		if (path === '/api/filters') {
+			const cacheKey = `filters:${CACHE_VERSION}`;
+			const cached = await getCache(request, env, cacheKey);
+			if (cached) return json({ success: true, data: cached }, 200, strongCacheHeaders(86400));
+
+			const shards = getShards(env);
+			const [categoryResults, areaResults] = await Promise.all([
+				Promise.all(shards.map(db =>
+					db.prepare('SELECT DISTINCT category FROM videos WHERE status = 1 AND category IS NOT NULL AND category != ""').all<{ category: string }>()
+				)),
+				Promise.all(shards.map(db =>
+					db.prepare('SELECT DISTINCT vod_area FROM videos WHERE status = 1 AND vod_area IS NOT NULL AND vod_area != ""').all<{ vod_area: string }>()
+				))
+			]);
+
+			const categorySet = new Set<string>();
+			for (const r of categoryResults) {
+				if (r.results) {
+					for (const row of r.results) {
+						if (row.category) categorySet.add(row.category);
+					}
+				}
+			}
+
+			const areaSet = new Set<string>();
+			for (const r of areaResults) {
+				if (r.results) {
+					for (const row of r.results) {
+						if (row.vod_area) areaSet.add(row.vod_area);
+					}
+				}
+			}
+
+			const filters = {
+				categories: Array.from(categorySet).sort(),
+				areas: Array.from(areaSet).sort()
+			};
+
+			await setCache(request, env, cacheKey, filters, 86400, true);
+			return json({ success: true, data: filters }, 200, strongCacheHeaders(86400));
 		}
 
 		// ======== 搜索（短缓存，高频） ========

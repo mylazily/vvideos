@@ -1,40 +1,18 @@
 // SEO 工具函数 - 生成动态描述、关键词、TAG等
+// 注意：所有分类、标签数据来源于资源站，无内置分类体系
 
 export const SITE_URL = 'https://evideos.pages.dev';
 export const SITE_NAME = '必爱必爱';
 
 export interface VideoSEOData {
   title: string;
-  category: string;
+  category?: string;
   vod_year?: string;
   vod_area?: string;
   vod_actor?: string;
   vod_director?: string;
   vod_lang?: string;
 }
-
-// 视频类型关键词库
-const categoryKeywords: Record<string, string[]> = {
-  '电影': ['高清电影', '最新电影', '热门电影', '院线电影', '经典电影', '动作片', '爱情片', '科幻片'],
-  '电视剧': ['热播电视剧', '国产剧', '韩剧', '美剧', '日剧', '泰剧', '网剧'],
-  '综艺': ['热门综艺', '真人秀', '脱口秀', '选秀节目', '综艺节目'],
-  '动漫': ['日本动漫', '国产动漫', '新番', '热门动漫', '经典动漫'],
-  '纪录片': ['纪录片', '自然纪录片', '历史纪录片', '人文纪录片'],
-  '短剧': ['热门短剧', '微短剧', '网络短剧', '竖屏短剧']
-};
-
-// 地区长尾词
-const areaKeywords: Record<string, string[]> = {
-  '中国大陆': ['国产', '内地', '华语'],
-  '中国香港': ['港片', '香港电影', '粤语'],
-  '中国台湾': ['台剧', '台湾电影'],
-  '美国': ['好莱坞', '欧美电影', '美剧'],
-  '韩国': ['韩剧', '韩片', '韩国电影'],
-  '日本': ['日剧', '日漫', '日本电影'],
-  '泰国': ['泰剧', '泰国电影'],
-  '印度': ['宝莱坞', '印度电影'],
-  '英国': ['英剧', '英国电影']
-};
 
 // 生成SEO描述
 export function generateSEODescription(video: VideoSEOData): string {
@@ -43,7 +21,7 @@ export function generateSEODescription(video: VideoSEOData): string {
   // 基础描述
   parts.push(`《${video.title}》`);
   
-  // 添加类型
+  // 添加类型（资源站数据）
   if (video.category) {
     parts.push(`${video.category}在线观看`);
   }
@@ -84,36 +62,37 @@ export function generateSEOKeywords(video: VideoSEOData): string[] {
   keywords.push(`${video.title}在线观看`);
   keywords.push(`${video.title}免费观看`);
   
-  // 类型关键词
-  if (video.category && categoryKeywords[video.category]) {
-    keywords.push(...categoryKeywords[video.category].slice(0, 3));
+  // 类型关键词（资源站数据）
+  if (video.category) {
+    keywords.push(video.category);
+    keywords.push(`${video.category}在线观看`);
+    keywords.push(`最新${video.category}`);
   }
-  keywords.push(`${video.category}大全`);
   
-  // 地区关键词
-  if (video.vod_area && areaKeywords[video.vod_area]) {
-    keywords.push(...areaKeywords[video.vod_area]);
+  // 地区关键词（资源站数据）
+  if (video.vod_area) {
+    keywords.push(video.vod_area);
+    keywords.push(`${video.vod_area}${video.category || ''}`);
   }
   
   // 年份关键词
   if (video.vod_year) {
-    keywords.push(`${video.vod_year}年${video.category}`);
-    keywords.push(`${video.vod_year}最新${video.category}`);
+    keywords.push(`${video.vod_year}年${video.category || ''}`);
+    keywords.push(`${video.vod_year}最新`);
   }
   
   // 演员关键词
   if (video.vod_actor) {
     const actors = video.vod_actor.split(/[,，]/).slice(0, 2);
     actors.forEach(actor => {
-      keywords.push(`${actor}电影`);
       keywords.push(`${actor}主演`);
+      keywords.push(`${actor}作品`);
     });
   }
   
   // 语言关键词
   if (video.vod_lang) {
     keywords.push(`${video.vod_lang}版`);
-    keywords.push(`${video.vod_lang}配音`);
   }
   
   // 通用长尾词
@@ -131,13 +110,9 @@ export function generateTags(video: VideoSEOData): string[] {
   // 标题相关
   tags.push(video.title);
   
-  // 类型标签
+  // 类型标签（资源站数据）
   if (video.category) {
     tags.push(video.category);
-    // 子类型
-    if (categoryKeywords[video.category]) {
-      tags.push(...categoryKeywords[video.category].slice(0, 2));
-    }
   }
   
   // 年份标签
@@ -146,12 +121,9 @@ export function generateTags(video: VideoSEOData): string[] {
     tags.push(`${video.vod_year}年`);
   }
   
-  // 地区标签
+  // 地区标签（资源站数据）
   if (video.vod_area) {
     tags.push(video.vod_area);
-    if (areaKeywords[video.vod_area]) {
-      tags.push(...areaKeywords[video.vod_area].slice(0, 2));
-    }
   }
   
   // 演员标签
@@ -196,7 +168,7 @@ export function generateRelatedSearches(video: VideoSEOData): string[] {
   }
   
   if (video.vod_year) {
-    related.push(`${video.vod_year}年热门${video.category || '电影'}`);
+    related.push(`${video.vod_year}年热门${video.category || ''}`);
   }
   
   return related;
@@ -211,7 +183,7 @@ export function generatePageTitle(video: VideoSEOData): string {
   }
   
   parts.push('在线观看');
-  parts.push('必爱必爱');
+  parts.push(SITE_NAME);
   
   return parts.join(' - ');
 }
@@ -326,7 +298,7 @@ export function generateRSSFeed(videos: { title: string; vod_id: string; categor
   <channel>
     <title>${SITE_NAME} - 最新更新</title>
     <link>${SITE_URL}</link>
-    <description>最新高清电影、电视剧、综艺、动漫在线观看</description>
+    <description>最新高清视频在线观看</description>
     <language>zh-CN</language>
     <atom:link href="${SITE_URL}/api/rss.xml" rel="self" type="application/rss+xml"/>
     ${items}
@@ -424,8 +396,8 @@ export function generateWebPageSchema(page: { title: string; description: string
 export function generateHomeSEO(): { title: string; description: string; keywords: string } {
   return {
     title: `${SITE_NAME} - 免费在线观看最新电影、电视剧、综艺、动漫`,
-    description: `${SITE_NAME}提供最新最全的电影、电视剧、综艺、动漫在线观看，高清流畅速度快，支持手机免会员观看。`,
-    keywords: `${SITE_NAME},免费电影,在线观看,电视剧,综艺,动漫,高清视频,手机看电影`
+    description: `${SITE_NAME}提供最新最全的影视内容在线观看，高清流畅速度快，支持手机免会员观看。`,
+    keywords: `${SITE_NAME},免费视频,在线观看,高清视频,手机看视频`
   };
 }
 
@@ -433,8 +405,8 @@ export function generateHomeSEO(): { title: string; description: string; keyword
 export function generateDiscoverSEO(): { title: string; description: string; keywords: string } {
   return {
     title: `发现 - 探索精彩内容 - ${SITE_NAME}`,
-    description: `发现最新热门电影、电视剧、综艺、动漫。按分类、地区、年份、演员、导演浏览，找到你喜爱的内容。`,
-    keywords: `发现,热门视频,最新电影,电视剧,综艺,动漫,演员,导演,分类,地区,年份`
+    description: `发现最新热门影视内容。按分类、地区、年份、演员、导演浏览，找到你喜爱的内容。`,
+    keywords: `发现,热门视频,最新影视,演员,导演,分类,地区,年份`
   };
 }
 
@@ -477,8 +449,8 @@ export function generateCrossSEO(filters: { area?: string; year?: string; catego
   // 描述包含所有维度信息
   const descParts: string[] = [];
   descParts.push(`最新${label}在线观看，高清完整版免费播放。`);
-  if (filters.area) descParts.push(`精选${filters.area}地区${filters.category || '影视'}。`);
-  if (filters.year) descParts.push(`${filters.year}年${filters.category || '影视'}推荐。`);
+  if (filters.area) descParts.push(`精选${filters.area}地区内容。`);
+  if (filters.year) descParts.push(`${filters.year}年推荐。`);
   if (totalCount > 0) descParts.push(`共${totalCount}部${label}。`);
   descParts.push('每日更新，支持手机在线观看。');
 
@@ -486,7 +458,7 @@ export function generateCrossSEO(filters: { area?: string; year?: string; catego
   const kwParts: string[] = [label];
   if (filters.category) { kwParts.push(filters.category + '大全'); kwParts.push('最新' + filters.category); }
   if (filters.area) { kwParts.push(filters.area + (filters.category || '')); kwParts.push(filters.area + '影视'); }
-  if (filters.year) { kwParts.push(filters.year + '年' + (filters.category || '电影')); }
+  if (filters.year) { kwParts.push(filters.year + '年' + (filters.category || '')); }
   kwParts.push(label + '在线观看', label + '免费观看', label + '高清', label + '排行榜', label + '推荐');
 
   return {
@@ -506,7 +478,7 @@ export function generateCrossFAQ(filters: { area?: string; year?: string; catego
 
   return [
     { question: `哪里可以免费看${label}？`, answer: `${SITE_NAME}提供最新${label}在线免费观看，高清完整版，支持手机和电脑播放，无需下载。${totalCount > 0 ? '目前收录' + totalCount + '部' + label + '。' : ''}` },
-    { question: `${filters.year || ''}${filters.category || '影视'}有什么好看的推荐？`, answer: `${SITE_NAME}每日更新${label}，涵盖${filters.area || '全球各地'}优质内容。支持按地区、年份、分类筛选，轻松找到你喜欢的${filters.category || '影视'}。` },
+    { question: `${filters.year || ''}${filters.category || '影视'}有什么好看的推荐？`, answer: `${SITE_NAME}每日更新${label}，涵盖${filters.area || '全球各地'}优质内容。支持按地区、年份、分类筛选，轻松找到你喜欢的内容。` },
     { question: `${label}支持手机观看吗？`, answer: `支持。${SITE_NAME}全站视频均支持手机在线观看，打开浏览器即可播放，无需安装任何APP。同时支持PWA离线缓存功能。` }
   ];
 }
@@ -532,7 +504,7 @@ export function generateWebSiteSchema(): object {
 // 首页 FAQ
 export function generateHomeFAQ(): { question: string; answer: string }[] {
   return [
-    { question: `${SITE_NAME}是什么？`, answer: `${SITE_NAME}是一个免费的在线视频播放平台，提供电影、电视剧、综艺、动漫、短剧等丰富内容，高清流畅，支持手机电脑观看。` },
+    { question: `${SITE_NAME}是什么？`, answer: `${SITE_NAME}是一个免费的在线视频播放平台，提供丰富的影视内容，高清流畅，支持手机电脑观看。` },
     { question: `${SITE_NAME}需要注册吗？`, answer: `不需要。${SITE_NAME}无需注册即可观看所有视频，打开浏览器即可播放，完全免费。` },
     { question: `${SITE_NAME}支持离线观看吗？`, answer: `支持。${SITE_NAME}提供PWA应用安装功能，安装后可将视频缓存到本地，离线也能观看。` }
   ];

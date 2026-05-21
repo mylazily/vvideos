@@ -24,6 +24,10 @@
   let totalCount = $state(0);
   let initialized = $state(false);
 
+  // 动态分类和地区数据（从资源站获取）
+  let dynamicCategories = $state<string[]>([]);
+  let dynamicAreas = $state<string[]>([]);
+
   // 解析 filters: "电影_美国_2024" 等
   let filtersRaw = $derived(decodeURIComponent($page.params.filters || ''));
   let pageParam = $derived(parseInt($page.params.page || '1'));
@@ -34,7 +38,7 @@
     const result: { area?: string; year?: string; category?: string; actor?: string } = {};
     for (const p of parts) {
       if (/^\d{4}$/.test(p)) result.year = p;
-      else if (['中国大陆', '中国香港', '中国台湾', '美国', '韩国', '日本', '泰国', '印度', '英国', '法国', '德国', '加拿大', '澳大利亚', '其他'].includes(p)) result.area = p;
+      else if (dynamicAreas.includes(p)) result.area = p;
       else result.category = p;
     }
     return result;
@@ -60,9 +64,25 @@
   });
 
   onMount(() => {
-    loadCross(pageParam || 1);
-    initialized = true;
+    // 先加载动态分类和地区
+    loadDynamicFilters().then(() => {
+      loadCross(pageParam || 1);
+      initialized = true;
+    });
   });
+
+  async function loadDynamicFilters() {
+    try {
+      const res = await fetch('/api/filters', { signal: AbortSignal.timeout(5000) });
+      if (res.ok) {
+        const data = await res.json();
+        dynamicCategories = data.data?.categories || [];
+        dynamicAreas = data.data?.areas || [];
+      }
+    } catch (e) {
+      console.error('加载筛选条件失败:', e);
+    }
+  }
 
   async function loadCross(pg: number) {
     loading = true;
@@ -98,33 +118,41 @@
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
-  // 内链织网：生成大量相关交叉链接（蜘蛛迷宫）
+  // 内链织网：生成大量相关交叉链接（蜘蛛迷宫）- 使用动态数据
   let relatedLinks = $derived(() => {
     const f = filters();
     const links: { label: string; url: string }[] = [];
-    const areas = ['中国大陆', '美国', '韩国', '日本', '中国香港', '泰国', '英国'];
+    
+    // 使用从资源站获取的动态数据
+    const areas = dynamicAreas.length > 0 ? dynamicAreas : [];
     const years = ['2026', '2025', '2024', '2023', '2022'];
-    const cats = ['电影', '电视剧', '综艺', '动漫', '短剧', '纪录片'];
+    const cats = dynamicCategories.length > 0 ? dynamicCategories : [];
 
     // 地区×分类 交叉
     for (const a of areas) {
       if (a !== f.area) {
         const parts = [f.category, a, f.year].filter(Boolean);
-        links.push({ label: a + (f.category || ''), url: '/cross/' + parts.join('_') + '/1' });
+        if (parts.length > 0) {
+          links.push({ label: a + (f.category || ''), url: '/cross/' + parts.join('_') + '/1' });
+        }
       }
     }
     // 年份×分类 交叉
     for (const y of years) {
       if (y !== f.year) {
         const parts = [f.category, f.area, y].filter(Boolean);
-        links.push({ label: y + '年' + (f.category || ''), url: '/cross/' + parts.join('_') + '/1' });
+        if (parts.length > 0) {
+          links.push({ label: y + '年' + (f.category || ''), url: '/cross/' + parts.join('_') + '/1' });
+        }
       }
     }
     // 分类×地区 交叉
     for (const c of cats) {
       if (c !== f.category) {
         const parts = [c, f.area, f.year].filter(Boolean);
-        links.push({ label: c + (f.area ? f.area : ''), url: '/cross/' + parts.join('_') + '/1' });
+        if (parts.length > 0) {
+          links.push({ label: c + (f.area ? f.area : ''), url: '/cross/' + parts.join('_') + '/1' });
+        }
       }
     }
     return links.slice(0, 30);
