@@ -286,14 +286,139 @@ async function collectPageDetails(sourceUrl: string, ids: string[], signal?: Abo
 
 // ============ 数据入库 ============
 
+/**
+ * 二级匹配：当标题指纹匹配不到时，用 年份+导演+分类 组合查找
+ * 解决不同资源站标题写法不同的问题
+ */
+async function findExistingByMeta(video: VideoData, env: Env): Promise<{ fingerprintId: number; mainVodId: string } | null> {
+	const year = video.vod_year || '';
+	const director = (video.vod_director || '').trim();
+	const normalizedCat = normalizeCategory(video.type_name);
+
+	// 至少需要有年份或导演才能做二级匹配
+	if (!year && !director) return null;
+
+	// 构建查询条件
+	const conditions: string[] = [];
+	const bindings: any[] = [];
+
+	if (year) {
+		conditions.push('vod_year = ?');
+		bindings.push(year);
+	}
+	if (director) {
+		// 模糊匹配导演（处理 "导演A,导演B" vs "导演A" 的情况）
+		conditions.push('(vod_director LIKE ? OR vod_director LIKE ? OR ? LIKE \'%\' || vod_director || \'%\')');
+		const dirPattern = `%${director}%`;
+		bindings.push(dirPattern, dirPattern, director);
+	}
+	if (normalizedCat && normalizedCat !== '其他') {
+		conditions.push('category = ?');
+		bindings.push(normalizedCat);
+	}
+
+	if (conditions.length < 2) return null; // 至少需要2个条件匹配
+
+	const sql = `SELECT id, main_vod_id, title_normalized, vod_year, vod_director FROM video_fingerprints WHERE ${conditions.join(' AND ')}`;
+	const candidates = await env.DB_0.prepare(sql).bind(...bindings).all<{ id: number; main_vod_id: string; title_normalized: string; vod_year: string; vod_director: string }>();
+
+	if (!candidates.results || candidates.results.length === 0) return null;
+
+	// 如果只有一条匹配，直接返回
+	if (candidates.results.length === 1) {
+		const c = candidates.results[0];
+		console.log(`[二级匹配] 标题不同但元数据匹配: "${video.vod_name}" → 已有"${c.title_normalized}" (年=${c.vod_year}, 导演=${c.vod_director})`);
+		return { fingerprintId: c.id, mainVodId: c.main_vod_id };
+	}
+
+	// 多条匹配时，优先选择标题相似度最高的
+	const inputTitle = normalizeTitle(video.vod_name);
+	let bestMatch = candidates.results[0];
+	let bestScore = 0;
+
+	for (const c of candidates.results) {
+		const existingTitle = c.title_normalized || '';
+		// 计算标题相似度（最长公共子串比例）
+		const score = titleSimilarity(inputTitle, existingTitle);
+		if (score > bestScore) {
+			bestScore = score;
+			bestMatch = c;
+		}
+	}
+
+	// 相似度太低（<20%）则不认为是同一视频
+	if (bestScore < 0.2) return null;
+
+	console.log(`[二级匹配] 多候选选择: "${video.vod_name}" → "${bestMatch.title_normalized}" (相似度=${Math.round(bestScore * 100)}%)`);
+	return { fingerprintId: bestMatch.id, mainVodId: bestMatch.main_vod_id };
+}
+
+/**
+ * 简单标题相似度计算（最长公共子串比例）
+ */
+function titleSimilarity(a: string, b: string): number {
+	if (!a || !b) return 0;
+	if (a === b) return 1;
+	const shorter = a.length < b.length ? a : b;
+	const longer = a.length < b.length ? b : a;
+	if (shorter.length === 0) return 0;
+
+	// 计算最长公共子串
+	let maxLen = 0;
+	for (let i = 0; i < shorter.length; i++) {
+		for (let j = i + 1; j <= shorter.length; j++) {
+			const substr = shorter.substring(i, j);
+			if (longer.includes(substr) && substr.length > maxLen) {
+				maxLen = substr.length;
+			}
+		}
+	}
+
+	// 同时检查字符交集比例
+	const setA = new Set(shorter);
+	const setB = new Set(longer);
+	let intersection = 0;
+	for (const ch of setA) {
+		if (setB.has(ch)) intersection++;
+	}
+	const charSim = intersection / Math.max(setA.size, setB.size);
+
+	// 综合得分：子串相似度 * 0.6 + 字符交集 * 0.4
+	return (maxLen / shorter.length) * 0.6 + charSim * 0.4;
+}
+
 async function findOrCreateFingerprint(video: VideoData, env: Env): Promise<{ fingerprintId: number; mainVodId: string; isNew: boolean }> {
 	const fingerprint = generateFingerprint(video.vod_name);
 	const titleNormalized = normalizeTitle(video.vod_name);
 	const normalizedCat = normalizeCategory(video.type_name);
+	const director = (video.vod_director || '').trim();
+
+	// 一级匹配：标题指纹
 	const existing = await env.DB_0.prepare('SELECT id, main_vod_id FROM video_fingerprints WHERE fingerprint = ?').bind(fingerprint).first<{ id: number; main_vod_id: string }>();
 	if (existing) return { fingerprintId: existing.id, mainVodId: existing.main_vod_id, isNew: false };
+
+	// 二级匹配：元数据（年份+导演+分类）
+	const metaMatch = await findExistingByMeta(video, env);
+	if (metaMatch) {
+		// 将新标题作为别名添加（更新指纹表，让后续标题匹配也能命中）
+		// 同时更新 title_normalized 为更短的标题（优先保留中文标题）
+		const existingTitle = await env.DB_0.prepare('SELECT title_normalized FROM video_fingerprints WHERE id = ?').bind(metaMatch.fingerprintId).first<{ title_normalized: string }>();
+		const existingNorm = existingTitle?.title_normalized || '';
+		// 保留更短的标题（通常更干净）
+		const betterTitle = titleNormalized.length < existingNorm.length ? titleNormalized : existingNorm;
+		if (betterTitle !== existingNorm) {
+			await env.DB_0.prepare('UPDATE video_fingerprints SET title_normalized = ? WHERE id = ?').bind(betterTitle, metaMatch.fingerprintId).run();
+		}
+		// 同时更新导演信息（如果已有记录的导演为空）
+		if (director) {
+			await env.DB_0.prepare('UPDATE video_fingerprints SET vod_director = ? WHERE id = ? AND (vod_director IS NULL OR vod_director = "")').bind(director, metaMatch.fingerprintId).run();
+		}
+		return { fingerprintId: metaMatch.fingerprintId, mainVodId: metaMatch.mainVodId, isNew: false };
+	}
+
+	// 都没匹配到，创建新记录
 	const vodId = generateVodId();
-	const result = await env.DB_0.prepare('INSERT INTO video_fingerprints (fingerprint, title_normalized, vod_year, category, main_vod_id, created_at) VALUES (?, ?, ?, ?, ?, ?)').bind(fingerprint, titleNormalized, video.vod_year || '', normalizedCat, vodId, Math.floor(Date.now() / 1000)).run();
+	const result = await env.DB_0.prepare('INSERT INTO video_fingerprints (fingerprint, title_normalized, vod_year, category, vod_director, main_vod_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)').bind(fingerprint, titleNormalized, video.vod_year || '', normalizedCat, director, vodId, Math.floor(Date.now() / 1000)).run();
 	return { fingerprintId: result.meta.last_row_id, mainVodId: vodId, isNew: true };
 }
 
