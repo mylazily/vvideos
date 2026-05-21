@@ -31,7 +31,7 @@
   let currentEpisodeIndex = $state(0);
   let isFav = $state(false);
   let hlsInstance: Hls | null = null;
-  let videoEl: HTMLVideoElement;
+  let videoEl = $state<HTMLVideoElement | null>(null);
 
   let vodId = $derived($page.params.id);
   let currentEpisode = $derived(playLines[currentLineIndex]?.episodes[currentEpisodeIndex]);
@@ -154,15 +154,13 @@
       hlsInstance = new Hls({
         enableWorker: true,
         lowLatencyMode: true,
-        // 高峰期优化：降低缓冲延迟
         maxBufferLength: 30,
         maxMaxBufferLength: 60
       });
       hlsInstance.loadSource(url);
       hlsInstance.attachMedia(videoEl);
       hlsInstance.on(Hls.Events.MANIFEST_PARSED, () => {
-        videoEl.play().catch(() => {});
-        // 预加载下一集
+        videoEl?.play().catch(() => {});
         setTimeout(preloadNextEpisode, 1000);
       });
       hlsInstance.on(Hls.Events.ERROR, (_event, data) => {
@@ -176,7 +174,6 @@
               hlsInstance?.recoverMediaError();
               break;
             default:
-              // 多源回退：尝试其他线路
               if (lineIdx < playLines.length - 1) {
                 playEpisode(lineIdx + 1, 0);
               } else {
@@ -186,8 +183,7 @@
           }
         }
       });
-    } else if (url.includes('.m3u8') && videoEl.canPlayType('application/vnd.apple.mpegurl')) {
-      // Safari 原生 HLS
+    } else if (url.includes('.m3u8') && videoEl?.canPlayType('application/vnd.apple.mpegurl')) {
       videoEl.src = url;
       videoEl.play().catch(() => {});
       setTimeout(preloadNextEpisode, 1000);
