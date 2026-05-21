@@ -738,7 +738,7 @@ export function createPlaybackMonitor(
     };
   };
   
-  const intervalId = setInterval(check, 300); // 更频繁的检查
+  const intervalId = setInterval(check, 1000); // 每秒检查一次，平衡性能与响应速度
   
   videoElement.addEventListener('error', () => {
     const error = videoElement.error;
