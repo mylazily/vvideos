@@ -25,8 +25,8 @@
 </script>
 
 <a href="/v/{video.vod_id}" class="group block">
-  <!-- 封面图 -->
-  <div class="relative aspect-[2/3] bg-gray-200 rounded-lg overflow-hidden">
+  <!-- 封面图 - 横版 16:9 -->
+  <div class="relative aspect-video bg-gray-200 rounded-lg overflow-hidden">
     <!-- 占位图（未加载前显示） -->
     {#if !imageLoaded}
       <img
