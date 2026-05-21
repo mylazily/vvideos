@@ -1,6 +1,9 @@
 <script lang="ts">
   import { onMount } from 'svelte';
 
+  const ADMIN_PASSWORD = 'yao123';
+  const AUTH_KEY = 'admin_auth';
+
   interface Source {
     id: number;
     name: string;
@@ -29,18 +32,44 @@
     todayNewVideos: number;
   }
 
+  let isAuthenticated = $state(false);
+  let passwordInput = $state('');
+  let authError = $state('');
   let stats = $state<Stats | null>(null);
   let sources = $state<Source[]>([]);
   let logs = $state<Log[]>([]);
-  let loading = $state(true);
+  let loading = $state(false);
   let collecting = $state(false);
   let message = $state('');
   let newSourceName = $state('');
   let newSourceUrl = $state('');
 
-  onMount(async () => {
-    await loadData();
+  onMount(() => {
+    // 检查是否已登录
+    const auth = sessionStorage.getItem(AUTH_KEY);
+    if (auth === 'true') {
+      isAuthenticated = true;
+      loadData();
+    }
   });
+
+  function handleLogin() {
+    if (passwordInput === ADMIN_PASSWORD) {
+      sessionStorage.setItem(AUTH_KEY, 'true');
+      isAuthenticated = true;
+      authError = '';
+      loadData();
+    } else {
+      authError = '密码错误';
+      passwordInput = '';
+    }
+  }
+
+  function handleLogout() {
+    sessionStorage.removeItem(AUTH_KEY);
+    isAuthenticated = false;
+    passwordInput = '';
+  }
 
   async function loadData() {
     loading = true;
@@ -156,149 +185,195 @@
   <meta name="robots" content="noindex, nofollow" />
 </svelte:head>
 
-<div class="min-h-screen bg-gray-50">
-  <header class="sticky top-0 bg-white border-b border-gray-100 px-4 py-3 z-50">
-    <div class="flex items-center justify-between">
-      <h1 class="text-xl font-bold text-pink-500">管理后台</h1>
-      <a href="/" class="text-gray-600">返回首页</a>
-    </div>
-  </header>
-
-  <main class="p-4 pb-20">
-    {#if loading}
-      <div class="flex items-center justify-center py-20">
-        <div class="w-8 h-8 border-2 border-pink-200 border-t-pink-500 rounded-full animate-spin"></div>
+{#if !isAuthenticated}
+  <!-- 密码登录界面 -->
+  <div class="min-h-screen bg-gray-100 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-lg p-8 w-full max-w-sm">
+      <div class="text-center mb-6">
+        <div class="w-16 h-16 bg-pink-100 rounded-full flex items-center justify-center mx-auto mb-4">
+          <svg class="w-8 h-8 text-pink-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+          </svg>
+        </div>
+        <h1 class="text-xl font-bold text-gray-800">管理后台</h1>
+        <p class="text-sm text-gray-500 mt-1">请输入密码访问</p>
       </div>
-    {:else}
-      <!-- 统计卡片 -->
-      {#if stats}
-        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-          <div class="bg-white rounded-lg p-4">
-            <div class="text-sm text-gray-500">总视频数</div>
-            <div class="text-2xl font-bold text-pink-500">{stats.totalVideos}</div>
+
+      <form onsubmit={(e) => { e.preventDefault(); handleLogin(); }}>
+        <input
+          bind:value={passwordInput}
+          type="password"
+          placeholder="请输入密码"
+          class="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent"
+          autocomplete="off"
+        />
+        {#if authError}
+          <p class="text-red-500 text-sm mt-2">{authError}</p>
+        {/if}
+        <button
+          type="submit"
+          class="w-full mt-4 py-3 bg-pink-500 text-white rounded-xl font-medium hover:bg-pink-600 transition-colors"
+        >
+          进入后台
+        </button>
+      </form>
+
+      <a href="/" class="block text-center text-sm text-gray-500 mt-4 hover:text-pink-500">
+        ← 返回首页
+      </a>
+    </div>
+  </div>
+{:else}
+  <!-- 后台管理界面 -->
+  <div class="min-h-screen bg-gray-50">
+    <header class="sticky top-0 bg-white border-b border-gray-100 px-4 py-3 z-50">
+      <div class="flex items-center justify-between">
+        <h1 class="text-xl font-bold text-pink-500">管理后台</h1>
+        <div class="flex items-center gap-4">
+          <button onclick={handleLogout} class="text-sm text-gray-500 hover:text-red-500">
+            退出登录
+          </button>
+          <a href="/" class="text-gray-600">返回首页</a>
+        </div>
+      </div>
+    </header>
+
+    <main class="p-4 pb-20">
+      {#if loading}
+        <div class="flex items-center justify-center py-20">
+          <div class="w-8 h-8 border-2 border-pink-200 border-t-pink-500 rounded-full animate-spin"></div>
+        </div>
+      {:else}
+        <!-- 统计卡片 -->
+        {#if stats}
+          <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+            <div class="bg-white rounded-lg p-4">
+              <div class="text-sm text-gray-500">总视频数</div>
+              <div class="text-2xl font-bold text-pink-500">{stats.totalVideos}</div>
+            </div>
+            <div class="bg-white rounded-lg p-4">
+              <div class="text-sm text-gray-500">采集源</div>
+              <div class="text-2xl font-bold text-blue-500">{stats.sourceCount}</div>
+            </div>
+            <div class="bg-white rounded-lg p-4">
+              <div class="text-sm text-gray-500">今日采集</div>
+              <div class="text-2xl font-bold text-green-500">{stats.todayCollectCount}</div>
+            </div>
+            <div class="bg-white rounded-lg p-4">
+              <div class="text-sm text-gray-500">今日新增</div>
+              <div class="text-2xl font-bold text-orange-500">{stats.todayNewVideos}</div>
+            </div>
           </div>
-          <div class="bg-white rounded-lg p-4">
-            <div class="text-sm text-gray-500">采集源</div>
-            <div class="text-2xl font-bold text-blue-500">{stats.sourceCount}</div>
-          </div>
-          <div class="bg-white rounded-lg p-4">
-            <div class="text-sm text-gray-500">今日采集</div>
-            <div class="text-2xl font-bold text-green-500">{stats.todayCollectCount}</div>
-          </div>
-          <div class="bg-white rounded-lg p-4">
-            <div class="text-sm text-gray-500">今日新增</div>
-            <div class="text-2xl font-bold text-orange-500">{stats.todayNewVideos}</div>
+        {/if}
+
+        <!-- 消息提示 -->
+        {#if message}
+          <div class="bg-blue-50 text-blue-700 px-4 py-2 rounded-lg mb-4">{message}</div>
+        {/if}
+
+        <!-- 定时采集按钮 -->
+        <div class="bg-white rounded-lg p-4 mb-6">
+          <div class="flex items-center justify-between">
+            <div>
+              <h2 class="font-medium text-gray-800">定时采集</h2>
+              <p class="text-sm text-gray-500">每小时自动执行一次</p>
+            </div>
+            <button
+              onclick={runTimming}
+              disabled={collecting}
+              class="px-4 py-2 bg-green-500 text-white text-sm rounded-lg disabled:bg-gray-300"
+            >
+              {collecting ? '执行中...' : '立即执行'}
+            </button>
           </div>
         </div>
-      {/if}
 
-      <!-- 消息提示 -->
-      {#if message}
-        <div class="bg-blue-50 text-blue-700 px-4 py-2 rounded-lg mb-4">{message}</div>
-      {/if}
-
-      <!-- 定时采集按钮 -->
-      <div class="bg-white rounded-lg p-4 mb-6">
-        <div class="flex items-center justify-between">
-          <div>
-            <h2 class="font-medium text-gray-800">定时采集</h2>
-            <p class="text-sm text-gray-500">每小时自动执行一次</p>
+        <!-- 添加采集源 -->
+        <div class="bg-white rounded-lg p-4 mb-6">
+          <h2 class="font-medium text-gray-800 mb-3">添加采集源</h2>
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <input
+              bind:value={newSourceName}
+              type="text"
+              placeholder="采集源名称"
+              class="px-3 py-2 border border-gray-200 rounded-lg text-sm"
+            />
+            <input
+              bind:value={newSourceUrl}
+              type="text"
+              placeholder="接口地址，如：https://api.example.com/api.php/provide/vod/"
+              class="px-3 py-2 border border-gray-200 rounded-lg text-sm md:col-span-2"
+            />
           </div>
           <button
-            onclick={runTimming}
-            disabled={collecting}
-            class="px-4 py-2 bg-green-500 text-white text-sm rounded-lg disabled:bg-gray-300"
+            onclick={addSource}
+            class="mt-3 px-4 py-2 bg-blue-500 text-white text-sm rounded-lg"
           >
-            {collecting ? '执行中...' : '立即执行'}
+            添加
           </button>
         </div>
-      </div>
 
-      <!-- 添加采集源 -->
-      <div class="bg-white rounded-lg p-4 mb-6">
-        <h2 class="font-medium text-gray-800 mb-3">添加采集源</h2>
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <input
-            bind:value={newSourceName}
-            type="text"
-            placeholder="采集源名称"
-            class="px-3 py-2 border border-gray-200 rounded-lg text-sm"
-          />
-          <input
-            bind:value={newSourceUrl}
-            type="text"
-            placeholder="接口地址，如：https://api.example.com/api.php/provide/vod/"
-            class="px-3 py-2 border border-gray-200 rounded-lg text-sm md:col-span-2"
-          />
-        </div>
-        <button
-          onclick={addSource}
-          class="mt-3 px-4 py-2 bg-blue-500 text-white text-sm rounded-lg"
-        >
-          添加
-        </button>
-      </div>
-
-      <!-- 采集源 -->
-      <div class="bg-white rounded-lg mb-6">
-        <div class="px-4 py-3 border-b border-gray-100">
-          <h2 class="font-medium text-gray-800">采集源</h2>
-        </div>
-        <div class="divide-y divide-gray-100">
-          {#each sources as source}
-            <div class="px-4 py-3 flex items-center justify-between">
-              <div class="flex-1">
-                <div class="font-medium text-gray-800">{source.name}</div>
-                <div class="text-xs text-gray-400 break-all">{source.api_url}</div>
-                <div class="text-xs text-gray-400 mt-1">
-                  状态: {source.status === 1 ? '启用' : '禁用'} |
-                  视频: {source.total_videos} |
-                  最后采集: {formatTime(source.last_collect_at)}
+        <!-- 采集源 -->
+        <div class="bg-white rounded-lg mb-6">
+          <div class="px-4 py-3 border-b border-gray-100">
+            <h2 class="font-medium text-gray-800">采集源</h2>
+          </div>
+          <div class="divide-y divide-gray-100">
+            {#each sources as source}
+              <div class="px-4 py-3 flex items-center justify-between">
+                <div class="flex-1">
+                  <div class="font-medium text-gray-800">{source.name}</div>
+                  <div class="text-xs text-gray-400 break-all">{source.api_url}</div>
+                  <div class="text-xs text-gray-400 mt-1">
+                    状态: {source.status === 1 ? '启用' : '禁用'} |
+                    视频: {source.total_videos} |
+                    最后采集: {formatTime(source.last_collect_at)}
+                  </div>
+                </div>
+                <div class="flex gap-2">
+                  <button
+                    onclick={() => startCollect(source.id)}
+                    disabled={collecting || source.status !== 1}
+                    class="px-3 py-1.5 bg-pink-500 text-white text-sm rounded disabled:bg-gray-300"
+                  >
+                    {collecting ? '采集中...' : '采集'}
+                  </button>
+                  <button
+                    onclick={() => deleteSource(source.id)}
+                    class="px-3 py-1.5 bg-red-500 text-white text-sm rounded"
+                  >
+                    删除
+                  </button>
                 </div>
               </div>
-              <div class="flex gap-2">
-                <button
-                  onclick={() => startCollect(source.id)}
-                  disabled={collecting || source.status !== 1}
-                  class="px-3 py-1.5 bg-pink-500 text-white text-sm rounded disabled:bg-gray-300"
-                >
-                  {collecting ? '采集中...' : '采集'}
-                </button>
-                <button
-                  onclick={() => deleteSource(source.id)}
-                  class="px-3 py-1.5 bg-red-500 text-white text-sm rounded"
-                >
-                  删除
-                </button>
-              </div>
-            </div>
-          {/each}
+            {/each}
+          </div>
         </div>
-      </div>
 
-      <!-- 采集日志 -->
-      <div class="bg-white rounded-lg">
-        <div class="px-4 py-3 border-b border-gray-100">
-          <h2 class="font-medium text-gray-800">采集日志</h2>
-        </div>
-        <div class="divide-y divide-gray-100">
-          {#each logs as log}
-            <div class="px-4 py-3">
-              <div class="flex items-center justify-between">
-                <span class="font-medium text-gray-800">{log.source_name || '未知源'}</span>
-                <span class="text-xs text-gray-400">{formatTime(log.created_at)}</span>
+        <!-- 采集日志 -->
+        <div class="bg-white rounded-lg">
+          <div class="px-4 py-3 border-b border-gray-100">
+            <h2 class="font-medium text-gray-800">采集日志</h2>
+          </div>
+          <div class="divide-y divide-gray-100">
+            {#each logs as log}
+              <div class="px-4 py-3">
+                <div class="flex items-center justify-between">
+                  <span class="font-medium text-gray-800">{log.source_name || '未知源'}</span>
+                  <span class="text-xs text-gray-400">{formatTime(log.created_at)}</span>
+                </div>
+                <div class="text-sm text-gray-600 mt-1">{log.details}</div>
+                {#if log.new_count > 0}
+                  <div class="text-xs text-green-600 mt-1">新增: {log.new_count}条</div>
+                {/if}
+                {#if log.error_msg}
+                  <div class="text-xs text-red-600 mt-1">错误: {log.error_msg}</div>
+                {/if}
               </div>
-              <div class="text-sm text-gray-600 mt-1">{log.details}</div>
-              {#if log.new_count > 0}
-                <div class="text-xs text-green-600 mt-1">新增: {log.new_count}条</div>
-              {/if}
-              {#if log.error_msg}
-                <div class="text-xs text-red-600 mt-1">错误: {log.error_msg}</div>
-              {/if}
-            </div>
-          {/each}
+            {/each}
+          </div>
         </div>
-      </div>
-    {/if}
-  </main>
-</div>
+      {/if}
+    </main>
+  </div>
+{/if}
