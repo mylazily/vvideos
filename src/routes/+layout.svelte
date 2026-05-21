@@ -2,18 +2,18 @@
 	import '../app.css';
 	import type { Snippet } from 'svelte';
 	import { onMount } from 'svelte';
+
 	import { browser } from '$app/environment';
 	import { applySubdomainSEO } from '$lib/subdomain';
+
 	import { initDomainGuard } from '$lib/domain-guard';
 	import { detectBrowser } from '$lib/browser-detect';
 	import UserGuide from '$components/UserGuide.svelte';
-	import { pwaManager } from '$lib/pwa-manager';
 
 	let { children }: { children: Snippet } = $props();
 
 	// 0: 检测中, 1: 正常显示, 2: 显示引导
 	let displayMode = $state(0);
-	let showUpdateToast = $state(false);
 
 	onMount(() => {
 		applySubdomainSEO();
@@ -46,16 +46,7 @@
 		} else {
 			displayMode = 1; // 正常显示
 		}
-
-		// 监听 PWA 更新
-		window.addEventListener('pwa-update-available', () => {
-			showUpdateToast = true;
-		});
 	});
-
-	async function handleUpdate() {
-		await pwaManager.update();
-	}
 </script>
 
 {#if displayMode === 0}
@@ -68,19 +59,6 @@
 {:else if displayMode === 1}
 	{@render children()}
 	<UserGuide blocked={false} />
-
-	<!-- 更新提示 -->
-	{#if showUpdateToast}
-		<div class="fixed top-16 left-4 right-4 bg-blue-500 text-white px-4 py-3 rounded-xl shadow-lg z-[100] flex items-center justify-between">
-			<div class="flex items-center gap-2">
-				<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-				</svg>
-				<span class="text-sm">新版本可用</span>
-			</div>
-			<button onclick={handleUpdate} class="text-sm font-medium underline">立即更新</button>
-		</div>
-	{/if}
 {:else}
 	<UserGuide blocked={true} />
 {/if}
