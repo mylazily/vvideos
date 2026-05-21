@@ -31,7 +31,8 @@
   let currentEpisodeIndex = $state(0);
   let isFav = $state(false);
   let hlsInstance: Hls | null = null;
-  let videoEl = $state<HTMLVideoElement | null>(null);
+  let videoEl: HTMLVideoElement | null = null;
+  let isReady = $state(false);
 
   let vodId = $derived($page.params.id);
   let currentEpisode = $derived(playLines[currentLineIndex]?.episodes[currentEpisodeIndex]);
@@ -45,13 +46,22 @@
     destroyHls();
   });
 
-  // 监听 videoEl 绑定完成后再播放
-  $effect(() => {
-    if (videoEl && playLines.length > 0 && !hlsInstance && !loading) {
-      // videoEl 已绑定，开始播放
+  // 视频元素绑定回调
+  function onVideoMount(el: HTMLVideoElement) {
+    videoEl = el;
+    isReady = true;
+    // 如果数据已加载，立即播放
+    if (playLines.length > 0) {
       playEpisode(currentLineIndex, currentEpisodeIndex);
     }
-  });
+    return {
+      destroy() {
+        destroyHls();
+        videoEl = null;
+        isReady = false;
+      }
+    };
+  }
 
   async function loadVideo() {
     loading = true;
@@ -83,7 +93,10 @@
           vod_area: video.vod_area
         });
         
-        // 播放将在 $effect 中处理，等待 videoEl 绑定完成
+        // 如果视频元素已绑定，立即播放
+        if (isReady && videoEl) {
+          playEpisode(0, 0);
+        }
       } else {
         errorMsg = data.message || '视频不存在';
       }
@@ -130,72 +143,70 @@
     }
   }
 
-  // 预加载下一集
-  function preloadNextEpisode() {
-    const currentLine = playLines[currentLineIndex];
-    if (currentLine && currentEpisodeIndex < currentLine.episodes.length - 1) {
-      const nextUrl = currentLine.episodes[currentEpisodeIndex + 1].url;
-      // 使用 link preload 预加载
-      if (nextUrl && typeof document !== 'undefined') {
-        const link = document.createElement('link');
-        link.rel = 'preload';
-        link.as = 'video';
-        link.href = nextUrl;
-        document.head.appendChild(link);
-      }
-    }
-  }
-
   function playEpisode(lineIdx: number, episodeIdx: number) {
     currentLineIndex = lineIdx;
     currentEpisodeIndex = episodeIdx;
+    
     const episode = playLines[lineIdx]?.episodes[episodeIdx];
-    if (!episode || !videoEl) return;
+    if (!episode || !videoEl) {
+      console.log('Cannot play: no episode or video element');
+      return;
+    }
 
+    console.log('Playing:', episode.name, episode.url);
+    
     destroyHls();
 
     const url = episode.url;
-    if (url.includes('.m3u8') && Hls.isSupported()) {
-      hlsInstance = new Hls({
-        enableWorker: true,
-        lowLatencyMode: true,
-        maxBufferLength: 30,
-        maxMaxBufferLength: 60
-      });
-      hlsInstance.loadSource(url);
-      hlsInstance.attachMedia(videoEl);
-      hlsInstance.on(Hls.Events.MANIFEST_PARSED, () => {
-        videoEl?.play().catch(() => {});
-        setTimeout(preloadNextEpisode, 1000);
-      });
-      hlsInstance.on(Hls.Events.ERROR, (_event, data) => {
-        if (data.fatal) {
-          console.error('HLS fatal error:', data);
-          switch (data.type) {
-            case Hls.ErrorTypes.NETWORK_ERROR:
-              hlsInstance?.startLoad();
-              break;
-            case Hls.ErrorTypes.MEDIA_ERROR:
-              hlsInstance?.recoverMediaError();
-              break;
-            default:
-              if (lineIdx < playLines.length - 1) {
-                playEpisode(lineIdx + 1, 0);
-              } else {
-                destroyHls();
-              }
-              break;
+    
+    // HLS 播放
+    if (url.includes('.m3u8')) {
+      if (Hls.isSupported()) {
+        console.log('Using HLS.js');
+        hlsInstance = new Hls({
+          enableWorker: true,
+          lowLatencyMode: true,
+          maxBufferLength: 30,
+          maxMaxBufferLength: 60
+        });
+        hlsInstance.loadSource(url);
+        hlsInstance.attachMedia(videoEl);
+        hlsInstance.on(Hls.Events.MANIFEST_PARSED, () => {
+          console.log('HLS manifest parsed, playing...');
+          videoEl?.play().catch((e) => console.log('Play error:', e));
+        });
+        hlsInstance.on(Hls.Events.ERROR, (_event, data) => {
+          console.error('HLS error:', data);
+          if (data.fatal) {
+            switch (data.type) {
+              case Hls.ErrorTypes.NETWORK_ERROR:
+                hlsInstance?.startLoad();
+                break;
+              case Hls.ErrorTypes.MEDIA_ERROR:
+                hlsInstance?.recoverMediaError();
+                break;
+              default:
+                // 尝试其他线路
+                if (lineIdx < playLines.length - 1) {
+                  playEpisode(lineIdx + 1, 0);
+                }
+                break;
+            }
           }
-        }
-      });
-    } else if (url.includes('.m3u8') && videoEl?.canPlayType('application/vnd.apple.mpegurl')) {
-      videoEl.src = url;
-      videoEl.play().catch(() => {});
-      setTimeout(preloadNextEpisode, 1000);
+        });
+      } else if (videoEl.canPlayType('application/vnd.apple.mpegurl')) {
+        // Safari 原生 HLS
+        console.log('Using native HLS');
+        videoEl.src = url;
+        videoEl.play().catch((e) => console.log('Play error:', e));
+      } else {
+        errorMsg = '您的浏览器不支持 HLS 播放';
+      }
     } else {
+      // 直接播放 MP4 等格式
+      console.log('Using native video');
       videoEl.src = url;
-      videoEl.play().catch(() => {});
-      setTimeout(preloadNextEpisode, 1000);
+      videoEl.play().catch((e) => console.log('Play error:', e));
     }
   }
 
@@ -316,9 +327,8 @@
       <!-- 播放器 -->
       <div class="aspect-video bg-black relative">
         <video
-          bind:this={videoEl}
+          use:onVideoMount
           controls
-          autoplay
           playsinline
           class="w-full h-full"
           poster={video.cover}
