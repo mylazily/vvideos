@@ -485,7 +485,7 @@ export function generateCrossSEO(filters: { area?: string; year?: string; catego
   // 关键词覆盖所有组合
   const kwParts: string[] = [label];
   if (filters.category) { kwParts.push(filters.category + '大全'); kwParts.push('最新' + filters.category); }
-  if (filters.area) { kwParts.push(filters.area + filters.category || ''); kwParts.push(filters.area + '影视'); }
+  if (filters.area) { kwParts.push(filters.area + (filters.category || '')); kwParts.push(filters.area + '影视'); }
   if (filters.year) { kwParts.push(filters.year + '年' + (filters.category || '电影')); }
   kwParts.push(label + '在线观看', label + '免费观看', label + '高清', label + '排行榜', label + '推荐');
 

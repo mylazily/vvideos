@@ -17,4 +17,5 @@ export interface Video {
   vod_director?: string;
   vod_actor?: string;
   vod_lang?: string;
+  vod_remarks?: string;
 }
