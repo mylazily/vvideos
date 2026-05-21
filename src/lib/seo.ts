@@ -459,3 +459,54 @@ export function generateSearchSEO(keyword: string, page: number = 1, totalCount:
     keywords: `${keyword},${keyword}视频,${keyword}在线观看,${keyword}相关,${keyword}推荐`
   };
 }
+
+// 交叉聚合页 SEO（地区×年份×分类 二维裂变）
+export function generateCrossSEO(filters: { area?: string; year?: string; category?: string; actor?: string }, page: number = 1, totalCount: number = 0): { title: string; description: string; keywords: string } {
+  const parts: string[] = [];
+  if (filters.year) parts.push(filters.year + '年');
+  if (filters.area) parts.push(filters.area);
+  if (filters.category) parts.push(filters.category);
+  if (filters.actor) parts.push(filters.actor);
+  const label = parts.join('') || '影视';
+  const suffix = page > 1 ? ` 第${page}页` : '';
+  const countText = totalCount > 0 ? `共${totalCount}部` : '';
+
+  // TDK 标题锁死长尾词
+  const title = `${label}大全_最新${label}在线观看${suffix} - ${SITE_NAME}`;
+
+  // 描述包含所有维度信息
+  const descParts: string[] = [];
+  descParts.push(`最新${label}在线观看，高清完整版免费播放。`);
+  if (filters.area) descParts.push(`精选${filters.area}地区${filters.category || '影视'}。`);
+  if (filters.year) descParts.push(`${filters.year}年${filters.category || '影视'}推荐。`);
+  if (totalCount > 0) descParts.push(`共${totalCount}部${label}。`);
+  descParts.push('每日更新，支持手机在线观看。');
+
+  // 关键词覆盖所有组合
+  const kwParts: string[] = [label];
+  if (filters.category) { kwParts.push(filters.category + '大全'); kwParts.push('最新' + filters.category); }
+  if (filters.area) { kwParts.push(filters.area + filters.category || ''); kwParts.push(filters.area + '影视'); }
+  if (filters.year) { kwParts.push(filters.year + '年' + (filters.category || '电影')); }
+  kwParts.push(label + '在线观看', label + '免费观看', label + '高清', label + '排行榜', label + '推荐');
+
+  return {
+    title,
+    description: descParts.join(''),
+    keywords: [...new Set(kwParts)].join(',')
+  };
+}
+
+// 交叉聚合页 FAQ（提升搜索富文本展示）
+export function generateCrossFAQ(filters: { area?: string; year?: string; category?: string }, totalCount: number = 0): { question: string; answer: string }[] {
+  const parts: string[] = [];
+  if (filters.year) parts.push(filters.year + '年');
+  if (filters.area) parts.push(filters.area);
+  if (filters.category) parts.push(filters.category);
+  const label = parts.join('') || '影视';
+
+  return [
+    { question: `哪里可以免费看${label}？`, answer: `${SITE_NAME}提供最新${label}在线免费观看，高清完整版，支持手机和电脑播放，无需下载。${totalCount > 0 ? '目前收录' + totalCount + '部' + label + '。' : ''}` },
+    { question: `${filters.year || ''}${filters.category || '影视'}有什么好看的推荐？`, answer: `${SITE_NAME}每日更新${label}，涵盖${filters.area || '全球各地'}优质内容。支持按地区、年份、分类筛选，轻松找到你喜欢的${filters.category || '影视'}。` },
+    { question: `${label}支持手机观看吗？`, answer: `支持。${SITE_NAME}全站视频均支持手机在线观看，打开浏览器即可播放，无需安装任何APP。同时支持PWA离线缓存功能。` }
+  ];
+}

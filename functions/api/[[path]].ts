@@ -160,6 +160,41 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 			return json({ success: true, data: video });
 		}
 
+		// ======== 相关视频推荐（KV 缓存 10 分钟） ========
+		if (path.startsWith('/api/video/') && path.endsWith('/related')) {
+			const vodId = path.replace('/api/video/', '').replace('/related', '');
+			const cacheKey = 'related:' + vodId;
+			const cached = await env.CACHE.get(cacheKey);
+			if (cached) return json({ success: true, data: JSON.parse(cached) }, 200, swrHeaders(600));
+
+			// 先查当前视频获取分类和地区
+			const shards = getShards(env);
+			const videoResult = await Promise.all(shards.map(db => db.prepare('SELECT category, vod_area, vod_actor FROM videos WHERE vod_id = ? AND status = 1').bind(vodId).first<{ category: string; vod_area: string; vod_actor: string }>());
+			const videoInfo = videoResult.find(r => r !== null);
+
+			if (!videoInfo) return json({ success: true, data: [] });
+
+			// 按分类+地区查找相关视频，再按演员补充
+			const conditions: string[] = ['status = 1', 'vod_id != ?'];
+			const bindings: any[] = [vodId];
+
+			if (videoInfo.category) { conditions.push('category = ?'); bindings.push(videoInfo.category); }
+			if (videoInfo.vod_area) { conditions.push('vod_area = ?'); bindings.push(videoInfo.vod_area); }
+
+			const where = conditions.join(' AND ');
+			const sql = 'SELECT ' + VIDEO_COLS + ' FROM videos WHERE ' + where + ' ORDER BY views DESC LIMIT 100';
+
+			const results = await Promise.all(shards.map(db => db.prepare(sql).bind(...bindings).all<any>()));
+			let related: any[] = [];
+			for (const r of results) if (r.results) related.push(...r.results);
+
+			// 去重并取前12个
+			const unique = Array.from(new Map(related.map(v => [v.vod_id, v])).values()).slice(0, 12);
+
+			await env.CACHE.put(cacheKey, JSON.stringify(unique), { expirationTtl: 600 });
+			return json({ success: true, data: unique });
+		}
+
 		// ======== 分类（KV 缓存 1 小时） ========
 		if (path === '/api/categories') {
 			const cached = await env.CACHE.get('categories');

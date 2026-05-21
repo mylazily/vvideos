@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { page } from '$app/stores';
   import NavBar from '$components/NavBar.svelte';
+  import VideoCard from '$components/VideoCard.svelte';
   import type { Video } from '$lib/types';
   import {
     generateSEODescription,
@@ -36,6 +37,7 @@
   let isPlaying = $state(false);
   let isLoadingVideo = false;
   let infoLoaded = $state(false);
+  let relatedVideos = $state<Video[]>([]);
 
   let vodId = $derived($page.params.id);
   let currentEpisode = $derived(playLines[currentLineIndex]?.episodes[currentEpisodeIndex]);
@@ -119,6 +121,9 @@
 
         // 信息区立即可见
         infoLoaded = true;
+
+        // 后台加载相关视频（不阻塞播放）
+        loadRelatedVideos(vodId);
 
         // 延迟初始化播放器（HLS.js 动态导入）
         if (playLines.length > 0) {
@@ -233,6 +238,16 @@
   function retryLoad() {
     isLoadingVideo = false;
     loadVideo();
+  }
+
+  async function loadRelatedVideos(id: string) {
+    try {
+      const res = await fetch('/api/video/' + id + '/related', { signal: AbortSignal.timeout(5000) });
+      if (res.ok) {
+        const data = await res.json();
+        relatedVideos = data.data || [];
+      }
+    } catch (_) { /* 静默失败，不影响用户体验 */ }
   }
 </script>
 
@@ -458,6 +473,18 @@
                 </summary>
                 <p class="mt-1 text-sm text-gray-500">{faq.answer}</p>
               </details>
+            {/each}
+          </div>
+        </section>
+      {/if}
+
+      <!-- 相关视频推荐（内链织网 + 增加页面停留时间） -->
+      {#if relatedVideos.length > 0}
+        <section class="mt-2 bg-white p-3">
+          <h3 class="font-medium mb-2">猜你喜欢</h3>
+          <div class="grid grid-cols-3 gap-2">
+            {#each relatedVideos as rv, i (rv.vod_id)}
+              <VideoCard video={rv} loading={i < 3 ? 'eager' : 'lazy'} />
             {/each}
           </div>
         </section>
