@@ -10,6 +10,7 @@ export interface Env {
   DB_7: D1Database;
   DB_8: D1Database;
   DB_9: D1Database;
+  CACHE: KVNamespace;
 }
 
 const SITE_URL = 'https://evideos.pages.dev';
@@ -24,16 +25,30 @@ function escapeXml(str: string): string {
 
 export const onRequest: PagesFunction<Env> = async (context) => {
   const { env } = context;
+
+  // KV 缓存 1 小时
+  const cacheKey = 'video:sitemap:xml';
+  const cached = await env.CACHE.get(cacheKey);
+  if (cached) {
+    return new Response(cached, {
+      headers: {
+        'Content-Type': 'application/xml',
+        'Cache-Control': 'public, max-age=3600'
+      }
+    });
+  }
   
   try {
     const shards = getAllShards(env);
-    const allVideos: any[] = [];
-    
-    for (const db of shards) {
-      const result = await db.prepare(
+    const results = await Promise.all(shards.map(db =>
+      db.prepare(
         `SELECT vod_id, title, category, cover, play_url, vod_year, vod_area, vod_actor, vod_director, updated_at 
          FROM videos WHERE status = 1 ORDER BY updated_at DESC LIMIT 2000`
-      ).all();
+      ).all()
+    ));
+    
+    const allVideos: any[] = [];
+    for (const result of results) {
       if (result.results) allVideos.push(...result.results);
     }
     
@@ -77,6 +92,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
     
     xml += '</urlset>';
     
+    await env.CACHE.put(cacheKey, xml, { expirationTtl: 3600 });
     return new Response(xml, {
       headers: {
         'Content-Type': 'application/xml',

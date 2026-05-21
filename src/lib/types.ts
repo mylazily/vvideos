@@ -16,4 +16,5 @@ export interface Video {
   vod_area?: string;
   vod_director?: string;
   vod_actor?: string;
+  vod_lang?: string;
 }

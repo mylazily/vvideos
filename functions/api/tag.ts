@@ -10,6 +10,7 @@ export interface Env {
   DB_7: D1Database;
   DB_8: D1Database;
   DB_9: D1Database;
+  CACHE: KVNamespace;
 }
 
 function getAllShards(env: Env): D1Database[] {
@@ -21,7 +22,9 @@ function jsonResponse(data: any, status = 200) {
     status,
     headers: {
       'Content-Type': 'application/json',
-      'Access-Control-Allow-Origin': '*'
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type'
     }
   });
 }
@@ -29,14 +32,24 @@ function jsonResponse(data: any, status = 200) {
 export const onRequest: PagesFunction<Env> = async (context) => {
   const { request, env } = context;
   const url = new URL(request.url);
+
+  if (request.method === 'OPTIONS') {
+    return new Response(null, {
+      headers: { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type' }
+    });
+  }
   
   const tagName = url.searchParams.get('name') || '';
-  const page = parseInt(url.searchParams.get('page') || '1');
-  const limit = Math.min(parseInt(url.searchParams.get('limit') || '24'), 48);
+  const page = Math.max(1, parseInt(url.searchParams.get('page') || '1') || 1);
+  const limit = Math.min(Math.max(1, parseInt(url.searchParams.get('limit') || '24') || 24), 48);
   
   if (!tagName) {
     return jsonResponse({ success: false, message: '缺少标签名称' }, 400);
   }
+  
+  const cacheKey = `tag:${tagName}:p${page}:l${limit}`;
+  const cached = await env.CACHE.get(cacheKey);
+  if (cached) return jsonResponse(JSON.parse(cached));
   
   const shards = getAllShards(env);
   const offset = (page - 1) * limit;
@@ -45,11 +58,9 @@ export const onRequest: PagesFunction<Env> = async (context) => {
     // 构建搜索条件 - 在多个字段中搜索
     const searchPattern = `%${tagName}%`;
     
-    // 从所有分片获取数据
-    const allVideos: any[] = [];
-    
-    for (const db of shards) {
-      const result = await db.prepare(
+    // 从所有分片并行获取数据
+    const results = await Promise.all(shards.map(db =>
+      db.prepare(
         `SELECT vod_id, title, cover, category, vod_year, vod_area, vod_actor, vod_director, vod_lang, views, created_at 
          FROM videos 
          WHERE status = 1 AND (
@@ -61,8 +72,11 @@ export const onRequest: PagesFunction<Env> = async (context) => {
            vod_lang LIKE ?
          )
          ORDER BY created_at DESC`
-      ).bind(searchPattern, searchPattern, searchPattern, searchPattern, searchPattern, searchPattern).all<any>();
-      
+      ).bind(searchPattern, searchPattern, searchPattern, searchPattern, searchPattern, searchPattern).all<any>()
+    ));
+    
+    const allVideos: any[] = [];
+    for (const result of results) {
       if (result.results) {
         allVideos.push(...result.results);
       }
@@ -76,18 +90,9 @@ export const onRequest: PagesFunction<Env> = async (context) => {
     const totalPages = Math.ceil(total / limit);
     const pagedVideos = uniqueVideos.slice(offset, offset + limit);
     
-    return jsonResponse({
-      success: true,
-      data: {
-        videos: pagedVideos,
-        pagination: {
-          page,
-          limit,
-          total,
-          totalPages
-        }
-      }
-    });
+    const responseData = { success: true, data: { videos: pagedVideos, pagination: { page, limit, total, totalPages } } };
+    await env.CACHE.put(cacheKey, JSON.stringify(responseData), { expirationTtl: 1800 });
+    return jsonResponse(responseData);
     
   } catch (err: any) {
     return jsonResponse({ success: false, message: err.message }, 500);

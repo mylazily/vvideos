@@ -10,6 +10,7 @@ export interface Env {
   DB_7: D1Database;
   DB_8: D1Database;
   DB_9: D1Database;
+  CACHE: KVNamespace;
 }
 
 const BASE_URL = 'https://evideos.pages.dev';
@@ -19,26 +20,24 @@ function getAllShards(env: Env): D1Database[] {
 }
 
 async function getAllVideoUrls(env: Env): Promise<{ loc: string; lastmod: string; priority: string }[]> {
-  const urls: { loc: string; lastmod: string; priority: string }[] = [];
   const shards = getAllShards(env);
   
-  for (const db of shards) {
-    try {
-      const result = await db.prepare(
-        'SELECT vod_id, updated_at FROM videos WHERE status = 1 ORDER BY updated_at DESC LIMIT 5000'
-      ).all<{ vod_id: string; updated_at: number }>();
-      
-      if (result.results) {
-        for (const row of result.results) {
-          urls.push({
-            loc: `${BASE_URL}/v/${row.vod_id}`,
-            lastmod: new Date(row.updated_at * 1000).toISOString().split('T')[0],
-            priority: '0.8'
-          });
-        }
+  const results = await Promise.all(shards.map(db =>
+    db.prepare(
+      'SELECT vod_id, updated_at FROM videos WHERE status = 1 ORDER BY updated_at DESC LIMIT 5000'
+    ).all<{ vod_id: string; updated_at: number }>()
+  ));
+
+  const urls: { loc: string; lastmod: string; priority: string }[] = [];
+  for (const result of results) {
+    if (result.results) {
+      for (const row of result.results) {
+        urls.push({
+          loc: `${BASE_URL}/v/${row.vod_id}`,
+          lastmod: new Date(row.updated_at * 1000).toISOString().split('T')[0],
+          priority: '0.8'
+        });
       }
-    } catch (e) {
-      console.error('Shard query error:', e);
     }
   }
   
@@ -72,6 +71,18 @@ async function getCategoryUrls(env: Env): Promise<{ loc: string; lastmod: string
 
 export const onRequest: PagesFunction<Env> = async (context) => {
   const { env } = context;
+
+  // KV 缓存 1 小时
+  const cacheKey = 'sitemap:xml';
+  const cached = await env.CACHE.get(cacheKey);
+  if (cached) {
+    return new Response(cached, {
+      headers: {
+        'Content-Type': 'application/xml',
+        'Cache-Control': 'public, max-age=3600'
+      }
+    });
+  }
   
   try {
     // 获取所有URL
@@ -104,6 +115,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
     
     xml += '</urlset>';
     
+    await env.CACHE.put(cacheKey, xml, { expirationTtl: 3600 });
     return new Response(xml, {
       headers: {
         'Content-Type': 'application/xml',

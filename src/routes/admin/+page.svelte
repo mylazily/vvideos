@@ -29,14 +29,14 @@
     todayNewVideos: number;
   }
 
-  let stats: Stats | null = null;
-  let sources: Source[] = [];
-  let logs: Log[] = [];
-  let loading = true;
-  let collecting = false;
-  let message = '';
-  let newSourceName = '';
-  let newSourceUrl = '';
+  let stats = $state<Stats | null>(null);
+  let sources = $state<Source[]>([]);
+  let logs = $state<Log[]>([]);
+  let loading = $state(true);
+  let collecting = $state(false);
+  let message = $state('');
+  let newSourceName = $state('');
+  let newSourceUrl = $state('');
 
   onMount(async () => {
     await loadData();
@@ -153,6 +153,7 @@
 
 <svelte:head>
   <title>管理后台 - 必爱必爱</title>
+  <meta name="robots" content="noindex, nofollow" />
 </svelte:head>
 
 <div class="min-h-screen bg-gray-50">

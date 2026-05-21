@@ -10,6 +10,7 @@ export interface Env {
   DB_7: D1Database;
   DB_8: D1Database;
   DB_9: D1Database;
+  CACHE: KVNamespace;
 }
 
 const SITE_URL = 'https://evideos.pages.dev';
@@ -20,16 +21,30 @@ function getAllShards(env: Env): D1Database[] {
 
 export const onRequest: PagesFunction<Env> = async (context) => {
   const { env } = context;
+
+  // KV 缓存 1 小时
+  const cacheKey = 'rss:feed';
+  const cached = await env.CACHE.get(cacheKey);
+  if (cached) {
+    return new Response(cached, {
+      headers: {
+        'Content-Type': 'application/xml; charset=utf-8',
+        'Cache-Control': 'public, max-age=3600'
+      }
+    });
+  }
   
   try {
-    // 从所有分片获取最新视频
-    const allVideos: any[] = [];
+    // 从所有分片并行获取最新视频
     const shards = getAllShards(env);
-    
-    for (const db of shards) {
-      const result = await db.prepare(
+    const results = await Promise.all(shards.map(db =>
+      db.prepare(
         'SELECT vod_id, title, category, vod_year, cover, updated_at FROM videos WHERE status = 1 ORDER BY updated_at DESC LIMIT 100'
-      ).all();
+      ).all()
+    ));
+    
+    const allVideos: any[] = [];
+    for (const result of results) {
       if (result.results) allVideos.push(...result.results);
     }
     
@@ -60,6 +75,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
   </channel>
 </rss>`;
     
+    await env.CACHE.put(cacheKey, xml, { expirationTtl: 3600 });
     return new Response(xml, {
       headers: {
         'Content-Type': 'application/xml; charset=utf-8',

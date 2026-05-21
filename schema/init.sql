@@ -44,6 +44,7 @@ CREATE TABLE IF NOT EXISTS videos (
   vod_actor TEXT DEFAULT '',
   vod_director TEXT DEFAULT '',
   vod_remarks TEXT DEFAULT '',
+  duration TEXT DEFAULT '',
   vod_lang TEXT DEFAULT '',
   description TEXT DEFAULT '',
   status INTEGER DEFAULT 1,

@@ -1,13 +1,12 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import PageLayout from '$components/PageLayout.svelte';
-  import VideoGrid from '$components/VideoGrid.svelte';
   import LoadingSpinner from '$components/LoadingSpinner.svelte';
   import EmptyState from '$components/EmptyState.svelte';
   import { getFavorites, removeFavorite, clearFavorites, type LocalVideo } from '$lib/storage';
 
-  let videos: LocalVideo[] = [];
-  let loading = true;
+  let videos = $state<LocalVideo[]>([]);
+  let loading = $state(true);
 
   onMount(() => {
     videos = getFavorites();

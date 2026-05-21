@@ -92,6 +92,7 @@
 <svelte:head>
   <title>发现 - 必爱必爱</title>
   <meta name="description" content="发现最新热门电影、电视剧、综艺、动漫，按分类、地区、年份、演员、导演浏览" />
+  <meta name="keywords" content="发现,热门视频,最新电影,电视剧,综艺,动漫" />
 </svelte:head>
 
 <div class="min-h-screen bg-gray-50">

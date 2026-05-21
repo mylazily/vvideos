@@ -28,6 +28,7 @@ export function getFavorites(): LocalVideo[] {
 }
 
 export function addFavorite(video: LocalVideo): void {
+  if (typeof window === 'undefined') return;
   const favorites = getFavorites();
   // 检查是否已存在
   if (!favorites.find(f => f.vod_id === video.vod_id)) {
@@ -37,6 +38,7 @@ export function addFavorite(video: LocalVideo): void {
 }
 
 export function removeFavorite(vodId: string): void {
+  if (typeof window === 'undefined') return;
   const favorites = getFavorites().filter(f => f.vod_id !== vodId);
   localStorage.setItem(FAVORITES_KEY, JSON.stringify(favorites));
 }
@@ -46,6 +48,7 @@ export function isFavorite(vodId: string): boolean {
 }
 
 export function clearFavorites(): void {
+  if (typeof window === 'undefined') return;
   localStorage.removeItem(FAVORITES_KEY);
 }
 
@@ -69,6 +72,7 @@ export function getHistory(): HistoryItem[] {
 }
 
 export function addToHistory(video: LocalVideo & { progress?: number; duration?: number; last_play?: string }): void {
+  if (typeof window === 'undefined') return;
   let history = getHistory();
   
   // 移除旧记录
@@ -89,15 +93,18 @@ export function addToHistory(video: LocalVideo & { progress?: number; duration?:
 }
 
 export function removeFromHistory(vodId: string): void {
+  if (typeof window === 'undefined') return;
   const history = getHistory().filter(h => h.vod_id !== vodId);
   localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
 }
 
 export function clearHistory(): void {
+  if (typeof window === 'undefined') return;
   localStorage.removeItem(HISTORY_KEY);
 }
 
 export function updateHistoryProgress(vodId: string, progress: number, duration?: number, lastPlay?: string): void {
+  if (typeof window === 'undefined') return;
   const history = getHistory();
   const item = history.find(h => h.vod_id === vodId);
   if (item) {
@@ -112,6 +119,7 @@ export function updateHistoryProgress(vodId: string, progress: number, duration?
 // ===== 通用功能 =====
 
 export function clearAllData(): void {
+  if (typeof window === 'undefined') return;
   localStorage.removeItem(FAVORITES_KEY);
   localStorage.removeItem(HISTORY_KEY);
 }

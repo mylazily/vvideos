@@ -5,8 +5,8 @@
   import EmptyState from '$components/EmptyState.svelte';
   import { getHistory, removeFromHistory, clearHistory, type HistoryItem } from '$lib/storage';
 
-  let videos: HistoryItem[] = [];
-  let loading = true;
+  let videos = $state<HistoryItem[]>([]);
+  let loading = $state(true);
 
   onMount(() => {
     videos = getHistory();

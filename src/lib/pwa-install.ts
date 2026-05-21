@@ -106,6 +106,7 @@ export function getPWAInstallGuide(): { title: string; steps: string[] } {
 
 // 检测是否应该显示安装引导
 export function shouldShowPWAInstall(): boolean {
+  if (typeof window === 'undefined') return false;
   const info = getPWAInstallInfo();
   if (info.isInstalled) return false;
   
@@ -124,5 +125,6 @@ export function shouldShowPWAInstall(): boolean {
 
 // 记录用户关闭安装引导
 export function dismissPWAInstall(): void {
+  if (typeof window === 'undefined') return;
   localStorage.setItem('pwa_install_dismissed', Date.now().toString());
 }

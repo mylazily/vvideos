@@ -17,6 +17,7 @@ export function getToken(): string | null {
 
 // 保存 token
 export function setToken(token: string): void {
+  if (typeof window === 'undefined') return;
   localStorage.setItem(TOKEN_KEY, token);
 }
 
@@ -33,6 +34,7 @@ export function getUser(): UserInfo | null {
 
 // 保存用户信息
 export function setUser(user: UserInfo): void {
+  if (typeof window === 'undefined') return;
   localStorage.setItem(USER_KEY, JSON.stringify(user));
 }
 
@@ -43,6 +45,7 @@ export function isLoggedIn(): boolean {
 
 // 退出登录
 export function logout(): void {
+  if (typeof window === 'undefined') return;
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(USER_KEY);
 }

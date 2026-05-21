@@ -22,7 +22,7 @@ function getShards(env: Env): D1Database[] {
 function json(data: any, status = 200, headers: Record<string, string> = {}): Response {
   return new Response(JSON.stringify(data), {
     status,
-    headers: { 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=3600', ...headers }
+    headers: { 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=3600', 'Access-Control-Allow-Origin': '*', ...headers }
   });
 }
 
@@ -31,6 +31,13 @@ export const onRequest: PagesFunction<Env> = async (context) => {
   const url = new URL(request.url);
   const path = url.pathname;
 
+  if (request.method === 'OPTIONS') {
+    return new Response(null, {
+      headers: { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type' }
+    });
+  }
+
+  try {
   // ======== 获取所有可交叉的维度 ========
   if (path === '/api/cross/dimensions') {
     const cacheKey = 'cross:dimensions';
@@ -39,7 +46,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 
     const shards = getShards(env);
     const results = await Promise.all(shards.map(db => db.prepare(
-      `SELECT category, vod_area, vod_year, vod_actor FROM videos WHERE status = 1`
+      `SELECT category, vod_area, vod_year, vod_actor FROM videos WHERE status = 1 LIMIT 10000`
     ).all<{ category: string; vod_area: string; vod_year: string; vod_actor: string }>()));
 
     const categories = new Set<string>();
@@ -166,4 +173,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
   }
 
   return json({ success: false, message: 'Not found' }, 404);
+  } catch (err: any) {
+    return json({ success: false, message: err.message || '服务器错误' }, 500);
+  }
 };

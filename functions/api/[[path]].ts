@@ -94,8 +94,8 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 
 		// ======== 通用视频列表（分类/翻页用） ========
 		if (path === '/api/videos') {
-			const page = parseInt(url.searchParams.get('page') || '1');
-			const limit = Math.min(parseInt(url.searchParams.get('limit') || '20'), 100);
+			const page = Math.max(1, parseInt(url.searchParams.get('page') || '1') || 1);
+			const limit = Math.min(Math.max(1, parseInt(url.searchParams.get('limit') || '20') || 20), 100);
 			const category = url.searchParams.get('category');
 
 			const cacheKey = 'videos:p' + page + ':l' + limit + ':' + (category || '');
@@ -150,7 +150,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 
 			// 不缓存 play_url（太大），只缓存基本信息
 			const { play_url, ...cacheData } = video;
-			await env.CACHE.put(cacheKey, JSON.stringify(video), { expirationTtl: 600 });
+			await env.CACHE.put(cacheKey, JSON.stringify(cacheData), { expirationTtl: 600 });
 			return json({ success: true, data: video });
 		}
 

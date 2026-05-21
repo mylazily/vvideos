@@ -55,6 +55,7 @@
   <title>{tagName} - 相关视频 - 必爱必爱</title>
   <meta name="description" content="{tagName}相关视频在线观看，高清完整版免费播放。" />
   <meta name="keywords" content="{tagName},{tagName}视频,{tagName}在线观看" />
+  <link rel="canonical" href="https://evideos.pages.dev/tag/{encodeURIComponent(tagName)}" />
 </svelte:head>
 
 <div class="min-h-screen bg-gray-50">

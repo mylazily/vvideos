@@ -1,9 +1,7 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
-  import { page } from '$app/stores';
 
   // 搜索首页 - 重定向到搜索结果或显示搜索框
-  let { url } = $props();
   let q = $state('');
 
   function handleSearch() {

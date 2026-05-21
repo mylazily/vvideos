@@ -6,10 +6,10 @@
   import type { Video } from '$lib/types';
   import { generateSearchActionSchema, generateOrganizationSchema, generateFAQSchema } from '$lib/seo';
 
-  let videos: Video[] = [];
-  let loading = true;
-  let errorMsg = '';
-  let searchKeyword = '';
+  let videos = $state<Video[]>([]);
+  let loading = $state(true);
+  let errorMsg = $state('');
+  let searchKeyword = $state('');
 
   onMount(async () => {
     try {

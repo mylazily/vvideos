@@ -1,10 +1,7 @@
 <script lang="ts">
   import { page } from '$app/stores';
 
-  let currentPath = '';
-  page.subscribe(p => {
-    currentPath = p.url.pathname;
-  });
+  let currentPath = $derived($page.url.pathname);
 </script>
 
 <nav class="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 z-50">

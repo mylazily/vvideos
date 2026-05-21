@@ -1,5 +1,4 @@
 // Service Worker - 永不失联
-const CACHE_NAME = 'evideos-v2';
 const STATIC_CACHE = 'evideos-static-v2';
 const API_CACHE = 'evideos-api-v1';
 const OFFLINE_URL = '/';
@@ -7,11 +6,6 @@ const OFFLINE_URL = '/';
 // 需要预缓存的静态资源
 const PRECACHE_URLS = [
   '/',
-  '/category/全部/1',
-  '/discover',
-  '/rank',
-  '/search',
-  '/profile',
   '/manifest.json'
 ];
 
@@ -19,7 +13,7 @@ const PRECACHE_URLS = [
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(STATIC_CACHE).then((cache) => {
-      return cache.addAll(PRECACHE_URLS);
+      return cache.addAll(PRECACHE_URLS).catch(() => {});
     }).then(() => self.skipWaiting())
   );
 });
