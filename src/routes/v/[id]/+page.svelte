@@ -20,22 +20,19 @@
   } from '$lib/seo';
   import { addToHistory } from '$lib/storage';
   import { generateHighlights, generateRecommendation, generateViewingTips, generateRelatedSearches } from '$lib/content-generator';
+  import {
+    testAllSources,
+    selectBestSource as selectBest,
+    parseM3U8ForAds,
+    createPlaybackMonitor,
+    createAutoSwitchManager,
+    preloadNextVideo,
+    type PlaySource,
+    type AdSegment,
+    type SourceHealth
+  } from '$lib/player-manager';
 
   // ============ 类型定义 ============
-  interface PlaySource {
-    name: string;
-    url: string;
-    duration: number;
-    priority: number;
-    latency?: number;
-  }
-
-  interface AdSegment {
-    start: number;
-    end: number;
-    type: 'pre' | 'mid' | 'post';
-  }
-
   interface VideoDetail extends Video {
     play_sources: Array<{ url: string; duration: number }>;
     ad_segments: AdSegment[];
@@ -52,16 +49,21 @@
   let isPlaying = $state(false);
   let isLoadingVideo = false;
   let relatedVideos = $state<Video[]>([]);
-  let lineStatuses = $state<Array<{ index: number; available: boolean; latency: number }>>([]);
+  let sourceHealths = $state<SourceHealth[]>([]);
   let isCheckingLines = $state(false);
   let bufferHealth = $state(100);
   let skippedAds = $state<AdSegment[]>([]);
   let isSkippingAd = $state(false);
+  let detectedAdSegments = $state<AdSegment[]>([]);
+  let autoSwitchManager: ReturnType<typeof createAutoSwitchManager> | null = null;
+  let playbackMonitor: ReturnType<typeof createPlaybackMonitor> | null = null;
+  let bandwidth = $state(0);
+  let isBuffering = $state(false);
 
   // ============ 派生状态 ============
   let videoId = $derived($page.params.id);
   let currentSource = $derived(playSources[currentSourceIndex]);
-  let adSegments = $derived(video?.ad_segments || []);
+  let adSegments = $derived([...(video?.ad_segments || []), ...detectedAdSegments]);
 
   // ============ SEO 数据 ============
   let autoDescription = $derived(video ? generateAutoDescription(video) : '');
@@ -93,7 +95,10 @@
   // ============ 生命周期 ============
   onMount(() => {
     loadVideo();
-    return () => destroyPlayer();
+    return () => {
+      destroyPlayer();
+      playbackMonitor?.destroy();
+    };
   });
 
   // ============ 核心函数 ============
@@ -122,6 +127,7 @@
     isPlaying = false;
     showPlayButton = false;
     skippedAds = [];
+    detectedAdSegments = [];
     destroyPlayer();
 
     try {
@@ -144,6 +150,7 @@
 
       // 转换播放源
       playSources = (video.play_sources || []).map((s, i) => ({
+        id: `source-${i}`,
         name: `线路${i + 1}`,
         url: s.url,
         duration: s.duration || 0,
@@ -163,6 +170,11 @@
       // 后台加载相关视频
       loadRelatedVideos(videoId);
 
+      // 初始化自动切换管理器
+      autoSwitchManager = createAutoSwitchManager(playSources, (idx) => {
+        playSource(idx);
+      });
+
       // 智能选择最佳线路
       if (playSources.length > 0) {
         await selectBestSource();
@@ -175,7 +187,7 @@
     }
   }
 
-  // 智能选择最佳线路
+  // 智能选择最佳线路（使用新的测速模块）
   async function selectBestSource() {
     if (playSources.length === 1) {
       playSource(0);
@@ -183,40 +195,17 @@
     }
 
     isCheckingLines = true;
-    const checks = playSources.map(async (source, index) => {
-      const startTime = performance.now();
-      try {
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 3000);
-
-        await fetch(source.url, {
-          method: 'HEAD',
-          signal: controller.signal,
-          mode: 'no-cors'
-        });
-        clearTimeout(timeout);
-
-        return {
-          index,
-          available: true,
-          latency: performance.now() - startTime
-        };
-      } catch {
-        return { index, available: false, latency: Infinity };
-      }
-    });
-
-    lineStatuses = await Promise.all(checks);
+    
+    // 使用新的并行测速
+    sourceHealths = await testAllSources(playSources);
     isCheckingLines = false;
 
-    // 选择延迟最低的可用线路
-    const bestLine = lineStatuses
-      .filter(s => s.available)
-      .sort((a, b) => a.latency - b.latency)[0];
-
-    if (bestLine) {
-      currentSourceIndex = bestLine.index;
-      playSource(bestLine.index);
+    // 选择最佳线路
+    const best = selectBest(playSources, sourceHealths);
+    
+    if (best) {
+      currentSourceIndex = playSources.findIndex(s => s.id === best.source.id);
+      playSource(currentSourceIndex);
     } else {
       playSource(0);
     }
@@ -234,28 +223,63 @@
     }
 
     destroyPlayer();
+    playbackMonitor?.destroy();
 
     // 设置广告跳过监听
     setupAdSkipper(videoEl);
 
+    // 创建播放监控
+    playbackMonitor = createPlaybackMonitor(
+      videoEl,
+      () => {
+        // 缓冲不足，尝试切换线路
+        if (autoSwitchManager) {
+          autoSwitchManager.switchToNext();
+        }
+      },
+      (error) => {
+        // 播放错误
+        if (autoSwitchManager) {
+          autoSwitchManager.reportError(index, error);
+        }
+      }
+    );
+
     if (source.url.includes('.m3u8')) {
       await playHls(videoEl, source.url);
+      
+      // 后台检测M3U8中的广告
+      detectAdsInM3U8(source.url);
     } else {
       playMp4(videoEl, source.url);
+    }
+
+    // 预加载下一个线路
+    if (playSources.length > 1) {
+      preloadNextVideo(playSources, index);
+    }
+  }
+
+  // 检测M3U8中的广告段
+  async function detectAdsInM3U8(url: string) {
+    try {
+      const ads = await parseM3U8ForAds(url);
+      if (ads.length > 0) {
+        detectedAdSegments = ads;
+      }
+    } catch {
+      // 静默失败
     }
   }
 
   // 广告跳过逻辑
   function setupAdSkipper(videoEl: HTMLVideoElement) {
-    if (!adSegments.length) return;
-
     const checkAndSkip = () => {
       if (isSkippingAd) return;
 
       const currentTime = videoEl.currentTime;
       for (const seg of adSegments) {
         if (currentTime >= seg.start && currentTime < seg.end) {
-          // 在广告段内，跳到广告结束
           isSkippingAd = true;
           videoEl.currentTime = seg.end;
           skippedAds = [...skippedAds, seg];
@@ -277,15 +301,29 @@
           enableWorker: true,
           lowLatencyMode: false,
           maxBufferLength: 30,
-          maxMaxBufferLength: 60,
-          maxBufferSize: 30 * 1000 * 1000,
+          maxMaxBufferLength: 90,
+          maxBufferSize: 50 * 1000 * 1000,
+          maxBufferHole: 0.5,
           startLevel: -1,
-          abrEwmaDefaultEstimate: 500000,
-          abrBandWidthFactor: 0.95,
-          abrBandWidthUpFactor: 0.7,
-          fragLoadingTimeOut: 20000,
-          manifestLoadingTimeOut: 10000,
-          levelLoadingTimeOut: 10000,
+          abrEwmaDefaultEstimate: 1000000,
+          abrBandWidthFactor: 0.7,
+          abrBandWidthUpFactor: 0.5,
+          fragLoadingTimeOut: 30000,
+          manifestLoadingTimeOut: 15000,
+          levelLoadingTimeOut: 15000,
+          fragLoadingMaxRetry: 6,
+          manifestLoadingMaxRetry: 3,
+          levelLoadingMaxRetry: 3,
+        });
+
+        hlsPlayer.on(Hls.Events.FRAG_LOADED, (_: any, data: any) => {
+          // 更新带宽估算
+          if (data.frag && data.stats) {
+            const duration = data.stats.tload - data.stats.trequest;
+            if (duration > 0 && data.frag._byteRange) {
+              bandwidth = Math.round((data.frag._byteRange / duration) * 8 / 1000);
+            }
+          }
         });
 
         hlsPlayer.on(Hls.Events.BUFFER_APPENDED, () => {
@@ -299,12 +337,18 @@
               isPlaying = true;
               showPlayButton = false;
               setTimeout(() => { videoEl.muted = false; }, 300);
+              autoSwitchManager?.reportSuccess(currentSourceIndex);
             })
             .catch(() => { showPlayButton = true; });
         });
 
         hlsPlayer.on(Hls.Events.ERROR, (_event: any, data: any) => {
           handleHlsError(data);
+        });
+
+        hlsPlayer.on(Hls.Events.FRAG_LOAD_EMERGENCY_ABORTED, () => {
+          // 紧急中止加载，可能是缓冲区满了
+          isBuffering = true;
         });
 
         hlsPlayer.attachMedia(videoEl);
@@ -328,25 +372,34 @@
   function handleHlsError(data: any) {
     if (!data.fatal) return;
 
+    autoSwitchManager?.reportError(currentSourceIndex, data.type);
+
     switch (data.type) {
       case Hls.ErrorTypes.NETWORK_ERROR:
+        // 网络错误，尝试重新加载
         hlsPlayer?.startLoad();
         break;
       case Hls.ErrorTypes.MEDIA_ERROR:
+        // 媒体错误，尝试恢复
         hlsPlayer?.recoverMediaError();
         break;
       default:
+        // 其他致命错误，切换线路
         switchToNextSource();
         break;
     }
   }
 
   function switchToNextSource() {
-    const nextIdx = currentSourceIndex + 1;
-    if (nextIdx < playSources.length) {
-      playSource(nextIdx);
+    if (autoSwitchManager) {
+      autoSwitchManager.switchToNext();
     } else {
-      errorMsg = '所有线路均不可用，请稍后重试';
+      const nextIdx = currentSourceIndex + 1;
+      if (nextIdx < playSources.length) {
+        playSource(nextIdx);
+      } else {
+        errorMsg = '所有线路均不可用，请稍后重试';
+      }
     }
   }
 
@@ -358,6 +411,7 @@
     const bufferedAhead = bufferedEnd - currentTime;
 
     bufferHealth = Math.min(100, (bufferedAhead / 30) * 100);
+    isBuffering = bufferedAhead < 3;
   }
 
   function destroyPlayer() {
@@ -585,10 +639,20 @@
       <!-- 线路选择 -->
       {#if playSources.length > 1}
         <section class="mt-2 bg-white p-3">
-          <h3 class="font-medium mb-2">播放线路 {#if isCheckingLines}<span class="text-xs text-gray-400">(检测中...)</span>{/if}</h3>
+          <div class="flex items-center justify-between mb-2">
+            <h3 class="font-medium">播放线路</h3>
+            <div class="flex items-center gap-2 text-xs text-gray-500">
+              {#if bandwidth > 0}
+                <span>{bandwidth} kbps</span>
+              {/if}
+              {#if isCheckingLines}
+                <span class="text-pink-500">检测中...</span>
+              {/if}
+            </div>
+          </div>
           <div class="flex gap-2 flex-wrap">
             {#each playSources as source, idx}
-              {@const status = lineStatuses.find(s => s.index === idx)}
+              {@const health = sourceHealths.find(h => h.id === source.id)}
               <button
                 onclick={() => playSource(idx)}
                 class="px-3 py-1.5 text-sm rounded transition-colors flex items-center gap-1 {currentSourceIndex === idx ? 'bg-pink-500 text-white' : 'bg-gray-100 active:bg-gray-200'}"
@@ -597,8 +661,11 @@
                 {#if source.duration > 0}
                   <span class="text-xs opacity-70">{formatDuration(source.duration)}</span>
                 {/if}
-                {#if status}
-                  <span class="w-2 h-2 rounded-full {status.available ? 'bg-green-400' : 'bg-red-400'}"></span>
+                {#if health}
+                  <span 
+                    class="w-2 h-2 rounded-full {health.available ? (health.latency < 1000 ? 'bg-green-400' : 'bg-yellow-400') : 'bg-red-400'}"
+                    title={health.available ? `${Math.round(health.latency)}ms` : '不可用'}
+                  ></span>
                 {/if}
               </button>
             {/each}
@@ -608,6 +675,20 @@
               检测到 {adSegments.length} 段广告，将自动跳过
             </p>
           {/if}
+          {#if isBuffering}
+            <p class="text-xs text-yellow-600 mt-2">
+              缓冲中，请稍候...
+            </p>
+          {/if}
+        </section>
+      {:else if playSources.length === 1}
+        <section class="mt-2 bg-white p-3">
+          <div class="flex items-center justify-between">
+            <span class="text-sm text-gray-500">{playSources[0].name}</span>
+            {#if bandwidth > 0}
+              <span class="text-xs text-gray-400">{bandwidth} kbps</span>
+            {/if}
+          </div>
         </section>
       {/if}
 
