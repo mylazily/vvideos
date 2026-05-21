@@ -31,6 +31,17 @@
     todayNewVideos: number;
   }
 
+  interface CollectProgress {
+    status: 'running' | 'completed' | 'error';
+    page: number;
+    totalPages: number;
+    new: number;
+    merged: number;
+    fail: number;
+    startedAt: number;
+    message?: string;
+  }
+
   let isAuthenticated = $state(false);
   let passwordInput = $state('');
   let authError = $state('');
@@ -43,6 +54,15 @@
   let message = $state('');
   let newSourceName = $state('');
   let newSourceUrl = $state('');
+
+  // 采集进度相关状态
+  let collectingSourceId = $state<number | null>(null);
+  let collectProgress = $state<CollectProgress | null>(null);
+  let progressTimer = $state<ReturnType<typeof setInterval> | null>(null);
+
+  // 采集参数
+  let collectPages = $state(5);
+  let collectCategories = $state('');
 
   // 带认证的 fetch 封装
   function authFetch(url: string, options: RequestInit = {}): Promise<Response> {
@@ -63,6 +83,15 @@
       isAuthenticated = true;
       loadData();
     }
+  });
+
+  // 清理定时器
+  $effect(() => {
+    return () => {
+      if (progressTimer) {
+        clearInterval(progressTimer);
+      }
+    };
   });
 
   async function handleLogin() {
@@ -133,23 +162,99 @@
 
   let collectMode = $state<'single' | 'full'>('single');
 
+  // 停止进度轮询
+  function stopProgressPolling() {
+    if (progressTimer) {
+      clearInterval(progressTimer);
+      progressTimer = null;
+    }
+  }
+
+  // 轮询采集进度
+  function startProgressPolling(sourceId: number) {
+    stopProgressPolling();
+    collectingSourceId = sourceId;
+    collectProgress = null;
+
+    // 立即查询一次
+    pollProgress(sourceId);
+
+    // 每3秒轮询
+    progressTimer = setInterval(() => {
+      pollProgress(sourceId);
+    }, 3000);
+  }
+
+  async function pollProgress(sourceId: number) {
+    try {
+      const res = await authFetch(`/api/collect?source_id=${sourceId}`);
+      const data = await res.json();
+      if (data.code === 1 && data.data) {
+        collectProgress = data.data;
+
+        // 如果采集已完成或出错，停止轮询
+        if (data.data.status === 'completed' || data.data.status === 'error') {
+          stopProgressPolling();
+          collecting = false;
+          collectingSourceId = null;
+          message = data.data.message || (data.data.status === 'completed' ? '采集完成' : '采集出错');
+          setTimeout(loadData, 1000);
+        }
+      }
+    } catch {
+      // 轮询失败不影响主流程
+    }
+  }
+
+  // 取消采集
+  async function cancelCollect(sourceId: number) {
+    try {
+      const res = await authFetch(`/api/collect?source_id=${sourceId}`, { method: 'DELETE' });
+      const data = await res.json();
+      stopProgressPolling();
+      collecting = false;
+      collectingSourceId = null;
+      collectProgress = null;
+      message = data.msg || '已取消采集';
+    } catch {
+      message = '取消失败';
+    }
+  }
+
   async function startCollect(sourceId: number, mode: 'single' | 'full' = 'single') {
     collecting = true;
+    collectingSourceId = sourceId;
+    collectProgress = null;
     message = mode === 'full' ? '正在全量采集...' : '正在采集...';
+
+    // 解析分类参数
+    const categories = collectCategories.trim()
+      ? collectCategories.split(/[,，]/).map(c => c.trim()).filter(Boolean)
+      : undefined;
+
     try {
       const res = await authFetch('/api/aadmin/collect', {
         method: 'POST',
-        body: JSON.stringify({ source_id: sourceId, mode })
+        body: JSON.stringify({
+          source_id: sourceId,
+          mode,
+          pages: mode === 'single' ? collectPages : undefined,
+          categories
+        })
       });
       const data = await res.json();
-      message = data.message || '操作完成';
       if (data.success) {
-        setTimeout(loadData, 1000);
+        // 启动进度轮询
+        startProgressPolling(sourceId);
+      } else {
+        message = data.message || '操作失败';
+        collecting = false;
+        collectingSourceId = null;
       }
     } catch {
       message = '请求失败';
-    } finally {
       collecting = false;
+      collectingSourceId = null;
     }
   }
 
@@ -212,6 +317,25 @@
     if (!ts) return '-';
     const d = new Date(ts * 1000);
     return d.toLocaleString('zh-CN');
+  }
+
+  // 进度百分比
+  function progressPercent(): number {
+    if (!collectProgress || !collectProgress.totalPages) return 0;
+    return Math.round((collectProgress.page / collectProgress.totalPages) * 100);
+  }
+
+  // 进度条颜色
+  function progressColor(): string {
+    if (!collectProgress) return 'bg-blue-500';
+    if (collectProgress.status === 'error') return 'bg-red-500';
+    if (collectProgress.status === 'completed') return 'bg-green-500';
+    return 'bg-blue-500';
+  }
+
+  // 判断某个源是否正在采集中
+  function isSourceCollecting(sourceId: number): boolean {
+    return collectingSourceId === sourceId && collectProgress?.status === 'running';
   }
 </script>
 
@@ -307,6 +431,50 @@
           <div class="bg-blue-50 text-blue-700 px-4 py-2 rounded-lg mb-4">{message}</div>
         {/if}
 
+        <!-- 采集进度展示 -->
+        {#if collectProgress}
+          <div class="bg-white rounded-lg p-4 mb-6">
+            <div class="flex items-center justify-between mb-2">
+              <h2 class="font-medium text-gray-800">
+                采集进度
+                {#if collectProgress.status === 'running'}
+                  <span class="inline-block w-2 h-2 bg-green-500 rounded-full ml-2 animate-pulse"></span>
+                {:else if collectProgress.status === 'completed'}
+                  <span class="text-green-600 text-sm ml-2">已完成</span>
+                {:else if collectProgress.status === 'error'}
+                  <span class="text-red-600 text-sm ml-2">出错</span>
+                {/if}
+              </h2>
+              <span class="text-sm text-gray-500">
+                {collectProgress.page}/{collectProgress.totalPages} 页
+                ({progressPercent()}%)
+              </span>
+            </div>
+            <!-- 进度条 -->
+            <div class="w-full bg-gray-200 rounded-full h-3 mb-3">
+              <div
+                class="{progressColor()} h-3 rounded-full transition-all duration-500"
+                style="width: {progressPercent()}%"
+              ></div>
+            </div>
+            <!-- 统计数字 -->
+            <div class="grid grid-cols-3 gap-4 text-center">
+              <div>
+                <div class="text-lg font-bold text-green-600">{collectProgress.new}</div>
+                <div class="text-xs text-gray-500">新增</div>
+              </div>
+              <div>
+                <div class="text-lg font-bold text-blue-600">{collectProgress.merged}</div>
+                <div class="text-xs text-gray-500">更新</div>
+              </div>
+              <div>
+                <div class="text-lg font-bold text-red-600">{collectProgress.fail}</div>
+                <div class="text-xs text-gray-500">失败</div>
+              </div>
+            </div>
+          </div>
+        {/if}
+
         <!-- 定时采集按钮 -->
         <div class="bg-white rounded-lg p-4 mb-6">
           <div class="flex items-center justify-between">
@@ -321,6 +489,33 @@
             >
               {collecting ? '执行中...' : '立即执行'}
             </button>
+          </div>
+        </div>
+
+        <!-- 采集参数设置 -->
+        <div class="bg-white rounded-lg p-4 mb-6">
+          <h2 class="font-medium text-gray-800 mb-3">采集参数</h2>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div>
+              <label class="block text-sm text-gray-500 mb-1">采集页数（单页模式）</label>
+              <input
+                bind:value={collectPages}
+                type="number"
+                min="1"
+                max="999"
+                class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
+                placeholder="默认5页"
+              />
+            </div>
+            <div>
+              <label class="block text-sm text-gray-500 mb-1">分类过滤（可选，逗号分隔）</label>
+              <input
+                bind:value={collectCategories}
+                type="text"
+                class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
+                placeholder="如：动作片,喜剧片,爱情片"
+              />
+            </div>
           </div>
         </div>
 
@@ -367,13 +562,22 @@
                   </div>
                 </div>
                 <div class="flex gap-2">
-                  <button
-                    onclick={() => startCollect(source.id, 'single')}
-                    disabled={collecting || source.status !== 1}
-                    class="px-3 py-1.5 bg-pink-500 text-white text-sm rounded disabled:bg-gray-300"
-                  >
-                    {collecting ? '采集中...' : '采集'}
-                  </button>
+                  {#if isSourceCollecting(source.id)}
+                    <button
+                      onclick={() => cancelCollect(source.id)}
+                      class="px-3 py-1.5 bg-red-500 text-white text-sm rounded animate-pulse"
+                    >
+                      取消
+                    </button>
+                  {:else}
+                    <button
+                      onclick={() => startCollect(source.id, 'single')}
+                      disabled={collecting || source.status !== 1}
+                      class="px-3 py-1.5 bg-pink-500 text-white text-sm rounded disabled:bg-gray-300"
+                    >
+                      采集
+                    </button>
+                  {/if}
                   <button
                     onclick={() => startCollect(source.id, 'full')}
                     disabled={collecting || source.status !== 1}

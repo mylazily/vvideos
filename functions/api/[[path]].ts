@@ -464,7 +464,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 		}
 
 		if (path === '/api/aadmin/collect' && request.method === 'POST') {
-			const { source_id, mode, pages } = await request.json<{ source_id?: number; mode?: 'full' | 'single'; pages?: number }>();
+			const { source_id, mode, pages, categories } = await request.json<{ source_id?: number; mode?: 'full' | 'single'; pages?: number; categories?: string[] }>();
 			if (!source_id) return json({ success: false, message: '缺少source_id' }, 400);
 			const source = await env.DB_0.prepare('SELECT * FROM sources WHERE id = ?').bind(source_id).first<{ id: number; name: string; api_url: string }>();
 			if (!source) return json({ success: false, message: '采集源不存在' }, 404);
@@ -473,7 +473,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 			const collectRes = await fetch(collectUrl.toString(), {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json', 'Authorization': request.headers.get('Authorization') || '' },
-				body: JSON.stringify({ source_url: source.api_url, pages: collectPages, source_id: source_id, mode: mode || 'single' }),
+				body: JSON.stringify({ source_url: source.api_url, pages: collectPages, source_id: source_id, mode: mode || 'single', categories }),
 				signal: AbortSignal.timeout(mode === 'full' ? 3600000 : 300000)
 			});
 			const collectData = await collectRes.json();

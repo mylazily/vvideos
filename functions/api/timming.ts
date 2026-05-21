@@ -45,8 +45,20 @@ async function collectSource(
 	mode: 'full' | 'single',
 	authToken: string,
 	origin: string,
+	env: Env,
 	signal?: AbortSignal
 ): Promise<{ new: number; merged: number; fail: number; totalPages: number; pagesCollected: number }> {
+	// 采集前写入进度
+	await env.CACHE.put(`collect_progress:${sourceId}`, JSON.stringify({
+		status: 'running',
+		page: 0,
+		totalPages: 0,
+		new: 0,
+		merged: 0,
+		fail: 0,
+		startedAt: Math.floor(Date.now() / 1000)
+	}), { expirationTtl: 3600 });
+
 	const collectUrl = new URL('/api/collect', origin);
 	const res = await fetch(collectUrl.toString(), {
 		method: 'POST',
@@ -59,9 +71,33 @@ async function collectSource(
 	});
 	const data = await res.json();
 	if (!res.ok || data.code !== 1) {
+		// 采集失败也更新进度
+		await env.CACHE.put(`collect_progress:${sourceId}`, JSON.stringify({
+			status: 'error',
+			page: 0,
+			totalPages: 0,
+			new: 0,
+			merged: 0,
+			fail: 0,
+			startedAt: Math.floor(Date.now() / 1000),
+			message: data.msg || '采集失败'
+		}), { expirationTtl: 3600 });
 		throw new Error(data.msg || '采集失败');
 	}
-	return data.data || {};
+
+	// 采集完成后更新进度
+	const resultData = data.data || {};
+	await env.CACHE.put(`collect_progress:${sourceId}`, JSON.stringify({
+		status: 'completed',
+		page: resultData.pagesCollected || 0,
+		totalPages: resultData.totalPages || 0,
+		new: resultData.new || 0,
+		merged: resultData.merged || 0,
+		fail: resultData.fail || 0,
+		startedAt: Math.floor(Date.now() / 1000)
+	}), { expirationTtl: 3600 });
+
+	return resultData;
 }
 
 export const onRequest: PagesFunction<Env> = async (context) => {
@@ -83,6 +119,13 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 		authToken = await getCronToken(env) || '';
 	}
 
+	// 改进1: URL参数 force=1 时强制全量模式
+	const forceFull = url.searchParams.get('force') === '1';
+
+	// 改进2: URL参数 source_id=N 时只采集指定源
+	const targetSourceId = url.searchParams.get('source_id');
+	const filterSourceId = targetSourceId ? parseInt(targetSourceId) : null;
+
 	const timingKey = 'timing:last_run';
 	if (isAdmin) {
 		const lastRun = await env.CACHE.get(timingKey);
@@ -91,20 +134,32 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 			if (elapsed < 3600) {
 				return jsonResponse({
 					success: false,
-				message: `定时任务执行过于频繁，请在 ${Math.ceil((3600 - elapsed) / 60)} 分钟后重试`,
-				remaining: 3600 - elapsed
+					message: `定时任务执行过于频繁，请在 ${Math.ceil((3600 - elapsed) / 60)} 分钟后重试`,
+					remaining: 3600 - elapsed
 				}, 429);
 			}
 		}
 	}
 
-	const sources = await env.DB_0.prepare('SELECT * FROM sources WHERE status = 1').all<{
-		id: number;
-		name: string;
-		api_url: string;
-		last_collect_at: number;
-		total_videos: number;
-	}>();
+	let sources;
+	if (filterSourceId && !isNaN(filterSourceId)) {
+		// 单源采集：只查询指定源
+		sources = await env.DB_0.prepare('SELECT * FROM sources WHERE status = 1 AND id = ?').bind(filterSourceId).all<{
+			id: number;
+			name: string;
+			api_url: string;
+			last_collect_at: number;
+			total_videos: number;
+		}>();
+	} else {
+		sources = await env.DB_0.prepare('SELECT * FROM sources WHERE status = 1').all<{
+			id: number;
+			name: string;
+			api_url: string;
+			last_collect_at: number;
+			total_videos: number;
+		}>();
+	}
 
 	if (!sources.results || sources.results.length === 0) {
 		return jsonResponse({ success: true, message: '没有启用的采集源' });
@@ -120,9 +175,15 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 				? Math.floor((Date.now() / 1000 - source.last_collect_at) / 3600)
 				: 999;
 
-			const mode: 'full' | 'single' = hoursSinceLast >= 24 ? 'full' : 'single';
+			// 改进1: force=1 时强制全量，忽略24小时判断
+			let mode: 'full' | 'single';
+			if (forceFull) {
+				mode = 'full';
+			} else {
+				mode = hoursSinceLast >= 24 ? 'full' : 'single';
+			}
 
-			const r = await collectSource(source.api_url, source.id, mode, authToken, url.origin);
+			const r = await collectSource(source.api_url, source.id, mode, authToken, url.origin, env);
 
 			totalNew += r.new || 0;
 			totalMerged += r.merged || 0;
@@ -135,7 +196,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 			await env.DB_0.prepare(
 				'INSERT INTO collect_logs (source_id, action, details, new_count, created_at) VALUES (?, ?, ?, ?, ?)'
 			).bind(source.id, mode === 'full' ? 'timing_full' : 'timing_incremental',
-				`定时采集完成：${source.name}，模式=${mode}，共 ${r.pagesCollected}/${r.totalPages} 页`,
+				`定时采集完成：${source.name}，模式=${mode}${forceFull ? '(强制)' : ''}，共 ${r.pagesCollected}/${r.totalPages} 页`,
 				r.new || 0, Math.floor(Date.now() / 1000)).run();
 
 			results.push({

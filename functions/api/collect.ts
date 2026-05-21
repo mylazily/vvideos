@@ -34,6 +34,7 @@ interface CollectOptions {
 	mode: 'full' | 'single';
 	pages?: number;
 	signal?: AbortSignal;
+	categories?: string[];
 }
 
 interface CollectResult {
@@ -43,6 +44,18 @@ interface CollectResult {
 	fail: number;
 	pagesCollected: number;
 	totalPages: number;
+	categories: Record<string, number>;
+}
+
+interface CollectProgress {
+	status: 'running' | 'completed' | 'error';
+	page: number;
+	totalPages: number;
+	new: number;
+	merged: number;
+	fail: number;
+	startedAt: number;
+	message?: string;
 }
 
 // ============ 工具函数 ============
@@ -133,6 +146,24 @@ async function verifyAdminToken(request: Request, env: Env): Promise<boolean> {
 	if (!token) return false;
 	const tokenData = await env.CACHE.get(`admin_token:${token}`);
 	return !!tokenData;
+}
+
+// ============ 进度上报 ============
+
+async function writeProgress(env: Env, sourceId: number, progress: CollectProgress): Promise<void> {
+	const key = `collect_progress:${sourceId}`;
+	await env.CACHE.put(key, JSON.stringify(progress), { expirationTtl: 3600 });
+}
+
+async function readProgress(env: Env, sourceId: number): Promise<CollectProgress | null> {
+	const key = `collect_progress:${sourceId}`;
+	const data = await env.CACHE.get(key);
+	if (!data) return null;
+	try {
+		return JSON.parse(data) as CollectProgress;
+	} catch {
+		return null;
+	}
 }
 
 // ============ 采集单页列表 + 详情 ============
@@ -244,8 +275,9 @@ async function saveVideo(video: VideoData, sourceId: number, env: Env): Promise<
 // ============ 核心采集函数：支持全量和单页模式 ============
 
 async function collectAll(options: CollectOptions): Promise<CollectResult> {
-	const { sourceUrl, sourceId, env, mode, pages, signal } = options;
-	const result: CollectResult = { total: 0, new: 0, merged: 0, fail: 0, pagesCollected: 0, totalPages: 0 };
+	const { sourceUrl, sourceId, env, mode, pages, signal, categories } = options;
+	const result: CollectResult = { total: 0, new: 0, merged: 0, fail: 0, pagesCollected: 0, totalPages: 0, categories: {} };
+	const startedAt = Math.floor(Date.now() / 1000);
 
 	// 采集锁：防止同一源被同时采集（KV锁，60分钟自动过期）
 	const lockKey = `collect_lock:${sourceId}`;
@@ -259,28 +291,86 @@ async function collectAll(options: CollectOptions): Promise<CollectResult> {
 	}
 	await env.CACHE.put(lockKey, String(Math.floor(Date.now() / 1000)), { expirationTtl: 3600 });
 
+	// 采集开始：写入进度 status=running
+	await writeProgress(env, sourceId, {
+		status: 'running',
+		page: 0,
+		totalPages: 0,
+		new: 0,
+		merged: 0,
+		fail: 0,
+		startedAt
+	});
+
 	try {
 		const { totalPages } = await collectPageList(sourceUrl, 1, signal);
 		result.totalPages = totalPages;
 		const maxPages = mode === 'full' ? totalPages : Math.min(pages || totalPages, totalPages);
 
+		// 更新进度中的 totalPages
+		await writeProgress(env, sourceId, {
+			status: 'running',
+			page: 0,
+			totalPages: maxPages,
+			new: 0,
+			merged: 0,
+			fail: 0,
+			startedAt
+		});
+
 		console.log(`[采集] 源#${sourceId} 模式=${mode} 总页数=${totalPages} 本次采集=${maxPages}页`);
+
+		// 空页连续检测计数器
+		let emptyPageCount = 0;
 
 		for (let page = 1; page <= maxPages; page++) {
 			try {
 				const { videoIds } = await collectPageList(sourceUrl, page, signal);
-				if (videoIds.length === 0) break;
+
+				// 空页连续检测：连续3页为空则提前终止
+				if (videoIds.length === 0) {
+					emptyPageCount++;
+					if (emptyPageCount >= 3) {
+						console.log(`[采集] 源#${sourceId} 连续3页为空，提前终止采集`);
+						break;
+					}
+					// 即使空页也上报进度
+					await writeProgress(env, sourceId, {
+						status: 'running',
+						page,
+						totalPages: maxPages,
+						new: result.new,
+						merged: result.merged,
+						fail: result.fail,
+						startedAt
+					});
+					continue;
+				} else {
+					emptyPageCount = 0;
+				}
 
 				const batchSize = 100;
 				for (let i = 0; i < videoIds.length; i += batchSize) {
 					const batch = videoIds.slice(i, i + batchSize);
-					const videos = await collectPageDetails(sourceUrl, batch, signal);
+					let videos = await collectPageDetails(sourceUrl, batch, signal);
+
+					// 分类过滤
+					if (categories && categories.length > 0) {
+						videos = videos.filter(v => categories.includes(v.type_name));
+					}
+
 					result.total += videos.length;
 					for (const video of videos) {
 						const saved = await saveVideo(video, sourceId, env);
 						if (saved.success) {
-							if (saved.isNew) result.new++;
-							else result.merged++;
+							if (saved.isNew) {
+								result.new++;
+								// 统计分类
+								const cat = video.type_name || '其他';
+								result.categories[cat] = (result.categories[cat] || 0) + 1;
+							} else {
+								result.merged++;
+							}
 						} else {
 							result.fail++;
 						}
@@ -288,6 +378,17 @@ async function collectAll(options: CollectOptions): Promise<CollectResult> {
 				}
 
 				result.pagesCollected = page;
+
+				// 每页采集完成后上报进度到KV
+				await writeProgress(env, sourceId, {
+					status: 'running',
+					page,
+					totalPages: maxPages,
+					new: result.new,
+					merged: result.merged,
+					fail: result.fail,
+					startedAt
+				});
 
 				if (page % 10 === 0 || page === maxPages) {
 					console.log(`[采集] 源#${sourceId} 进度: ${page}/${maxPages}页, 新增=${result.new}, 更新=${result.merged}`);
@@ -300,6 +401,31 @@ async function collectAll(options: CollectOptions): Promise<CollectResult> {
 				result.fail++;
 			}
 		}
+
+		// 采集完成：写入 status=completed
+		await writeProgress(env, sourceId, {
+			status: 'completed',
+			page: result.pagesCollected,
+			totalPages: result.totalPages,
+			new: result.new,
+			merged: result.merged,
+			fail: result.fail,
+			startedAt,
+			message: `采集完成，共 ${result.pagesCollected}/${result.totalPages} 页，新增 ${result.new} 条，更新 ${result.merged} 条`
+		});
+	} catch (e: any) {
+		// 采集出错：写入 status=error
+		await writeProgress(env, sourceId, {
+			status: 'error',
+			page: result.pagesCollected,
+			totalPages: result.totalPages,
+			new: result.new,
+			merged: result.merged,
+			fail: result.fail,
+			startedAt,
+			message: e.message || '采集出错'
+		});
+		throw e;
 	} finally {
 		await env.CACHE.delete(lockKey);
 	}
@@ -311,7 +437,84 @@ async function collectAll(options: CollectOptions): Promise<CollectResult> {
 
 export const onRequest: PagesFunction<Env> = async (context) => {
 	const { request, env } = context;
-	if (request.method !== 'POST') return jsonResponse({ code: 0, msg: '只支持POST请求' }, 405);
+
+	// CORS preflight
+	if (request.method === 'OPTIONS') {
+		return new Response(null, {
+			headers: {
+				'Access-Control-Allow-Origin': '*',
+				'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
+				'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+			}
+		});
+	}
+
+	// GET: 查询采集进度
+	if (request.method === 'GET') {
+		const isAdmin = await verifyAdminToken(request, env);
+		if (!isAdmin) return jsonResponse({ code: 0, msg: '未授权访问' }, 401);
+
+		const url = new URL(request.url);
+		const sourceIdParam = url.searchParams.get('source_id');
+
+		if (sourceIdParam === 'all') {
+			// 返回所有正在运行的采集进度
+			const allProgress: Record<string, CollectProgress> = {};
+			// 检查常见的 sourceId 范围 1-20
+			for (let i = 1; i <= 20; i++) {
+				const progress = await readProgress(env, i);
+				if (progress && progress.status === 'running') {
+					allProgress[String(i)] = progress;
+				}
+			}
+			return jsonResponse({ code: 1, data: allProgress });
+		}
+
+		if (!sourceIdParam) {
+			return jsonResponse({ code: 0, msg: '缺少 source_id 参数' }, 400);
+		}
+
+		const sourceId = parseInt(sourceIdParam);
+		if (isNaN(sourceId)) {
+			return jsonResponse({ code: 0, msg: 'source_id 必须是数字' }, 400);
+		}
+
+		const progress = await readProgress(env, sourceId);
+		if (!progress) {
+			return jsonResponse({ code: 0, msg: '没有找到该源的采集进度' }, 404);
+		}
+
+		return jsonResponse({ code: 1, data: progress });
+	}
+
+	// DELETE: 取消采集
+	if (request.method === 'DELETE') {
+		const isAdmin = await verifyAdminToken(request, env);
+		if (!isAdmin) return jsonResponse({ code: 0, msg: '未授权访问' }, 401);
+
+		const url = new URL(request.url);
+		const sourceIdParam = url.searchParams.get('source_id');
+
+		if (!sourceIdParam) {
+			return jsonResponse({ code: 0, msg: '缺少 source_id 参数' }, 400);
+		}
+
+		const sourceId = parseInt(sourceIdParam);
+		if (isNaN(sourceId)) {
+			return jsonResponse({ code: 0, msg: 'source_id 必须是数字' }, 400);
+		}
+
+		const lockKey = `collect_lock:${sourceId}`;
+		const progressKey = `collect_progress:${sourceId}`;
+
+		await env.CACHE.delete(lockKey);
+		await env.CACHE.delete(progressKey);
+
+		return jsonResponse({ code: 1, msg: `已取消源 #${sourceId} 的采集任务` });
+	}
+
+	// POST: 执行采集
+	if (request.method !== 'POST') return jsonResponse({ code: 0, msg: '不支持的请求方法' }, 405);
 
 	const isAdmin = await verifyAdminToken(request, env);
 	if (!isAdmin) return jsonResponse({ code: 0, msg: '未授权访问' }, 401);
@@ -322,12 +525,14 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 			source_id?: number;
 			mode?: 'full' | 'single';
 			pages?: number;
+			categories?: string[];
 		}>();
 
 		const sourceUrl = body.source_url;
 		const sourceId = body.source_id || 0;
 		const mode = body.mode || 'single';
 		const pages = body.pages || 1;
+		const categories = body.categories;
 
 		if (!sourceUrl) return jsonResponse({ code: 0, msg: '缺少source_url' }, 400);
 		if (isPrivateUrl(sourceUrl)) return jsonResponse({ code: 0, msg: '不允许访问内网地址' }, 400);
@@ -338,6 +543,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 			env,
 			mode,
 			pages,
+			categories,
 			signal: AbortSignal.timeout(mode === 'full' ? 3600000 : 300000)
 		});
 
