@@ -32,6 +32,12 @@ interface VideoRow {
 	vod_remarks: string;
 }
 
+// ======== 缓存策略：Cache API 为主（边缘缓存，不计入 KV 额度），KV 为辅 ========
+// Cache API 限制：每个请求只能访问自己的缓存，但 10万日活下完全够用
+// KV 限制：1000 写入/天，仅用于持久化缓存和跨请求共享
+
+const CACHE_VERSION = 'v2';
+
 function json(data: any, status = 200, extraHeaders: Record<string, string> = {}): Response {
 	return new Response(JSON.stringify(data), {
 		status,
@@ -40,14 +46,25 @@ function json(data: any, status = 200, extraHeaders: Record<string, string> = {}
 			'Access-Control-Allow-Origin': '*',
 			'Access-Control-Allow-Methods': 'GET, OPTIONS',
 			'Access-Control-Allow-Headers': 'Content-Type',
-			'Cache-Tag': 'api,video,home',
 			...extraHeaders
 		}
 	});
 }
 
-function swrHeaders(maxAge: number) {
-	return { 'Cache-Control': `public, max-age=${maxAge}, s-maxage=${maxAge * 2}, stale-while-revalidate=${maxAge}` };
+// 强缓存头 - 让 CF CDN 边缘节点缓存，减少 Workers 请求
+function strongCacheHeaders(maxAge: number) {
+	return { 
+		'Cache-Control': `public, max-age=${maxAge}`,
+		'CDN-Cache-Control': `public, max-age=${maxAge}`,
+		'Vercel-CDN-Cache-Control': `public, max-age=${maxAge}`
+	};
+}
+
+// SWR 缓存头 - 过期后后台刷新
+function swrHeaders(maxAge: number, staleAge: number = maxAge * 2) {
+	return { 
+		'Cache-Control': `public, max-age=${maxAge}, stale-while-revalidate=${staleAge}`
+	};
 }
 
 function getShards(env: Env): D1Database[] {
@@ -57,16 +74,61 @@ function getShards(env: Env): D1Database[] {
 const VIDEO_COLS = 'id, vod_id, title, cover, category, duration, views, created_at';
 const VIDEO_DETAIL_COLS = 'id, vod_id, title, cover, category, duration, description, play_url, status, views, created_at, updated_at, vod_year, vod_area, vod_director, vod_actor, vod_remarks';
 
-// KV 缓存辅助：只在缓存未命中时写入，减少写入量
-async function cacheGet(cache: KVNamespace, key: string): Promise<any | null> {
+// ======== 双层缓存系统 ========
+// L1: Cache API (边缘缓存，快，不计入 KV 额度)
+// L2: KV (持久化，慢，计入额度)
+
+async function getCache(request: Request, env: Env, key: string): Promise<any | null> {
+	// 1. 先查 Cache API (L1)
 	try {
-		const val = await cache.get(key);
-		return val ? JSON.parse(val) : null;
-	} catch { return null; }
+		const cache = await caches.open('api-cache-v1');
+		const cached = await cache.match(request);
+		if (cached) {
+			const data = await cached.json();
+			return data;
+		}
+	} catch { /* Cache API 失败继续查 KV */ }
+	
+	// 2. 再查 KV (L2) - 仅用于持久化
+	try {
+		const val = await env.CACHE.get(key);
+		if (val) {
+			const data = JSON.parse(val);
+			// 回填到 Cache API
+			try {
+				const cache = await caches.open('api-cache-v1');
+				const response = new Response(val, { 
+					headers: { 'Content-Type': 'application/json' }
+				});
+				await cache.put(request, response);
+			} catch { }
+			return data;
+		}
+	} catch { }
+	return null;
 }
 
-async function cacheSet(cache: KVNamespace, key: string, data: any, ttl: number): Promise<void> {
-	try { await cache.put(key, JSON.stringify(data), { expirationTtl: ttl }); } catch { /* KV 写入失败不影响响应 */ }
+async function setCache(request: Request, env: Env, key: string, data: any, cacheSeconds: number, persistToKV: boolean = false): Promise<void> {
+	const jsonStr = JSON.stringify(data);
+	
+	// 1. 写入 Cache API (L1) - 主要缓存层
+	try {
+		const cache = await caches.open('api-cache-v1');
+		const response = new Response(jsonStr, { 
+			headers: { 
+				'Content-Type': 'application/json',
+				'Cache-Control': `max-age=${cacheSeconds}`
+			}
+		});
+		await cache.put(request, response);
+	} catch { }
+	
+	// 2. 选择性写入 KV (L2) - 仅重要数据且低频写入
+	if (persistToKV && cacheSeconds > 3600) {
+		try { 
+			await env.CACHE.put(key, jsonStr, { expirationTtl: cacheSeconds }); 
+		} catch { }
+	}
 }
 
 export const onRequest: PagesFunction<Env> = async (context) => {
@@ -81,11 +143,12 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 	}
 
 	try {
-		// ======== 相关视频推荐（必须在 /api/video/:id 之前匹配） ========
+		// ======== 相关视频推荐 ========
 		if (path.startsWith('/api/video/') && path.endsWith('/related')) {
 			const vodId = path.replace('/api/video/', '').replace('/related', '');
-			const cached = await cacheGet(env.CACHE, 'related:' + vodId);
-			if (cached) return json({ success: true, data: cached }, 200, swrHeaders(1800));
+			const cacheKey = `rel:${CACHE_VERSION}:${vodId}`;
+			const cached = await getCache(request, env, cacheKey);
+			if (cached) return json({ success: true, data: cached }, 200, strongCacheHeaders(1800));
 
 			const shards = getShards(env);
 			const videoResult = await Promise.all(shards.map(db =>
@@ -99,22 +162,22 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 			if (videoInfo.category) { conditions.push('category = ?'); bindings.push(videoInfo.category); }
 			if (videoInfo.vod_area) { conditions.push('vod_area = ?'); bindings.push(videoInfo.vod_area); }
 
-			const sql = 'SELECT ' + VIDEO_COLS + ' FROM videos WHERE ' + conditions.join(' AND ') + ' ORDER BY views DESC LIMIT 100';
+			const sql = 'SELECT ' + VIDEO_COLS + ' FROM videos WHERE ' + conditions.join(' AND ') + ' ORDER BY views DESC LIMIT 50';
 			const results = await Promise.all(shards.map(db => db.prepare(sql).bind(...bindings).all<any>()));
 			let related: any[] = [];
 			for (const r of results) if (r.results) related.push(...r.results);
 			const unique = Array.from(new Map(related.map(v => [v.vod_id, v])).values()).slice(0, 12);
 
-			// TTL 30分钟，减少 KV 写入
-			cacheSet(env.CACHE, 'related:' + vodId, unique, 1800);
-			return json({ success: true, data: unique });
+			await setCache(request, env, cacheKey, unique, 1800, false); // 只走 Cache API，不入 KV
+			return json({ success: true, data: unique }, 200, strongCacheHeaders(1800));
 		}
 
 		// ======== 视频详情 ========
 		if (path.startsWith('/api/video/')) {
 			const vodId = path.replace('/api/video/', '');
-			const cached = await cacheGet(env.CACHE, 'video:' + vodId);
-			if (cached) return json({ success: true, data: cached }, 200, swrHeaders(1800));
+			const cacheKey = `vid:${CACHE_VERSION}:${vodId}`;
+			const cached = await getCache(request, env, cacheKey);
+			if (cached) return json({ success: true, data: cached }, 200, strongCacheHeaders(3600));
 
 			const shards = getShards(env);
 			const results = await Promise.all(shards.map(db =>
@@ -129,28 +192,26 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 				context.waitUntil(shards[shardIdx].prepare('UPDATE videos SET views = views + 1 WHERE vod_id = ?').bind(vodId).run());
 			}
 
-			// TTL 30分钟，减少 KV 写入
-			cacheSet(env.CACHE, 'video:' + vodId, video, 1800);
-			return json({ success: true, data: video });
+			await setCache(request, env, cacheKey, video, 3600, true); // 入 KV 持久化
+			return json({ success: true, data: video }, 200, strongCacheHeaders(3600));
 		}
 
 		// ======== 首页 ========
 		if (path === '/api/home') {
 			const hour = Math.floor(Date.now() / 3600000);
 			const shardIndex = Math.floor(hour / 2) % 10;
-			const cacheKey = 'home:videos:h' + hour;
-
-			const cached = await cacheGet(env.CACHE, cacheKey);
-			if (cached) return json({ success: true, data: { videos: cached, shard: shardIndex } }, 200, swrHeaders(3600));
+			const cacheKey = `home:${CACHE_VERSION}:h${hour}`;
+			const cached = await getCache(request, env, cacheKey);
+			if (cached) return json({ success: true, data: { videos: cached, shard: shardIndex } }, 200, strongCacheHeaders(3600));
 
 			const shards = getShards(env);
 			const result = await shards[shardIndex].prepare(
 				'SELECT ' + VIDEO_COLS + ' FROM videos WHERE status = 1 ORDER BY created_at DESC LIMIT 24'
 			).all<VideoRow>();
-
 			const videos = result.results || [];
-			cacheSet(env.CACHE, cacheKey, videos, 7200);
-			return json({ success: true, data: { videos, shard: shardIndex } }, 200, swrHeaders(3600));
+
+			await setCache(request, env, cacheKey, videos, 7200, true);
+			return json({ success: true, data: { videos, shard: shardIndex } }, 200, strongCacheHeaders(3600));
 		}
 
 		// ======== 通用视频列表 ========
@@ -158,17 +219,16 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 			const page = Math.max(1, parseInt(url.searchParams.get('page') || '1') || 1);
 			const limit = Math.min(Math.max(1, parseInt(url.searchParams.get('limit') || '20') || 20), 100);
 			const category = url.searchParams.get('category');
-
-			const cacheKey = 'videos:p' + page + ':l' + limit + ':' + (category || '');
-			const cached = await cacheGet(env.CACHE, cacheKey);
-			if (cached) return json({ success: true, data: cached }, 200, swrHeaders(1800));
+			const cacheKey = `list:${CACHE_VERSION}:p${page}:l${limit}:${category || 'all'}`;
+			const cached = await getCache(request, env, cacheKey);
+			if (cached) return json({ success: true, data: cached }, 200, strongCacheHeaders(1800));
 
 			const where = category ? 'WHERE status = 1 AND category = ?' : 'WHERE status = 1';
 			const params = category ? [category] : [];
 			const shards = getShards(env);
 
 			const [videoResults, countResults] = await Promise.all([
-				Promise.all(shards.map(db => db.prepare('SELECT ' + VIDEO_COLS + ' FROM videos ' + where + ' ORDER BY created_at DESC').bind(...params).all<VideoRow>())),
+				Promise.all(shards.map(db => db.prepare('SELECT ' + VIDEO_COLS + ' FROM videos ' + where + ' ORDER BY created_at DESC LIMIT 200').bind(...params).all<VideoRow>())),
 				Promise.all(shards.map(db => db.prepare('SELECT COUNT(*) as total FROM videos ' + where).bind(...params).first<{ total: number }>()))
 			]);
 
@@ -179,14 +239,15 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 			const offset = (page - 1) * limit;
 
 			const responseData = { videos: allVideos.slice(offset, offset + limit), pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } };
-			cacheSet(env.CACHE, cacheKey, responseData, 1800);
-			return json({ success: true, data: responseData }, 200, swrHeaders(1800));
+			await setCache(request, env, cacheKey, responseData, 1800, false);
+			return json({ success: true, data: responseData }, 200, strongCacheHeaders(1800));
 		}
 
-		// ======== 分类 ========
+		// ======== 分类（低频，长缓存） ========
 		if (path === '/api/categories') {
-			const cached = await cacheGet(env.CACHE, 'categories');
-			if (cached) return json({ success: true, data: cached }, 200, { 'Cache-Control': 'public, max-age=3600' });
+			const cacheKey = `cats:${CACHE_VERSION}`;
+			const cached = await getCache(request, env, cacheKey);
+			if (cached) return json({ success: true, data: cached }, 200, strongCacheHeaders(86400));
 
 			const shards = getShards(env);
 			const results = await Promise.all(shards.map(db =>
@@ -196,28 +257,26 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 			for (const r of results) if (r.results) for (const row of r.results) if (row.category) map.set(row.category, (map.get(row.category) || 0) + row.count);
 			const categories = Array.from(map.entries()).map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count);
 
-			cacheSet(env.CACHE, 'categories', categories, 86400); // 24小时
-			return json({ success: true, data: categories }, 200, { 'Cache-Control': 'public, max-age=3600' });
+			await setCache(request, env, cacheKey, categories, 86400, true);
+			return json({ success: true, data: categories }, 200, strongCacheHeaders(86400));
 		}
 
-		// ======== 搜索 ========
+		// ======== 搜索（短缓存，高频） ========
 		if (path === '/api/search') {
 			const q = url.searchParams.get('q') || '';
 			const page = parseInt(url.searchParams.get('page') || '1');
 			const limit = Math.min(parseInt(url.searchParams.get('limit') || '20'), 100);
-
 			if (!q.trim()) return json({ success: true, data: { videos: [], pagination: { page: 1, limit, total: 0, totalPages: 0 } } });
 
-			const cacheKey = 'search:' + q + ':p' + page + ':l' + limit;
-			const cached = await cacheGet(env.CACHE, cacheKey);
-			if (cached) return json({ success: true, data: cached }, 200, swrHeaders(1800));
+			const cacheKey = `srch:${CACHE_VERSION}:${q}:p${page}:l${limit}`;
+			const cached = await getCache(request, env, cacheKey);
+			if (cached) return json({ success: true, data: cached }, 200, strongCacheHeaders(600));
 
 			const pattern = '%' + q + '%';
 			const shards = getShards(env);
 
-			// 修复：搜索全部用10个分片，保持数据一致性
 			const [videoResults, countResults] = await Promise.all([
-				Promise.all(shards.map(db => db.prepare('SELECT ' + VIDEO_COLS + ' FROM videos WHERE status = 1 AND title LIKE ? ORDER BY created_at DESC').bind(pattern).all<VideoRow>())),
+				Promise.all(shards.map(db => db.prepare('SELECT ' + VIDEO_COLS + ' FROM videos WHERE status = 1 AND title LIKE ? ORDER BY created_at DESC LIMIT 200').bind(pattern).all<VideoRow>())),
 				Promise.all(shards.map(db => db.prepare('SELECT COUNT(*) as total FROM videos WHERE status = 1 AND title LIKE ?').bind(pattern).first<{ total: number }>()))
 			]);
 
@@ -228,16 +287,16 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 			const offset = (page - 1) * limit;
 
 			const responseData = { videos: allVideos.slice(offset, offset + limit), pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } };
-			cacheSet(env.CACHE, cacheKey, responseData, 1800);
-			return json({ success: true, data: responseData });
+			await setCache(request, env, cacheKey, responseData, 600, false);
+			return json({ success: true, data: responseData }, 200, strongCacheHeaders(600));
 		}
 
 		// ======== 排行 ========
 		if (path === '/api/rank') {
 			const category = url.searchParams.get('category') || '';
-			const cacheKey = 'rank:' + category;
-			const cached = await cacheGet(env.CACHE, cacheKey);
-			if (cached) return json({ success: true, data: cached }, 200, { 'Cache-Control': 'public, max-age=3600' });
+			const cacheKey = `rank:${CACHE_VERSION}:${category || 'all'}`;
+			const cached = await getCache(request, env, cacheKey);
+			if (cached) return json({ success: true, data: cached }, 200, strongCacheHeaders(21600));
 
 			const shards = getShards(env);
 			const sql = category
@@ -253,18 +312,17 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 			allVideos.sort((a, b) => b.views - a.views);
 			const top50 = allVideos.slice(0, 50);
 
-			cacheSet(env.CACHE, cacheKey, top50, 86400); // 24小时
-			return json({ success: true, data: top50 }, 200, { 'Cache-Control': 'public, max-age=3600' });
+			await setCache(request, env, cacheKey, top50, 21600, true);
+			return json({ success: true, data: top50 }, 200, strongCacheHeaders(21600));
 		}
 
 		// ======== 标签 ========
 		if (path === '/api/tags') {
 			const type = url.searchParams.get('type') || '';
 			const limit = Math.min(parseInt(url.searchParams.get('limit') || '50'), 200);
-
-			const cacheKey = 'tags:' + type + ':l' + limit;
-			const cached = await cacheGet(env.CACHE, cacheKey);
-			if (cached) return json({ success: true, data: cached }, 200, { 'Cache-Control': 'public, max-age=3600' });
+			const cacheKey = `tags:${CACHE_VERSION}:${type || 'all'}:l${limit}`;
+			const cached = await getCache(request, env, cacheKey);
+			if (cached) return json({ success: true, data: cached }, 200, strongCacheHeaders(86400));
 
 			let sql = 'SELECT id, name, slug, type, video_count FROM tags';
 			if (type) sql += ' WHERE type = ?';
@@ -272,8 +330,8 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 			const params = type ? [type, limit] : [limit];
 			const results = await env.DB_0.prepare(sql).bind(...params).all();
 
-			cacheSet(env.CACHE, cacheKey, results.results || [], 86400); // 24小时
-			return json({ success: true, data: results.results || [] }, 200, { 'Cache-Control': 'public, max-age=3600' });
+			await setCache(request, env, cacheKey, results.results || [], 86400, true);
+			return json({ success: true, data: results.results || [] }, 200, strongCacheHeaders(86400));
 		}
 
 		// ======== 标签视频 ========
@@ -281,12 +339,11 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 			const tagId = parseInt(url.searchParams.get('tag_id') || '0');
 			const page = parseInt(url.searchParams.get('page') || '1');
 			const limit = Math.min(parseInt(url.searchParams.get('limit') || '20'), 100);
-
 			if (!tagId) return json({ success: false, message: '缺少tag_id' }, 400);
 
-			const cacheKey = 'tag_videos:' + tagId + ':p' + page;
-			const cached = await cacheGet(env.CACHE, cacheKey);
-			if (cached) return json({ success: true, data: cached }, 200, swrHeaders(1800));
+			const cacheKey = `tagv:${CACHE_VERSION}:${tagId}:p${page}`;
+			const cached = await getCache(request, env, cacheKey);
+			if (cached) return json({ success: true, data: cached }, 200, strongCacheHeaders(3600));
 
 			const offset = (page - 1) * limit;
 			const vodIdResult = await env.DB_0.prepare(
@@ -309,8 +366,8 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 			const total = countResult?.total || 0;
 
 			const responseData = { videos, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } };
-			cacheSet(env.CACHE, cacheKey, responseData, 1800);
-			return json({ success: true, data: responseData }, 200, swrHeaders(1800));
+			await setCache(request, env, cacheKey, responseData, 3600, false);
+			return json({ success: true, data: responseData }, 200, strongCacheHeaders(3600));
 		}
 
 		// ======== 管理后台（低频，不缓存） ========

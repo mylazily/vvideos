@@ -510,3 +510,30 @@ export function generateCrossFAQ(filters: { area?: string; year?: string; catego
     { question: `${label}支持手机观看吗？`, answer: `支持。${SITE_NAME}全站视频均支持手机在线观看，打开浏览器即可播放，无需安装任何APP。同时支持PWA离线缓存功能。` }
   ];
 }
+
+// WebSite Schema（首页用）
+export function generateWebSiteSchema(): object {
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'WebSite',
+    name: SITE_NAME,
+    url: SITE_URL,
+    potentialAction: {
+      '@type': 'SearchAction',
+      target: {
+        '@type': 'EntryPoint',
+        urlTemplate: SITE_URL + '/search/{search_term_string}/1'
+      },
+      'query-input': 'required name=search_term_string'
+    }
+  };
+}
+
+// 首页 FAQ
+export function generateHomeFAQ(): { question: string; answer: string }[] {
+  return [
+    { question: `${SITE_NAME}是什么？`, answer: `${SITE_NAME}是一个免费的在线视频播放平台，提供电影、电视剧、综艺、动漫、短剧等丰富内容，高清流畅，支持手机电脑观看。` },
+    { question: `${SITE_NAME}需要注册吗？`, answer: `不需要。${SITE_NAME}无需注册即可观看所有视频，打开浏览器即可播放，完全免费。` },
+    { question: `${SITE_NAME}支持离线观看吗？`, answer: `支持。${SITE_NAME}提供PWA应用安装功能，安装后可将视频缓存到本地，离线也能观看。` }
+  ];
+}

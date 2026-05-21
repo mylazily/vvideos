@@ -268,6 +268,24 @@
         <button onclick={retryLoad} class="px-4 py-2 bg-pink-500 text-white text-sm rounded-lg active:bg-pink-600">重新加载</button>
       </div>
     {:else if video}
+      <!-- 面包屑导航（SEO + 用户体验） -->
+      <nav aria-label="面包屑" class="bg-white px-3 py-2 text-sm border-b">
+        <ol class="flex items-center gap-1" itemscope itemtype="https://schema.org/BreadcrumbList">
+          {#each breadcrumbs as crumb, i}
+            <li itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem" class="flex items-center">
+              {#if i > 0}<span class="text-gray-400 mx-1" aria-hidden="true">/</span>{/if}
+              {#if i < breadcrumbs.length - 1}
+                <a href={crumb.url} class="text-pink-500 hover:underline" itemprop="item"><span itemprop="name">{crumb.name}</span></a>
+                <meta itemprop="position" content={String(i + 1)} />
+              {:else}
+                <span class="text-gray-600" itemprop="name">{crumb.name}</span>
+                <meta itemprop="position" content={String(i + 1)} />
+              {/if}
+            </li>
+          {/each}
+        </ol>
+      </nav>
+
       <!-- 播放器 -->
       <div class="aspect-video bg-black relative">
         <video controls playsinline preload="metadata" class="w-full h-full" poster={video.cover} onended={onVideoEnded}>
