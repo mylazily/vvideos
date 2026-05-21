@@ -3,7 +3,6 @@
   import { page } from '$app/stores';
   import NavBar from '$components/NavBar.svelte';
   import type { Video } from '$lib/types';
-  import Hls from 'hls.js';
   import {
     generateSEODescription,
     generateSEOKeywords,
@@ -12,6 +11,8 @@
     generateBreadcrumbSchema,
     generateOrganizationSchema,
     generateWebPageSchema,
+    generateFAQSchema,
+    generateImageAlt,
     canonicalUrl,
     SITE_URL,
     SITE_NAME
@@ -30,36 +31,54 @@
   let playLines = $state<PlayLine[]>([]);
   let currentLineIndex = $state(0);
   let currentEpisodeIndex = $state(0);
-  let hlsInstance: Hls | null = null;
-  let videoEl: HTMLVideoElement | null = null;
+  let hlsInstance: any = null;
   let showPlayButton = $state(false);
   let isPlaying = $state(false);
   let isLoadingVideo = false;
+  let infoLoaded = $state(false);
 
   let vodId = $derived($page.params.id);
-
-  // 派生状态
   let currentEpisode = $derived(playLines[currentLineIndex]?.episodes[currentEpisodeIndex]);
 
+  // 预计算 SEO 数据（避免模板中重复计算）
+  let seoTitle = $derived(video ? generatePageTitle({ title: video.title, category: video.category, vod_year: video.vod_year, vod_area: video.vod_area }) : '');
+  let seoDesc = $derived(video ? generateSEODescription({ title: video.title, category: video.category, vod_year: video.vod_year, vod_area: video.vod_area, vod_actor: video.vod_actor, vod_director: video.vod_director }) : '');
+  let seoKeywords = $derived(video ? generateSEOKeywords({ title: video.title, category: video.category, vod_year: video.vod_year, vod_area: video.vod_area, vod_actor: video.vod_actor, vod_director: video.vod_director, vod_lang: video.vod_lang }) : []);
+  let breadcrumbs = $derived(video ? [
+    { name: '首页', url: SITE_URL },
+    { name: video.category || '视频', url: SITE_URL + '/category/' + encodeURIComponent(video.category || '全部') + '/1' },
+    { name: video.title, url: SITE_URL + '/v/' + video.vod_id }
+  ] : []);
+  let tags = $derived(video ? (() => {
+    const t: string[] = [];
+    if (video.title) t.push(video.title);
+    if (video.category) { t.push(video.category); t.push('热门' + video.category); }
+    if (video.vod_year) t.push(String(video.vod_year));
+    if (video.vod_area) t.push(video.vod_area);
+    if (video.vod_actor) video.vod_actor.split(/[,，]/).slice(0, 3).forEach(a => { const v = a.trim(); if (v) t.push(v); });
+    return [...new Set(t)].slice(0, 12);
+  })() : []);
+  let relatedSearches = $derived(video ? (() => {
+    const s: string[] = [];
+    if (video.title) { s.push(video.title + '剧情介绍'); s.push(video.title + '在线观看'); }
+    if (video.vod_actor) video.vod_actor.split(/[,，]/).slice(0, 2).forEach(a => { const v = a.trim(); if (v) s.push(v + '最新作品'); });
+    if (video.category) s.push('最新' + video.category + '推荐');
+    return [...new Set(s)].slice(0, 10);
+  })() : []);
+  let faqs = $derived(video ? [
+    { question: `${video.title}在哪里可以免费观看？`, answer: `${SITE_NAME}提供《${video.title}》${video.category || ''}在线免费观看，高清完整版，支持手机播放。` },
+    { question: `${video.title}是谁演的？`, answer: video.vod_actor ? `《${video.title}》由${video.vod_actor}主演。` : `《${video.title}》演员信息请查看页面详情。` },
+    { question: `${video.title}是什么时候上映的？`, answer: video.vod_year ? `《${video.title}》${video.vod_year}年上映。` : `《${video.title}》上映时间请查看页面详情。` }
+  ] : []);
+
   onMount(() => {
-    // 等待 DOM 准备好
-    setTimeout(() => {
-      loadVideo();
-    }, 50);
+    loadVideo();
   });
 
-  // 页面可见性变化时重新加载
-  function handleVisibilityChange() {
-    if (document.visibilityState === 'visible' && !loading && !video) {
-      loadVideo();
-    }
-  }
-
   async function loadVideo() {
-    // 防止重复加载
     if (isLoadingVideo) return;
     if (video && video.vod_id === vodId) return;
-    
+
     isLoadingVideo = true;
     loading = true;
     errorMsg = '';
@@ -68,34 +87,27 @@
     currentEpisodeIndex = 0;
     isPlaying = false;
     showPlayButton = false;
+    infoLoaded = false;
     destroyHls();
-    
-    console.log('Loading video:', vodId);
-    
+
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000);
-      
       const res = await fetch('/api/video/' + vodId, {
-        signal: controller.signal
+        signal: AbortSignal.timeout(8000)
       });
-      clearTimeout(timeoutId);
-      
+
       if (!res.ok) {
         errorMsg = '请求失败 (' + res.status + ')';
         loading = false;
         isLoadingVideo = false;
         return;
       }
-      
+
       const data = await res.json();
 
       if (data.success && data.data) {
         video = data.data;
         playLines = parsePlayUrl(video.play_url);
-        console.log('Video loaded, playLines:', playLines.length);
-        
-        // 添加到历史记录
+
         addToHistory({
           vod_id: video.vod_id,
           title: video.title,
@@ -104,261 +116,171 @@
           vod_year: video.vod_year,
           vod_area: video.vod_area
         });
-        
-        // 延迟播放
-        setTimeout(() => {
-          startPlayback();
-        }, 100);
+
+        // 信息区立即可见
+        infoLoaded = true;
+
+        // 延迟初始化播放器（HLS.js 动态导入）
+        if (playLines.length > 0) {
+          requestAnimationFrame(() => playEpisode(0, 0));
+        }
       } else {
         errorMsg = data.message || '视频不存在';
       }
     } catch (e: any) {
-      console.error('Load error:', e);
-      if (e.name === 'AbortError') {
-        errorMsg = '请求超时，请重试';
-      } else {
-        errorMsg = '网络错误，请稍后重试';
-      }
+      errorMsg = e.name === 'TimeoutError' ? '请求超时，请重试' : '网络错误，请稍后重试';
     } finally {
       loading = false;
       isLoadingVideo = false;
     }
   }
 
-  function startPlayback() {
-    // 确保 videoEl 已绑定
-    const el = document.querySelector('video');
-    if (!el) {
-      console.log('Video element not found, retrying...');
-      setTimeout(startPlayback, 100);
-      return;
-    }
-    videoEl = el;
-    
-    if (playLines.length > 0) {
-      playEpisode(0, 0);
-    }
-  }
-
   function parsePlayUrl(playUrl: string | undefined): PlayLine[] {
-    if (!playUrl) {
-      console.log('No play_url provided');
-      return [];
-    }
-    
+    if (!playUrl) return [];
     const lines: PlayLine[] = [];
     const lineGroups = playUrl.split('$$$');
-    console.log('Parsing play_url, groups:', lineGroups.length);
-    
     for (let i = 0; i < lineGroups.length; i++) {
-      const group = lineGroups[i];
       const episodes: { name: string; url: string }[] = [];
-      const items = group.split('#');
-      
+      const items = lineGroups[i].split('#');
       for (let j = 0; j < items.length; j++) {
         const item = items[j].trim();
         if (!item) continue;
-        
-        // 支持 名称$URL 或直接URL
         const dollarIdx = item.indexOf('$');
         if (dollarIdx > 0) {
-          episodes.push({
-            name: item.substring(0, dollarIdx),
-            url: item.substring(dollarIdx + 1)
-          });
+          episodes.push({ name: item.substring(0, dollarIdx), url: item.substring(dollarIdx + 1) });
         } else if (item.startsWith('http')) {
-          episodes.push({
-            name: '第' + (j + 1) + '集',
-            url: item
-          });
+          episodes.push({ name: '第' + (j + 1) + '集', url: item });
         }
       }
-      
       if (episodes.length > 0) {
-        lines.push({
-          name: lineGroups.length > 1 ? '线路' + (i + 1) : '默认线路',
-          episodes
-        });
+        lines.push({ name: lineGroups.length > 1 ? '线路' + (i + 1) : '默认线路', episodes });
       }
     }
-    
-    console.log('Parsed playLines:', lines.length, 'lines');
     return lines;
   }
 
   function destroyHls() {
-    if (hlsInstance) {
-      hlsInstance.destroy();
-      hlsInstance = null;
-    }
+    if (hlsInstance) { hlsInstance.destroy(); hlsInstance = null; }
   }
 
-  function playEpisode(lineIdx: number, episodeIdx: number) {
+  async function playEpisode(lineIdx: number, episodeIdx: number) {
     currentLineIndex = lineIdx;
     currentEpisodeIndex = episodeIdx;
-    
+
     const episode = playLines[lineIdx]?.episodes[episodeIdx];
-    if (!episode) {
-      console.log('No episode found');
-      return;
-    }
-    
-    // 确保 videoEl 存在
-    const el = videoEl || document.querySelector('video');
+    if (!episode) return;
+
+    const el = document.querySelector('video') as HTMLVideoElement | null;
     if (!el) {
-      console.log('Video element not ready');
-      setTimeout(() => playEpisode(lineIdx, episodeIdx), 100);
+      requestAnimationFrame(() => playEpisode(lineIdx, episodeIdx));
       return;
     }
-    videoEl = el;
 
-    console.log('Playing:', episode.name, episode.url.substring(0, 50));
     destroyHls();
-
     const url = episode.url;
-    
+
     if (url.includes('.m3u8')) {
+      // 动态导入 HLS.js，减少首屏 JS 体积
+      const { default: Hls } = await import('hls.js');
       if (Hls.isSupported()) {
-        try {
-          hlsInstance = new Hls({
-            enableWorker: true,
-            lowLatencyMode: true,
-            maxBufferLength: 10,
-            maxMaxBufferLength: 30
-          });
-          
-          hlsInstance.on(Hls.Events.MANIFEST_PARSED, () => {
-            if (videoEl) {
-              videoEl.muted = true;
-              videoEl.play().then(() => {
-                isPlaying = true;
-                showPlayButton = false;
-                setTimeout(() => {
-                  if (videoEl) videoEl.muted = false;
-                }, 2000);
-              }).catch(() => {
-                showPlayButton = true;
-              });
-            }
-          });
-          
-          hlsInstance.on(Hls.Events.ERROR, (_event, data) => {
-            if (data.fatal) {
-              switch (data.type) {
-                case Hls.ErrorTypes.NETWORK_ERROR:
-                  hlsInstance?.startLoad();
-                  break;
-                case Hls.ErrorTypes.MEDIA_ERROR:
-                  hlsInstance?.recoverMediaError();
-                  break;
-                default:
-                  if (lineIdx < playLines.length - 1) {
-                    playEpisode(lineIdx + 1, 0);
-                  } else {
-                    errorMsg = '视频加载失败';
-                  }
-                  break;
-              }
-            }
-          });
-          
-          hlsInstance.attachMedia(videoEl);
-          hlsInstance.loadSource(url);
-          
-        } catch (e) {
-          console.error('HLS error:', e);
-          errorMsg = '播放器初始化失败';
-        }
-      } else if (videoEl.canPlayType('application/vnd.apple.mpegurl')) {
-        videoEl.src = url;
-        videoEl.play().catch(() => showPlayButton = true);
+        hlsInstance = new Hls({
+          enableWorker: true,
+          lowLatencyMode: false,
+          maxBufferLength: 15,
+          maxMaxBufferLength: 30,
+          startLevel: -1
+        });
+
+        hlsInstance.on(Hls.Events.MANIFEST_PARSED, () => {
+          el.muted = true;
+          el.play().then(() => {
+            isPlaying = true;
+            showPlayButton = false;
+            setTimeout(() => { el.muted = false; }, 300);
+          }).catch(() => { showPlayButton = true; });
+        });
+
+        hlsInstance.on(Hls.Events.ERROR, (_event: any, data: any) => {
+          if (data.fatal) {
+            if (data.type === Hls.ErrorTypes.NETWORK_ERROR) hlsInstance?.startLoad();
+            else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) hlsInstance?.recoverMediaError();
+            else if (lineIdx < playLines.length - 1) playEpisode(lineIdx + 1, 0);
+            else errorMsg = '视频加载失败';
+          }
+        });
+
+        hlsInstance.attachMedia(el);
+        hlsInstance.loadSource(url);
+      } else if (el.canPlayType('application/vnd.apple.mpegurl')) {
+        el.src = url;
+        el.play().catch(() => { showPlayButton = true; });
       } else {
         errorMsg = '浏览器不支持HLS';
       }
     } else {
-      videoEl.src = url;
-      videoEl.play().catch(() => showPlayButton = true);
+      el.src = url;
+      el.play().catch(() => { showPlayButton = true; });
     }
   }
 
   function onVideoEnded() {
-    const currentLine = playLines[currentLineIndex];
-    if (currentLine && currentEpisodeIndex < currentLine.episodes.length - 1) {
+    const line = playLines[currentLineIndex];
+    if (line && currentEpisodeIndex < line.episodes.length - 1) {
       playEpisode(currentLineIndex, currentEpisodeIndex + 1);
     }
   }
 
   function retryLoad() {
+    isLoadingVideo = false;
     loadVideo();
-  }
-
-  // 生成相关标签
-  function generateTags(video: Video): string[] {
-    const tags: string[] = [];
-    if (video.title) tags.push(video.title);
-    if (video.category) {
-      tags.push(video.category);
-      tags.push('热门' + video.category);
-    }
-    if (video.vod_year) tags.push(String(video.vod_year));
-    if (video.vod_area) tags.push(video.vod_area);
-    if (video.vod_actor) {
-      video.vod_actor.split(/[,，]/).slice(0, 3).forEach(a => tags.push(a.trim()));
-    }
-    return [...new Set(tags)].slice(0, 12);
-  }
-
-  // 生成相关搜索
-  function generateRelatedSearches(video: Video): string[] {
-    const searches: string[] = [];
-    if (video.title) {
-      searches.push(video.title + '剧情介绍');
-      searches.push(video.title + '在线观看');
-    }
-    if (video.vod_actor) {
-      video.vod_actor.split(/[,，]/).slice(0, 2).forEach(a => {
-        searches.push(a.trim() + '最新作品');
-      });
-    }
-    if (video.category) {
-      searches.push('最新' + video.category + '推荐');
-    }
-    return [...new Set(searches)].slice(0, 10);
-  }
-
-  // 生成面包屑
-  function generateBreadcrumbs(video: Video) {
-    return [
-      { name: '首页', url: SITE_URL },
-      { name: video.category || '视频', url: SITE_URL + '/category/' + encodeURIComponent(video.category || '全部') + '/1' },
-      { name: video.title, url: SITE_URL + '/v/' + video.vod_id }
-    ];
   }
 </script>
 
 <svelte:head>
   {#if video}
-    <title>{generatePageTitle({ title: video.title, category: video.category, vod_year: video.vod_year, vod_area: video.vod_area })}</title>
-    <meta name="description" content={generateSEODescription({ title: video.title, category: video.category, vod_year: video.vod_year, vod_area: video.vod_area, vod_actor: video.vod_actor, vod_director: video.vod_director })} />
-    <meta name="keywords" content={generateSEOKeywords({ title: video.title, category: video.category, vod_year: video.vod_year, vod_area: video.vod_area, vod_actor: video.vod_actor, vod_director: video.vod_director, vod_lang: video.vod_lang }).join(',')} />
+    <title>{seoTitle}</title>
+    <meta name="description" content={seoDesc} />
+    <meta name="keywords" content={seoKeywords.join(',')} />
     <link rel="canonical" href={canonicalUrl(`/v/${video.vod_id}`)} />
+
+    <!-- Open Graph -->
     <meta property="og:title" content={video.title} />
-    <meta property="og:description" content={generateSEODescription({ title: video.title, category: video.category })} />
+    <meta property="og:description" content={seoDesc} />
     <meta property="og:image" content={video.cover} />
+    <meta property="og:image:alt" content={generateImageAlt({ title: video.title, category: video.category, vod_year: video.vod_year })} />
     <meta property="og:type" content="video.movie" />
     <meta property="og:url" content={canonicalUrl(`/v/${video.vod_id}`)} />
+    <meta property="og:video" content={video.play_url || ''} />
+    <meta property="og:video:type" content="application/x-mpegURL" />
+    {#if video.vod_year}
+      <meta property="og:video:release_date" content={video.vod_year + '-01-01'} />
+    {/if}
+    {#if video.vod_duration}
+      <meta property="og:video:duration" content={String(video.vod_duration)} />
+    {/if}
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={video.title} />
+    <meta name="twitter:description" content={seoDesc} />
+    <meta name="twitter:image" content={video.cover} />
+    <meta name="twitter:image:alt" content={generateImageAlt({ title: video.title, category: video.category, vod_year: video.vod_year })} />
+
+    <!-- 结构化数据 -->
     {@html `<script type="application/ld+json">${JSON.stringify(generateVideoSchema({ title: video.title, category: video.category, vod_year: video.vod_year, vod_area: video.vod_area, vod_actor: video.vod_actor, vod_director: video.vod_director, vod_lang: video.vod_lang, cover: video.cover, play_url: video.play_url, vod_id: video.vod_id }))}</script>`}
-    {@html `<script type="application/ld+json">${JSON.stringify(generateBreadcrumbSchema(generateBreadcrumbs(video)))}</script>`}
+    {@html `<script type="application/ld+json">${JSON.stringify(generateBreadcrumbSchema(breadcrumbs))}</script>`}
     {@html `<script type="application/ld+json">${JSON.stringify(generateOrganizationSchema())}</script>`}
-    {@html `<script type="application/ld+json">${JSON.stringify(generateWebPageSchema({ title: generatePageTitle({ title: video.title, category: video.category, vod_year: video.vod_year, vod_area: video.vod_area }), description: generateSEODescription({ title: video.title, category: video.category, vod_year: video.vod_year, vod_area: video.vod_area }), url: canonicalUrl(`/v/${video.vod_id}`) }))}</script>`}
+    {@html `<script type="application/ld+json">${JSON.stringify(generateWebPageSchema({ title: seoTitle, description: seoDesc, url: canonicalUrl(`/v/${video.vod_id}`) }))}</script>`}
+    {@html `<script type="application/ld+json">${JSON.stringify(generateFAQSchema(faqs))}</script>`}
   {:else}
     <title>视频详情 - {SITE_NAME}</title>
+    <meta name="robots" content="noindex, follow" />
   {/if}
 </svelte:head>
 
 <div class="min-h-screen bg-gray-50">
-  <header class="sticky top-0 bg-white border-b border-gray-100 px-3 py-2 z-50 flex items-center gap-2">
-    <a href="/" class="text-gray-600">←</a>
+  <header class="sticky top-0 bg-white/95 backdrop-blur-sm border-b border-gray-100 px-3 py-2 z-50 flex items-center gap-2">
+    <a href="/" class="text-gray-600 text-xl leading-none" aria-label="返回首页">←</a>
     <h1 class="text-lg font-bold text-pink-500 truncate flex-1">{video?.title || '视频详情'}</h1>
   </header>
 
@@ -371,19 +293,21 @@
     {:else if errorMsg}
       <div class="flex flex-col items-center justify-center py-20">
         <p class="text-red-500 text-sm mb-4">{errorMsg}</p>
-        <button onclick={retryLoad} class="px-4 py-2 bg-pink-500 text-white text-sm rounded-lg">重新加载</button>
+        <button onclick={retryLoad} class="px-4 py-2 bg-pink-500 text-white text-sm rounded-lg active:bg-pink-600">重新加载</button>
       </div>
     {:else if video}
-      <!-- 面包屑 -->
-      <nav class="bg-white px-3 py-2 text-sm">
-        <ol class="flex items-center gap-1">
-          {#each generateBreadcrumbs(video) as crumb, i}
-            <li class="flex items-center">
-              {#if i > 0}<span class="text-gray-400 mx-1">/</span>{/if}
-              {#if i < generateBreadcrumbs(video).length - 1}
-                <a href={crumb.url} class="text-pink-500 hover:underline">{crumb.name}</a>
+      <!-- 面包屑（SEO + 用户体验） -->
+      <nav aria-label="面包屑" class="bg-white px-3 py-2 text-sm">
+        <ol class="flex items-center gap-1" itemscope itemtype="https://schema.org/BreadcrumbList">
+          {#each breadcrumbs as crumb, i}
+            <li itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem" class="flex items-center">
+              {#if i > 0}<span class="text-gray-400 mx-1" aria-hidden="true">/</span>{/if}
+              {#if i < breadcrumbs.length - 1}
+                <a href={crumb.url} class="text-pink-500 hover:underline" itemprop="item"><span itemprop="name">{crumb.name}</span></a>
+                <meta itemprop="position" content={String(i + 1)} />
               {:else}
-                <span class="text-gray-600">{crumb.name}</span>
+                <span class="text-gray-600" itemprop="name">{crumb.name}</span>
+                <meta itemprop="position" content={String(i + 1)} />
               {/if}
             </li>
           {/each}
@@ -395,30 +319,29 @@
         <video
           controls
           playsinline
-          preload="auto"
+          preload="metadata"
           class="w-full h-full"
           poster={video.cover}
           onended={onVideoEnded}
         >
           您的浏览器不支持视频播放
         </video>
-        
+
         {#if showPlayButton && !isPlaying}
-          <div class="absolute inset-0 flex items-center justify-center bg-black/50 cursor-pointer" 
+          <div class="absolute inset-0 flex items-center justify-center bg-black/50 cursor-pointer"
                role="button"
                tabindex="0"
+               aria-label="点击播放"
                onclick={() => {
-                 const el = document.querySelector('video');
+                 const el = document.querySelector('video') as HTMLVideoElement;
                  if (el) {
                    el.muted = false;
-                   el.play().then(() => {
-                     isPlaying = true;
-                     showPlayButton = false;
-                   }).catch(() => {});
+                   el.play().then(() => { isPlaying = true; showPlayButton = false; }).catch(() => {});
                  }
-               }}>
+               }}
+               onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') (e.target as HTMLElement).click(); }}>
             <div class="w-20 h-20 bg-white/90 rounded-full flex items-center justify-center">
-              <svg class="w-10 h-10 text-pink-500 ml-1" fill="currentColor" viewBox="0 0 24 24">
+              <svg class="w-10 h-10 text-pink-500 ml-1" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                 <path d="M8 5v14l11-7z" />
               </svg>
             </div>
@@ -426,6 +349,7 @@
         {/if}
       </div>
 
+      <!-- 当前播放信息 -->
       {#if currentEpisode}
         <div class="px-3 py-2 bg-white border-b">
           <span class="text-sm text-gray-500">
@@ -434,92 +358,109 @@
         </div>
       {/if}
 
-      <!-- 信息 -->
-      <div class="p-3 bg-white">
-        <h2 class="text-lg font-bold mb-2">{video.title}</h2>
-        <div class="flex gap-4 text-sm text-gray-500">
-          {#if video.category}<span>{video.category}</span>{/if}
-          {#if video.vod_year}<span>{video.vod_year}</span>{/if}
+      <!-- 视频信息（SEO 关键区） -->
+      <article class="p-3 bg-white" itemscope itemtype="https://schema.org/Movie">
+        <h2 class="text-lg font-bold mb-2" itemprop="name">{video.title}</h2>
+        <div class="flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-500 mb-2">
+          {#if video.category}<span itemprop="genre">{video.category}</span>{/if}
+          {#if video.vod_year}<span itemprop="datePublished">{video.vod_year}</span>{/if}
           {#if video.vod_area}<span>{video.vod_area}</span>{/if}
+          {#if video.vod_remarks}<span class="text-pink-500">{video.vod_remarks}</span>{/if}
         </div>
-      </div>
+        {#if video.vod_director}
+          <div class="text-sm mb-1">
+            <span class="text-gray-500">导演：</span>
+            <span itemprop="director">{video.vod_director}</span>
+          </div>
+        {/if}
+        {#if video.vod_actor}
+          <div class="text-sm">
+            <span class="text-gray-500">演员：</span>
+            <span itemprop="actor">{video.vod_actor}</span>
+          </div>
+        {/if}
+      </article>
 
       <!-- 选集 -->
       {#if playLines.length > 0}
-        <div class="mt-2 bg-white p-3">
+        <section class="mt-2 bg-white p-3">
           <h3 class="font-medium mb-2">选集 ({playLines[currentLineIndex]?.episodes.length || 0})</h3>
-          <div class="flex gap-2 overflow-x-auto pb-2">
+          <div class="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
             {#each playLines[currentLineIndex]?.episodes || [] as ep, idx}
               <button
                 onclick={() => playEpisode(currentLineIndex, idx)}
-                class="flex-shrink-0 px-3 py-1.5 text-sm rounded {currentEpisodeIndex === idx ? 'bg-pink-500 text-white' : 'bg-gray-100'}">
+                class="flex-shrink-0 px-3 py-1.5 text-sm rounded transition-colors {currentEpisodeIndex === idx ? 'bg-pink-500 text-white' : 'bg-gray-100 active:bg-gray-200'}">
                 {ep.name}
               </button>
             {/each}
           </div>
-        </div>
+        </section>
       {/if}
 
       <!-- 线路 -->
       {#if playLines.length > 1}
-        <div class="mt-2 bg-white p-3">
+        <section class="mt-2 bg-white p-3">
           <h3 class="font-medium mb-2">播放线路</h3>
           <div class="flex gap-2 flex-wrap">
             {#each playLines as line, idx}
               <button
                 onclick={() => playEpisode(idx, 0)}
-                class="px-3 py-1.5 text-sm rounded {currentLineIndex === idx ? 'bg-pink-500 text-white' : 'bg-gray-100'}">
+                class="px-3 py-1.5 text-sm rounded transition-colors {currentLineIndex === idx ? 'bg-pink-500 text-white' : 'bg-gray-100 active:bg-gray-200'}">
                 {line.name}
               </button>
             {/each}
           </div>
-        </div>
+        </section>
       {/if}
 
-      <!-- 导演演员 -->
-      {#if video.vod_director || video.vod_actor}
-        <div class="mt-2 bg-white p-3 text-sm">
-          {#if video.vod_director}<div class="mb-1"><span class="text-gray-500">导演：</span>{video.vod_director}</div>{/if}
-          {#if video.vod_actor}<div><span class="text-gray-500">演员：</span>{video.vod_actor}</div>{/if}
-        </div>
-      {/if}
-
-      <!-- 相关标签 -->
-      {@const tags = generateTags(video)}
+      <!-- 相关标签（内链 SEO） -->
       {#if tags.length > 0}
-        <div class="mt-2 bg-white p-3">
+        <section class="mt-2 bg-white p-3">
           <h3 class="font-medium mb-2">相关标签</h3>
           <div class="flex flex-wrap gap-2">
             {#each tags as tag}
-              <a href="/tag/{encodeURIComponent(tag)}" class="px-3 py-1 text-xs bg-gray-100 rounded-full hover:bg-pink-100">
-                {tag}
-              </a>
+              <a href="/tag/{encodeURIComponent(tag)}" class="px-3 py-1 text-xs bg-gray-100 rounded-full hover:bg-pink-100 transition-colors">{tag}</a>
             {/each}
           </div>
-        </div>
+        </section>
       {/if}
 
-      <!-- 相关搜索 -->
-      {@const searches = generateRelatedSearches(video)}
-      {#if searches.length > 0}
-        <div class="mt-2 bg-white p-3">
+      <!-- 相关搜索（长尾词 SEO） -->
+      {#if relatedSearches.length > 0}
+        <section class="mt-2 bg-white p-3">
           <h3 class="font-medium mb-2">相关搜索</h3>
           <div class="flex flex-wrap gap-2">
-            {#each searches as keyword}
-              <a href="/search/{encodeURIComponent(keyword)}/1" class="px-3 py-1 text-xs bg-pink-50 text-pink-600 rounded-full">
-                {keyword}
-              </a>
+            {#each relatedSearches as keyword}
+              <a href="/search/{encodeURIComponent(keyword)}/1" class="px-3 py-1 text-xs bg-pink-50 text-pink-600 rounded-full hover:bg-pink-100 transition-colors">{keyword}</a>
             {/each}
           </div>
-        </div>
+        </section>
       {/if}
 
-      <!-- 简介 -->
+      <!-- 剧情简介 -->
       {#if video.vod_content}
-        <div class="mt-2 bg-white p-3">
+        <section class="mt-2 bg-white p-3">
           <h3 class="font-medium mb-2">剧情简介</h3>
-          <p class="text-sm text-gray-600">{video.vod_content}</p>
-        </div>
+          <p class="text-sm text-gray-600 leading-relaxed" itemprop="description">{video.vod_content}</p>
+        </section>
+      {/if}
+
+      <!-- FAQ（SEO 富文本摘要） -->
+      {#if faqs.length > 0}
+        <section class="mt-2 bg-white p-3">
+          <h3 class="font-medium mb-2">常见问题</h3>
+          <div class="space-y-3">
+            {#each faqs as faq}
+              <details class="group">
+                <summary class="text-sm font-medium cursor-pointer text-gray-700 list-none flex items-center justify-between">
+                  {faq.question}
+                  <svg class="w-4 h-4 text-gray-400 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                </summary>
+                <p class="mt-1 text-sm text-gray-500">{faq.answer}</p>
+              </details>
+            {/each}
+          </div>
+        </section>
       {/if}
     {/if}
   </main>
