@@ -47,25 +47,35 @@ async function getAllVideoUrls(env: Env): Promise<{ loc: string; lastmod: string
 async function getCategoryUrls(env: Env): Promise<{ loc: string; lastmod: string; priority: string }[]> {
   const urls: { loc: string; lastmod: string; priority: string }[] = [];
   const today = new Date().toISOString().split('T')[0];
-  
+
   try {
-    const result = await env.DB_0.prepare(
-      'SELECT DISTINCT category FROM videos WHERE status = 1'
-    ).all<{ category: string }>();
-    
-    if (result.results) {
-      for (const row of result.results) {
-        urls.push({
-          loc: `${BASE_URL}/category?cat=${encodeURIComponent(row.category)}`,
-          lastmod: today,
-          priority: '0.6'
-        });
+    const shards = getAllShards(env);
+    const results = await Promise.all(shards.map(db =>
+      db.prepare(
+        'SELECT DISTINCT category FROM videos WHERE status = 1'
+      ).all<{ category: string }>()
+    ));
+
+    const categorySet = new Set<string>();
+    for (const result of results) {
+      if (result.results) {
+        for (const row of result.results) {
+          if (row.category) categorySet.add(row.category);
+        }
       }
+    }
+
+    for (const category of categorySet) {
+      urls.push({
+        loc: `${BASE_URL}/category?cat=${encodeURIComponent(category)}`,
+        lastmod: today,
+        priority: '0.6'
+      });
     }
   } catch (e) {
     console.error('Category query error:', e);
   }
-  
+
   return urls;
 }
 
