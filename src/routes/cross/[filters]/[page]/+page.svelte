@@ -13,6 +13,7 @@
   let currentPage = $state(1);
   let totalPages = $state(1);
   let totalCount = $state(0);
+  let initialized = $state(false);
 
   // 解析 filters: "电影_美国_2024" 或 "动作片_2024" 等
   let filtersRaw = $derived(decodeURIComponent($page.params.filters || ''));
@@ -50,8 +51,18 @@
     return `最新${t}在线观看，高清完整版免费播放。${t}推荐、排行榜、热门${t}，每日更新，支持手机在线观看。`;
   });
 
+  // 监听 URL 参数变化
+  $effect(() => {
+    const pg = parseInt($page.params.page || '1') || 1;
+
+    if (initialized) {
+      loadCross(pg);
+    }
+  });
+
   onMount(() => {
     loadCross(pageParam || 1);
+    initialized = true;
   });
 
   async function loadCross(pg: number) {

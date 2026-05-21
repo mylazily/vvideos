@@ -423,3 +423,14 @@ export function generateTagSEO(tagName: string, page: number = 1, totalCount: nu
     keywords: `${tagName},${tagName}视频,${tagName}在线观看,${tagName}相关,${tagName}推荐`
   };
 }
+
+// 搜索页 SEO
+export function generateSearchSEO(keyword: string, page: number = 1, totalCount: number = 0): { title: string; description: string; keywords: string } {
+  const suffix = page > 1 ? ` 第${page}页` : '';
+  const countText = totalCount > 0 ? `共${totalCount}部` : '';
+  return {
+    title: `${keyword}相关视频${suffix} - ${SITE_NAME}`,
+    description: `"${keyword}"相关视频在线观看${countText}，高清完整版免费播放。支持手机在线观看。`,
+    keywords: `${keyword},${keyword}视频,${keyword}在线观看,${keyword}相关,${keyword}推荐`
+  };
+}
