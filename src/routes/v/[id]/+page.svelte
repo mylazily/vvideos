@@ -34,6 +34,7 @@
   let videoEl = $state<HTMLVideoElement | null>(null);
   let showPlayButton = $state(false);
   let isPlaying = $state(false);
+  let hasAttemptedPlay = $state(false);
 
   let vodId = $derived($page.params.id);
   let currentEpisode = $derived(playLines[currentLineIndex]?.episodes[currentEpisodeIndex]);
@@ -47,19 +48,23 @@
     destroyHls();
   });
 
-  // 监听 videoEl 绑定和 playLines 变化
+  // 监听 videoEl 和 playLines 变化，自动播放
   $effect(() => {
-    console.log('$effect triggered:', { videoEl: !!videoEl, playLinesLen: playLines.length });
-    if (videoEl && playLines.length > 0) {
-      console.log('Video element ready, starting playback...');
-      // 使用 setTimeout 确保 DOM 完全就绪
-      setTimeout(() => playEpisode(0, 0), 0);
+    const el = videoEl;
+    const lines = playLines;
+    
+    if (el && lines.length > 0 && !hasAttemptedPlay) {
+      console.log('Auto-play conditions met, starting playback...');
+      hasAttemptedPlay = true;
+      playEpisode(0, 0);
     }
   });
 
   async function loadVideo() {
     loading = true;
     errorMsg = '';
+    hasAttemptedPlay = false;
+    
     try {
       const res = await fetch('/api/video/' + vodId, {
         signal: AbortSignal.timeout(10000)
@@ -77,7 +82,6 @@
         playLines = parsePlayUrl(video.play_url);
         isFav = isFavorite(video.vod_id);
         
-        // 添加到历史记录
         addToHistory({
           vod_id: video.vod_id,
           title: video.title,
@@ -86,8 +90,6 @@
           vod_year: video.vod_year,
           vod_area: video.vod_area
         });
-        
-        // 播放将在 $effect 中处理，等待 videoEl 绑定完成
       } else {
         errorMsg = data.message || '视频不存在';
       }
@@ -100,16 +102,13 @@
   }
 
   function parsePlayUrl(playUrl: string | undefined): PlayLine[] {
-    console.log('parsePlayUrl input:', playUrl?.substring(0, 100));
     if (!playUrl) return [];
     const lines: PlayLine[] = [];
     const lineGroups = playUrl.split('$$$');
-    console.log('lineGroups count:', lineGroups.length);
     
     lineGroups.forEach((group, idx) => {
       const episodes: { name: string; url: string }[] = [];
       const items = group.split('#');
-      console.log('Group', idx, 'items count:', items.length);
       
       items.forEach((item, itemIdx) => {
         const trimmed = item.trim();
@@ -122,7 +121,6 @@
             url: trimmed.substring(dollarIdx + 1)
           });
         } else if (trimmed.startsWith('http')) {
-          // 直接是 URL，没有 $ 分隔
           episodes.push({ 
             name: '第' + (itemIdx + 1) + '集', 
             url: trimmed 
@@ -138,7 +136,6 @@
       }
     });
     
-    console.log('parsePlayUrl result:', lines.length, 'lines');
     return lines;
   }
 
@@ -155,93 +152,60 @@
     
     const episode = playLines[lineIdx]?.episodes[episodeIdx];
     if (!episode || !videoEl) {
-      console.log('Cannot play: no episode or video element', { episode: !!episode, videoEl: !!videoEl });
+      console.log('Cannot play: missing episode or video element');
       return;
     }
 
-    console.log('Playing:', episode.name, episode.url.substring(0, 50) + '...');
-    
+    console.log('Playing:', episode.name);
     destroyHls();
 
     const url = episode.url;
     
-    // 确保视频元素已准备好
-    if (videoEl.readyState === 0) {
-      console.log('Video element not ready, waiting...');
-      videoEl.addEventListener('loadedmetadata', () => {
-        console.log('Video element ready');
-      }, { once: true });
-    }
-    
-    // HLS 播放
     if (url.includes('.m3u8')) {
       if (Hls.isSupported()) {
-        console.log('Using HLS.js for:', url.substring(0, 50));
         try {
           hlsInstance = new Hls({
             enableWorker: true,
             lowLatencyMode: true,
             maxBufferLength: 30,
-            maxMaxBufferLength: 60,
-            debug: false
-          });
-          
-          hlsInstance.on(Hls.Events.MEDIA_ATTACHED, () => {
-            console.log('HLS media attached');
-          });
-          
-          hlsInstance.on(Hls.Events.MANIFEST_LOADING, () => {
-            console.log('HLS manifest loading...');
+            maxMaxBufferLength: 60
           });
           
           hlsInstance.on(Hls.Events.MANIFEST_PARSED, () => {
-            console.log('HLS manifest parsed, attempting play...');
-            // 尝试静音自动播放
             if (videoEl) {
               videoEl.muted = true;
               videoEl.play().then(() => {
-                console.log('Autoplay success (muted)');
                 isPlaying = true;
                 showPlayButton = false;
-                // 3秒后尝试取消静音
                 setTimeout(() => {
                   if (videoEl) videoEl.muted = false;
                 }, 3000);
-              }).catch((e) => {
-                console.log('Autoplay failed:', e.message);
+              }).catch(() => {
                 showPlayButton = true;
               });
             }
           });
           
           hlsInstance.on(Hls.Events.ERROR, (_event, data) => {
-            console.error('HLS error:', data.type, data.details);
             if (data.fatal) {
-              console.error('Fatal error:', data.type);
               switch (data.type) {
                 case Hls.ErrorTypes.NETWORK_ERROR:
-                  console.log('Network error, retrying...');
                   hlsInstance?.startLoad();
                   break;
                 case Hls.ErrorTypes.MEDIA_ERROR:
-                  console.log('Media error, recovering...');
                   hlsInstance?.recoverMediaError();
                   break;
                 default:
-                  console.log('Other fatal error, trying next line...');
-                  // 尝试其他线路
-                  const currentLineIdx = currentLineIndex;
-                  if (currentLineIdx < playLines.length - 1) {
-                    playEpisode(currentLineIdx + 1, 0);
+                  if (lineIdx < playLines.length - 1) {
+                    playEpisode(lineIdx + 1, 0);
                   } else {
-                    errorMsg = '视频加载失败，请尝试其他线路';
+                    errorMsg = '视频加载失败';
                   }
                   break;
               }
             }
           });
           
-          // 先 attach 再 loadSource
           hlsInstance.attachMedia(videoEl);
           hlsInstance.loadSource(url);
           
@@ -250,19 +214,14 @@
           errorMsg = '播放器初始化失败';
         }
       } else if (videoEl.canPlayType('application/vnd.apple.mpegurl')) {
-        // Safari 原生 HLS
-        console.log('Using native HLS');
         videoEl.src = url;
-        videoEl.play().catch((e) => console.log('Play error:', e));
+        videoEl.play().catch(() => showPlayButton = true);
       } else {
-        console.error('HLS not supported');
-        errorMsg = '您的浏览器不支持 HLS 播放';
+        errorMsg = '浏览器不支持 HLS 播放';
       }
     } else {
-      // 直接播放 MP4 等格式
-      console.log('Using native video player');
       videoEl.src = url;
-      videoEl.play().catch((e) => console.log('Play error:', e));
+      videoEl.play().catch(() => showPlayButton = true);
     }
   }
 
@@ -307,22 +266,12 @@
       vod_lang: video.vod_lang
     })}</title>
     <meta name="description" content={generateSEODescription({
-      title: video.title,
-      category: video.category,
-      vod_year: video.vod_year,
-      vod_area: video.vod_area,
-      vod_actor: video.vod_actor,
-      vod_director: video.vod_director,
-      vod_lang: video.vod_lang
+      title: video.title, category: video.category, vod_year: video.vod_year,
+      vod_area: video.vod_area, vod_actor: video.vod_actor, vod_director: video.vod_director, vod_lang: video.vod_lang
     })} />
     <meta name="keywords" content={generateSEOKeywords({
-      title: video.title,
-      category: video.category,
-      vod_year: video.vod_year,
-      vod_area: video.vod_area,
-      vod_actor: video.vod_actor,
-      vod_director: video.vod_director,
-      vod_lang: video.vod_lang
+      title: video.title, category: video.category, vod_year: video.vod_year,
+      vod_area: video.vod_area, vod_actor: video.vod_actor, vod_director: video.vod_director, vod_lang: video.vod_lang
     }).join(',')} />
     <link rel="canonical" href={canonicalUrl(`/v/${video.vod_id}`)} />
     <meta property="og:title" content={video.title} />
@@ -380,7 +329,6 @@
         { name: video.title }
       ]} />
 
-      <!-- 播放器 -->
       <div class="aspect-video bg-black relative">
         <video
           bind:this={videoEl}
@@ -393,19 +341,20 @@
           您的浏览器不支持视频播放
         </video>
         
-        <!-- 播放按钮覆盖层 -->
         {#if showPlayButton && !isPlaying}
-          <div class="absolute inset-0 flex items-center justify-center bg-black/50 cursor-pointer" onclick={() => {
-            if (videoEl) {
-              videoEl.muted = false;
-              videoEl.play().then(() => {
-                isPlaying = true;
-                showPlayButton = false;
-              }).catch((e) => {
-                console.log('Manual play failed:', e);
-              });
-            }
-          }}>
+          <div class="absolute inset-0 flex items-center justify-center bg-black/50 cursor-pointer" 
+               role="button" 
+               tabindex="0"
+               onclick={() => {
+                 if (videoEl) {
+                   videoEl.muted = false;
+                   videoEl.play().then(() => {
+                     isPlaying = true;
+                     showPlayButton = false;
+                   }).catch(() => {});
+                 }
+               }}
+               onkeydown={(e) => e.key === 'Enter' && e.currentTarget.click()}>
             <div class="w-20 h-20 bg-white/90 rounded-full flex items-center justify-center shadow-lg hover:scale-110 transition-transform">
               <svg class="w-10 h-10 text-pink-500 ml-1" fill="currentColor" viewBox="0 0 24 24">
                 <path d="M8 5v14l11-7z" />
@@ -415,7 +364,6 @@
         {/if}
       </div>
 
-      <!-- 当前播放信息 -->
       {#if currentEpisode}
         <div class="px-3 py-2 bg-white border-b border-gray-100">
           <div class="text-sm text-gray-500">
@@ -424,15 +372,13 @@
         </div>
       {/if}
 
-      <!-- 视频信息 -->
       <div class="p-3 bg-white">
         <div class="flex items-start justify-between gap-2 mb-2">
           <h2 class="text-lg font-bold text-gray-800 flex-1">{video.title}</h2>
           <button 
             onclick={toggleFavorite}
             class="flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-full {isFav ? 'bg-pink-100 text-pink-500' : 'bg-gray-100 text-gray-400'} transition-colors"
-            title={isFav ? '取消收藏' : '收藏'}
-          >
+            title={isFav ? '取消收藏' : '收藏'}>
             <svg class="w-5 h-5" fill={isFav ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
             </svg>
@@ -448,7 +394,6 @@
         </div>
       </div>
 
-      <!-- 线路选择 -->
       {#if playLines.length > 1}
         <div class="mt-2 bg-white p-3">
           <h3 class="font-medium text-gray-800 mb-2">播放线路</h3>
@@ -456,10 +401,7 @@
             {#each playLines as line, idx}
               <button
                 onclick={() => playEpisode(idx, 0)}
-                class="px-3 py-1.5 text-sm rounded {currentLineIndex === idx
-                  ? 'bg-pink-500 text-white'
-                  : 'bg-gray-100 text-gray-700'}"
-              >
+                class="px-3 py-1.5 text-sm rounded {currentLineIndex === idx ? 'bg-pink-500 text-white' : 'bg-gray-100 text-gray-700'}">
                 {line.name}
               </button>
             {/each}
@@ -467,7 +409,6 @@
         </div>
       {/if}
 
-      <!-- 选集 -->
       {#if playLines.length > 0}
         <div class="mt-2 bg-white p-3">
           <h3 class="font-medium text-gray-800 mb-2">
@@ -477,10 +418,7 @@
             {#each playLines[currentLineIndex]?.episodes || [] as ep, idx}
               <button
                 onclick={() => playEpisode(currentLineIndex, idx)}
-                class="flex-shrink-0 px-3 py-1.5 text-sm rounded {currentEpisodeIndex === idx
-                  ? 'bg-pink-500 text-white'
-                  : 'bg-gray-100 text-gray-700'}"
-              >
+                class="flex-shrink-0 px-3 py-1.5 text-sm rounded {currentEpisodeIndex === idx ? 'bg-pink-500 text-white' : 'bg-gray-100 text-gray-700'}">
                 {ep.name}
               </button>
             {/each}
@@ -488,7 +426,6 @@
         </div>
       {/if}
 
-      <!-- 相关信息 -->
       {#if video.vod_year || video.vod_area || video.vod_director}
         <div class="mt-2 bg-white p-3 text-sm">
           {#if video.vod_year}
@@ -506,7 +443,6 @@
         </div>
       {/if}
 
-      <!-- TAG标签 -->
       {#if video}
         {@const tags = generateTags({
           title: video.title, category: video.category, vod_year: video.vod_year,
@@ -526,7 +462,6 @@
         {/if}
       {/if}
 
-      <!-- 相关搜索 -->
       {#if video}
         {@const relatedSearches = generateRelatedSearches({
           title: video.title, category: video.category, vod_year: video.vod_year,
@@ -546,7 +481,6 @@
         {/if}
       {/if}
 
-      <!-- 用户评论（静态注入，提升文本密度） -->
       {#if video}
         <Comments videoId={video.vod_id} title={video.title} />
       {/if}
