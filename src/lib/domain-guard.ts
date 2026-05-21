@@ -20,13 +20,13 @@ export async function checkDomainAccessible(domain: string): Promise<boolean> {
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 3000);
-    
+
     const res = await fetch(`https://${domain}/api/health`, {
       method: 'HEAD',
       signal: controller.signal,
       mode: 'cors'
     });
-    
+
     clearTimeout(timeoutId);
     return true;
   } catch {
@@ -37,16 +37,16 @@ export async function checkDomainAccessible(domain: string): Promise<boolean> {
 // 获取下一个可用域名
 export async function getNextAvailableDomain(): Promise<string | null> {
   const currentDomain = getCurrentDomain();
-  
+
   for (const backup of BACKUP_DOMAINS) {
     if (backup.domain === currentDomain) continue;
-    
+
     const accessible = await checkDomainAccessible(backup.domain);
     if (accessible) {
       return backup.domain;
     }
   }
-  
+
   return null;
 }
 
@@ -85,19 +85,40 @@ export async function fetchDomainHealth(): Promise<{ status: string; domain: str
 // 初始化域名防护
 export async function initDomainGuard(): Promise<void> {
   if (typeof window === 'undefined') return;
-  
+
   // 保存当前路径
   saveCurrentPath();
-  
+
   // 检查是否有跳转标记
   const fromBackup = sessionStorage.getItem('from_backup');
   if (fromBackup) {
     sessionStorage.removeItem('from_backup');
     return; // 已经是从备用域名跳转过来的，不再检查
   }
-  
+
+  // 检查健康检查缓存（5分钟TTL）
+  const HEALTH_CACHE_KEY = 'domain_health_cache';
+  const HEALTH_CACHE_TTL = 5 * 60 * 1000; // 5分钟
+  try {
+    const cached = sessionStorage.getItem(HEALTH_CACHE_KEY);
+    if (cached) {
+      const { timestamp, healthy } = JSON.parse(cached);
+      if (Date.now() - timestamp < HEALTH_CACHE_TTL && healthy) {
+        return; // 缓存有效且健康，跳过检查
+      }
+    }
+  } catch { /* 忽略解析错误 */ }
+
   // 检查当前域名是否可访问
   const health = await fetchDomainHealth();
+  // 缓存结果
+  try {
+    sessionStorage.setItem(HEALTH_CACHE_KEY, JSON.stringify({
+      timestamp: Date.now(),
+      healthy: !!health
+    }));
+  } catch { /* 忽略 */ }
+
   if (!health) {
     // 当前域名不可访问，尝试跳转到备用域名
     const nextDomain = await getNextAvailableDomain();
@@ -112,7 +133,7 @@ export async function initDomainGuard(): Promise<void> {
 export function getBackupLinks(): { domain: string; name: string; url: string }[] {
   const currentDomain = getCurrentDomain();
   const path = getSavedPath();
-  
+
   return BACKUP_DOMAINS
     .filter(b => b.domain !== currentDomain)
     .map(b => ({

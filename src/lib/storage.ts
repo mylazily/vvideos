@@ -74,21 +74,21 @@ export function getHistory(): HistoryItem[] {
 export function addToHistory(video: LocalVideo & { progress?: number; duration?: number; last_play?: string }): void {
   if (typeof window === 'undefined') return;
   let history = getHistory();
-  
+
   // 移除旧记录
   history = history.filter(h => h.vod_id !== video.vod_id);
-  
+
   // 添加到开头
   history.unshift({
     ...video,
     watched_at: Date.now()
   });
-  
+
   // 限制数量
   if (history.length > MAX_HISTORY) {
     history = history.slice(0, MAX_HISTORY);
   }
-  
+
   localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
 }
 
@@ -103,8 +103,32 @@ export function clearHistory(): void {
   localStorage.removeItem(HISTORY_KEY);
 }
 
+// 观看进度防抖定时器
+let progressDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+let pendingProgress: { vodId: string; progress: number; duration?: number; lastPlay?: string } | null = null;
+
 export function updateHistoryProgress(vodId: string, progress: number, duration?: number, lastPlay?: string): void {
   if (typeof window === 'undefined') return;
+
+  // 保存待写入数据
+  pendingProgress = { vodId, progress, duration, lastPlay };
+
+  // 清除之前的定时器
+  if (progressDebounceTimer) {
+    clearTimeout(progressDebounceTimer);
+  }
+
+  // 5秒防抖，减少 localStorage 写入频率
+  progressDebounceTimer = setTimeout(flushProgress, 5000);
+}
+
+export function flushProgress(): void {
+  if (!pendingProgress || typeof window === 'undefined') return;
+
+  const { vodId, progress, duration, lastPlay } = pendingProgress;
+  pendingProgress = null;
+  progressDebounceTimer = null;
+
   const history = getHistory();
   const item = history.find(h => h.vod_id === vodId);
   if (item) {

@@ -40,7 +40,7 @@ self.addEventListener('activate', (event) => {
 async function staticStrategy(request) {
   const cache = await caches.open(STATIC_CACHE);
   const cached = await cache.match(request);
-  
+
   if (cached) {
     // 后台更新
     fetch(request).then((response) => {
@@ -48,26 +48,55 @@ async function staticStrategy(request) {
     }).catch(() => {});
     return cached;
   }
-  
+
   const response = await fetch(request);
   if (response.ok) cache.put(request, response.clone());
   return response;
 }
 
-// 2. API：网络优先，快速回退
+// 2. API：网络优先，带TTL的缓存回退
+const API_CACHE_TTL = 5 * 60 * 1000; // 5分钟
+
 async function apiStrategy(request) {
   const cache = await caches.open(API_CACHE);
-  
+
   try {
     const networkResponse = await fetch(request);
     if (networkResponse.ok) {
-      cache.put(request, networkResponse.clone());
+      // 缓存时添加时间戳
+      const headers = new Headers(networkResponse.headers);
+      headers.set('X-Cache-Time', String(Date.now()));
+      const timestampedResponse = new Response(networkResponse.body, {
+        status: networkResponse.status,
+        statusText: networkResponse.statusText,
+        headers
+      });
+      cache.put(request, timestampedResponse);
     }
     return networkResponse;
   } catch (error) {
     const cached = await cache.match(request);
-    if (cached) return cached;
-    
+    if (cached) {
+      // 检查缓存是否过期
+      const cacheTime = cached.headers.get('X-Cache-Time');
+      if (cacheTime && (Date.now() - Number(cacheTime)) > API_CACHE_TTL) {
+        // 缓存过期，尝试后台更新，先返回过期数据（stale-while-revalidate）
+        fetch(request).then((response) => {
+          if (response.ok) {
+            const headers = new Headers(response.headers);
+            headers.set('X-Cache-Time', String(Date.now()));
+            const timestampedResponse = new Response(response.body, {
+              status: response.status,
+              statusText: response.statusText,
+              headers
+            });
+            cache.put(request, timestampedResponse);
+          }
+        }).catch(() => {});
+      }
+      return cached;
+    }
+
     return new Response(
       JSON.stringify({ success: false, message: '离线模式' }),
       { status: 503, headers: { 'Content-Type': 'application/json' } }
@@ -79,16 +108,17 @@ async function apiStrategy(request) {
 async function imageStrategy(request) {
   const cache = await caches.open(IMAGE_CACHE);
   const cached = await cache.match(request);
-  
+
   if (cached) return cached;
-  
+
   try {
     const response = await fetch(request);
     if (response.ok) {
-      // LRU：限制 100 张图片
+      // LRU：限制 100 张图片，超限时批量删除最旧的20张
       const keys = await cache.keys();
-      if (keys.length > 100) {
-        await cache.delete(keys[0]);
+      if (keys.length >= 100) {
+        const deleteCount = Math.min(20, keys.length - 80);
+        await Promise.all(keys.slice(0, deleteCount).map(k => cache.delete(k)));
       }
       cache.put(request, response.clone());
     }
@@ -102,27 +132,27 @@ async function imageStrategy(request) {
 self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
-  
+
   if (request.method !== 'GET') return;
-  
+
   // API 请求
   if (url.pathname.startsWith('/api/')) {
     event.respondWith(apiStrategy(request));
     return;
   }
-  
+
   // 图片
   if (/\.(png|jpg|jpeg|webp|gif|svg|ico)$/i.test(url.pathname)) {
     event.respondWith(imageStrategy(request));
     return;
   }
-  
+
   // 静态资源
   if (/\.(js|css|woff2?)$/.test(url.pathname)) {
     event.respondWith(staticStrategy(request));
     return;
   }
-  
+
   // HTML 页面
   event.respondWith(
     fetch(request)
@@ -154,7 +184,7 @@ async function syncData(type) {
 // ======== 推送通知 ========
 self.addEventListener('push', (event) => {
   if (!event.data) return;
-  
+
   const data = event.data.json();
   const options = {
     body: data.body || '新视频更新',
@@ -168,7 +198,7 @@ self.addEventListener('push', (event) => {
     ],
     data: { url: data.url || '/' }
   };
-  
+
   event.waitUntil(
     self.registration.showNotification(data.title || '必爱必爱', options)
   );
@@ -177,7 +207,7 @@ self.addEventListener('push', (event) => {
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
   const url = event.notification.data?.url || '/';
-  
+
   if (event.action !== 'close') {
     event.waitUntil(
       clients.matchAll({ type: 'window' }).then((clientList) => {
@@ -195,7 +225,7 @@ self.addEventListener('notificationclick', (event) => {
 // ======== 消息通信 ========
 self.addEventListener('message', (event) => {
   const { type } = event.data;
-  
+
   switch (type) {
     case 'SKIP_WAITING':
       self.skipWaiting();
@@ -214,7 +244,7 @@ async function getCacheStatus() {
     caches.open(API_CACHE).then((c) => c.keys()),
     caches.open(IMAGE_CACHE).then((c) => c.keys())
   ]);
-  
+
   return {
     static: staticCache.length,
     api: apiCache.length,
