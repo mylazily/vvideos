@@ -155,9 +155,8 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 				context.waitUntil(shards[shardIdx].prepare('UPDATE videos SET views = views + 1 WHERE vod_id = ?').bind(vodId).run());
 			}
 
-			// 不缓存 play_url（太大），只缓存基本信息
-			const { play_url, ...cacheData } = video;
-			await env.CACHE.put(cacheKey, JSON.stringify(cacheData), { expirationTtl: 600 });
+			// 缓存完整数据（包括 play_url），TTL 10分钟
+			await env.CACHE.put(cacheKey, JSON.stringify(video), { expirationTtl: 600 });
 			return json({ success: true, data: video });
 		}
 
