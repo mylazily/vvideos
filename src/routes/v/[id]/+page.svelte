@@ -49,9 +49,11 @@
 
   // 监听 videoEl 绑定和 playLines 变化
   $effect(() => {
-    if (videoEl && playLines.length > 0 && !hlsInstance) {
+    console.log('$effect triggered:', { videoEl: !!videoEl, playLinesLen: playLines.length });
+    if (videoEl && playLines.length > 0) {
       console.log('Video element ready, starting playback...');
-      playEpisode(0, 0);
+      // 使用 setTimeout 确保 DOM 完全就绪
+      setTimeout(() => playEpisode(0, 0), 0);
     }
   });
 
