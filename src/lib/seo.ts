@@ -404,6 +404,22 @@ export function generateOrganizationSchema() {
   };
 }
 
+// WebPage Schema
+export function generateWebPageSchema(page: { title: string; description: string; url: string }) {
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'WebPage',
+    name: page.title,
+    description: page.description,
+    url: page.url,
+    isPartOf: {
+      '@type': 'WebSite',
+      name: SITE_NAME,
+      url: SITE_URL
+    }
+  };
+}
+
 // 首页 SEO
 export function generateHomeSEO(): { title: string; description: string; keywords: string } {
   return {
