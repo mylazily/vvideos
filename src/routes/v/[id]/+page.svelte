@@ -33,6 +33,8 @@
   let hlsInstance: Hls | null = null;
   let videoEl: HTMLVideoElement | null = null;
   let isReady = $state(false);
+  let showPlayButton = $state(false);
+  let isPlaying = $state(false);
 
   let vodId = $derived($page.params.id);
   let currentEpisode = $derived(playLines[currentLineIndex]?.episodes[currentEpisodeIndex]);
@@ -190,9 +192,22 @@
           
           hlsInstance.on(Hls.Events.MANIFEST_PARSED, () => {
             console.log('HLS manifest parsed, attempting play...');
-            videoEl?.play().catch((e) => {
-              console.log('Play error:', e.message);
-            });
+            // 尝试静音自动播放
+            if (videoEl) {
+              videoEl.muted = true;
+              videoEl.play().then(() => {
+                console.log('Autoplay success (muted)');
+                isPlaying = true;
+                showPlayButton = false;
+                // 3秒后尝试取消静音
+                setTimeout(() => {
+                  if (videoEl) videoEl.muted = false;
+                }, 3000);
+              }).catch((e) => {
+                console.log('Autoplay failed:', e.message);
+                showPlayButton = true;
+              });
+            }
           });
           
           hlsInstance.on(Hls.Events.ERROR, (_event, data) => {
@@ -373,6 +388,27 @@
         >
           您的浏览器不支持视频播放
         </video>
+        
+        <!-- 播放按钮覆盖层 -->
+        {#if showPlayButton && !isPlaying}
+          <div class="absolute inset-0 flex items-center justify-center bg-black/50 cursor-pointer" onclick={() => {
+            if (videoEl) {
+              videoEl.muted = false;
+              videoEl.play().then(() => {
+                isPlaying = true;
+                showPlayButton = false;
+              }).catch((e) => {
+                console.log('Manual play failed:', e);
+              });
+            }
+          }}>
+            <div class="w-20 h-20 bg-white/90 rounded-full flex items-center justify-center shadow-lg hover:scale-110 transition-transform">
+              <svg class="w-10 h-10 text-pink-500 ml-1" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M8 5v14l11-7z" />
+              </svg>
+            </div>
+          </div>
+        {/if}
       </div>
 
       <!-- 当前播放信息 -->
