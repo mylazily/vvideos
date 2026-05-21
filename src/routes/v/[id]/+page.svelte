@@ -31,8 +31,7 @@
   let currentEpisodeIndex = $state(0);
   let isFav = $state(false);
   let hlsInstance: Hls | null = null;
-  let videoEl: HTMLVideoElement | null = null;
-  let isReady = $state(false);
+  let videoEl = $state<HTMLVideoElement | null>(null);
   let showPlayButton = $state(false);
   let isPlaying = $state(false);
 
@@ -48,22 +47,13 @@
     destroyHls();
   });
 
-  // 视频元素绑定回调
-  function onVideoMount(el: HTMLVideoElement) {
-    videoEl = el;
-    isReady = true;
-    // 如果数据已加载，立即播放
-    if (playLines.length > 0) {
-      playEpisode(currentLineIndex, currentEpisodeIndex);
+  // 监听 videoEl 绑定和 playLines 变化
+  $effect(() => {
+    if (videoEl && playLines.length > 0 && !hlsInstance) {
+      console.log('Video element ready, starting playback...');
+      playEpisode(0, 0);
     }
-    return {
-      destroy() {
-        destroyHls();
-        videoEl = null;
-        isReady = false;
-      }
-    };
-  }
+  });
 
   async function loadVideo() {
     loading = true;
@@ -95,10 +85,7 @@
           vod_area: video.vod_area
         });
         
-        // 如果视频元素已绑定，立即播放
-        if (isReady && videoEl) {
-          playEpisode(0, 0);
-        }
+        // 播放将在 $effect 中处理，等待 videoEl 绑定完成
       } else {
         errorMsg = data.message || '视频不存在';
       }
@@ -379,7 +366,7 @@
       <!-- 播放器 -->
       <div class="aspect-video bg-black relative">
         <video
-          use:onVideoMount
+          bind:this={videoEl}
           controls
           playsinline
           class="w-full h-full"
