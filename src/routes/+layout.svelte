@@ -26,16 +26,22 @@
 		const browserInfo = detectBrowser();
 
 		if (browserInfo.isBlocked) {
-			// 检查是否已忽略过引导（国产APP 1天内不再显示）
-			const d = localStorage.getItem('guide_dismissed');
-			if (d) {
-				const dismissedTime = parseInt(d);
-				if (Date.now() - dismissedTime < 24 * 60 * 60 * 1000) {
-					displayMode = 1;
-					return;
+			// 硬屏蔽APP（微信/QQ/抖音等）：每次都强制显示引导，不缓存
+			const hardBlockedApps = ['wechat', 'qq', 'weibo', 'douyin', 'toutiao', 'alipay', 'baidu_app'];
+			if (hardBlockedApps.includes(browserInfo.type)) {
+				displayMode = 2; // 每次都显示全屏引导
+			} else {
+				// 体验受限浏览器（UC/百度等）：1小时内不再显示
+				const d = localStorage.getItem('guide_dismissed');
+				if (d) {
+					const dismissedTime = parseInt(d);
+					if (Date.now() - dismissedTime < 60 * 60 * 1000) {
+						displayMode = 1;
+						return;
+					}
 				}
+				displayMode = 2;
 			}
-			displayMode = 2; // 显示引导
 		} else {
 			displayMode = 1; // 正常显示
 		}
