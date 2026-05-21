@@ -82,9 +82,54 @@ function normalizeTitle(title: string): string {
 		.replace(/^\d+/, '');
 }
 
-function generateFingerprint(title: string, year: string, category: string): string {
+/**
+ * normalizeCategory - 分类标准化函数
+ * 将不同资源站的各种分类名映射到统一的标准分类，解决分类不一致问题。
+ */
+function normalizeCategory(category: string): string {
+	if (!category) return '其他';
+	const cat = category.trim();
+
+	// 电影类
+	if (/动作/.test(cat)) return '动作片';
+	if (/喜剧/.test(cat)) return '喜剧片';
+	if (/爱情|言情|情感|浪漫/.test(cat)) return '爱情片';
+	if (/科幻|Sci-Fi|SF/.test(cat)) return '科幻片';
+	if (/恐怖|惊悚|悬疑|Thriller|Horror/.test(cat)) return '恐怖片';
+	if (/剧情|文艺|传记/.test(cat)) return '剧情片';
+	if (/战争|War/.test(cat)) return '战争片';
+	if (/犯罪|警匪/.test(cat)) return '犯罪片';
+	if (/奇幻|魔幻|玄幻|Fantasy/.test(cat)) return '奇幻片';
+	if (/纪录片|纪录|Documentary/.test(cat)) return '纪录片';
+	if (/武侠|古装|历史/.test(cat)) return '古装片';
+	if (/伦理|情色/.test(cat)) return '伦理片';
+
+	// 剧集类
+	if (/大陆|国产|内地/.test(cat) && /剧/.test(cat)) return '大陆剧';
+	if (/港|澳|HK|HongKong/.test(cat) && /剧/.test(cat)) return '港澳剧';
+	if (/台|Taiwan/.test(cat) && /剧/.test(cat)) return '台湾剧';
+	if (/韩|Korea|韩国/.test(cat) && /剧/.test(cat)) return '韩剧';
+	if (/日|Japan|日本/.test(cat) && /剧/.test(cat)) return '日剧';
+	if (/美|USA|美国|欧美/.test(cat) && /剧/.test(cat)) return '美剧';
+	if (/泰|Thai|泰国/.test(cat) && /剧/.test(cat)) return '泰剧';
+	if (/英|British|英国/.test(cat) && /剧/.test(cat)) return '英剧';
+	if (/短剧|微剧/.test(cat)) return '短剧';
+
+	// 综艺
+	if (/综艺|真人秀|Variety|脱口秀/.test(cat)) return '综艺';
+
+	// 动漫细分（优先匹配细分，再匹配大类）
+	if (/日本动漫|日漫/.test(cat)) return '日本动漫';
+	if (/中国动漫|国漫/.test(cat)) return '中国动漫';
+	if (/美国动漫|美漫/.test(cat)) return '美国动漫';
+	if (/动画|动漫|Anime/.test(cat)) return '动漫';
+
+	return cat;
+}
+
+function generateFingerprint(title: string, year: string): string {
 	const normalized = normalizeTitle(title);
-	const content = `${normalized}|${year || ''}|${category || ''}`;
+	const content = `${normalized}|${year || ''}`;
 	return fnv1aHash(content);
 }
 
@@ -223,12 +268,13 @@ async function collectPageDetails(sourceUrl: string, ids: string[], signal?: Abo
 // ============ 数据入库 ============
 
 async function findOrCreateFingerprint(video: VideoData, env: Env): Promise<{ fingerprintId: number; mainVodId: string; isNew: boolean }> {
-	const fingerprint = generateFingerprint(video.vod_name, video.vod_year || '', video.type_name);
+	const fingerprint = generateFingerprint(video.vod_name, video.vod_year || '');
 	const titleNormalized = normalizeTitle(video.vod_name);
+	const normalizedCat = normalizeCategory(video.type_name);
 	const existing = await env.DB_0.prepare('SELECT id, main_vod_id FROM video_fingerprints WHERE fingerprint = ?').bind(fingerprint).first<{ id: number; main_vod_id: string }>();
 	if (existing) return { fingerprintId: existing.id, mainVodId: existing.main_vod_id, isNew: false };
 	const vodId = generateVodId();
-	const result = await env.DB_0.prepare('INSERT INTO video_fingerprints (fingerprint, title_normalized, vod_year, category, main_vod_id, created_at) VALUES (?, ?, ?, ?, ?, ?)').bind(fingerprint, titleNormalized, video.vod_year || '', video.type_name, vodId, Math.floor(Date.now() / 1000)).run();
+	const result = await env.DB_0.prepare('INSERT INTO video_fingerprints (fingerprint, title_normalized, vod_year, category, main_vod_id, created_at) VALUES (?, ?, ?, ?, ?, ?)').bind(fingerprint, titleNormalized, video.vod_year || '', normalizedCat, vodId, Math.floor(Date.now() / 1000)).run();
 	return { fingerprintId: result.meta.last_row_id, mainVodId: vodId, isNew: true };
 }
 
@@ -263,7 +309,8 @@ async function saveVideo(video: VideoData, sourceId: number, env: Env): Promise<
 			return { success: true, isNew: false };
 		} else {
 			const adSegments = detectAdSegments([video.duration || 0]);
-			await shard.prepare('INSERT INTO videos (vod_id, fingerprint_id, title, title_normalized, category, cover, play_url_1, duration_1, ad_segments, vod_year, vod_area, vod_actor, vod_director, vod_remarks, vod_lang, status, views, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?, ?)').bind(mainVodId, fingerprintId, video.vod_name, normalizeTitle(video.vod_name), video.type_name, video.vod_pic, video.vod_play_url, video.duration || 0, adSegments, video.vod_year || '', video.vod_area || '', video.vod_actor || '', video.vod_director || '', video.vod_remarks || '', video.vod_lang || '', now, now).run();
+			const normalizedCat = normalizeCategory(video.type_name);
+			await shard.prepare('INSERT INTO videos (vod_id, fingerprint_id, title, title_normalized, category, cover, play_url_1, duration_1, ad_segments, vod_year, vod_area, vod_actor, vod_director, vod_remarks, vod_lang, status, views, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?, ?)').bind(mainVodId, fingerprintId, video.vod_name, normalizeTitle(video.vod_name), normalizedCat, video.vod_pic, video.vod_play_url, video.duration || 0, adSegments, video.vod_year || '', video.vod_area || '', video.vod_actor || '', video.vod_director || '', video.vod_remarks || '', video.vod_lang || '', now, now).run();
 			return { success: true, isNew: true };
 		}
 	} catch (e) {
@@ -366,7 +413,7 @@ async function collectAll(options: CollectOptions): Promise<CollectResult> {
 							if (saved.isNew) {
 								result.new++;
 								// 统计分类
-								const cat = video.type_name || '其他';
+								const cat = normalizeCategory(video.type_name) || '其他';
 								result.categories[cat] = (result.categories[cat] || 0) + 1;
 							} else {
 								result.merged++;
