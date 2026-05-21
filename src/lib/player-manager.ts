@@ -59,11 +59,11 @@ const CONFIG = {
   BUFFER_THRESHOLD: 10,            // 缓冲阈值10秒（增大）
   ERROR_COUNT_THRESHOLD: 2,        // 连续错误阈值（降低）
   
-  // HLS缓冲配置
+  // HLS缓冲配置 - 超大缓冲
   HLS_BUFFER: {
-    MAX_BUFFER_LENGTH: 180,        // 最大缓冲180秒（3分钟）
-    MAX_MAX_BUFFER_LENGTH: 300,    // 最大缓冲上限300秒（5分钟）
-    MAX_BUFFER_SIZE: 100 * 1000 * 1000, // 100MB
+    MAX_BUFFER_LENGTH: 300,        // 最大缓冲300秒（5分钟）
+    MAX_MAX_BUFFER_LENGTH: 600,    // 最大缓冲上限600秒（10分钟）
+    MAX_BUFFER_SIZE: 200 * 1000 * 1000, // 200MB
     LIVE_SYNC_DURATION: 3,         // 直播同步时长
     LIVE_MAX_LATENCY_DURATION: 10, // 直播最大延迟
   },
@@ -488,11 +488,12 @@ export function getOptimizedHLSConfig(isPeakHour: boolean = false): any {
     enableWorker: true,
     lowLatencyMode: false,
     
-    // 缓冲配置 - 高峰期更大
-    maxBufferLength: isLowPerformance ? 180 : 120,
-    maxMaxBufferLength: isLowPerformance ? 300 : 180,
-    maxBufferSize: isLowPerformance ? 150 * 1000 * 1000 : 100 * 1000 * 1000,
+    // 缓冲配置 - 超大缓冲
+    maxBufferLength: isLowPerformance ? 300 : 180,      // 高峰期5分钟，平时3分钟
+    maxMaxBufferLength: isLowPerformance ? 600 : 300,   // 高峰期10分钟，平时5分钟
+    maxBufferSize: isLowPerformance ? 200 * 1000 * 1000 : 150 * 1000 * 1000, // 200MB / 150MB
     maxBufferHole: 0.5,
+    backBufferLength: 120,  // 保留已播放的120秒
     
     // 直播配置
     liveSyncDuration: CONFIG.HLS_BUFFER.LIVE_SYNC_DURATION,
