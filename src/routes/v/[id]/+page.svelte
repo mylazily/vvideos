@@ -19,6 +19,7 @@
     SITE_NAME
   } from '$lib/seo';
   import { addToHistory } from '$lib/storage';
+  import { generateHighlights, generateRecommendation, generateViewingTips, generateRelatedSearches } from '$lib/content-generator';
 
   // ============ 类型定义 ============
   interface PlaySource {
@@ -614,7 +615,68 @@
       <section class="mt-2 bg-white p-3">
         <h3 class="font-medium mb-2">简介</h3>
         <p class="text-sm text-gray-600 leading-relaxed" itemprop="description">{autoDescription}</p>
+        
+        <!-- 动态看点 -->
+        {#if video}
+          {@const highlights = generateHighlights(video)}
+          {#if highlights.length > 0}
+            <div class="flex flex-wrap gap-2 mt-3">
+              {#each highlights as h}
+                <span class="px-2 py-1 bg-pink-50 text-pink-600 text-xs rounded-full">{h}</span>
+              {/each}
+            </div>
+          {/if}
+        {/if}
       </section>
+
+      <!-- 推荐理由 -->
+      {#if video}
+        {@const recommendation = generateRecommendation(video)}
+        {#if recommendation}
+          <section class="mt-2 bg-white p-3">
+            <h3 class="font-medium mb-2">推荐理由</h3>
+            <p class="text-sm text-gray-600 leading-relaxed">{recommendation}</p>
+          </section>
+        {/if}
+      {/if}
+
+      <!-- 观看建议 -->
+      {#if video}
+        {@const tips = generateViewingTips(video)}
+        {#if tips.length > 0}
+          <section class="mt-2 bg-white p-3">
+            <h3 class="font-medium mb-2">观看提示</h3>
+            <ul class="text-sm text-gray-600 space-y-1">
+              {#each tips as tip}
+                <li class="flex items-start gap-2">
+                  <span class="text-pink-500">•</span>
+                  <span>{tip}</span>
+                </li>
+              {/each}
+            </ul>
+          </section>
+        {/if}
+      {/if}
+
+      <!-- 相关搜索 -->
+      {#if video}
+        {@const relatedSearches = generateRelatedSearches(video)}
+        {#if relatedSearches.length > 0}
+          <section class="mt-2 bg-white p-3">
+            <h3 class="font-medium mb-2">相关搜索</h3>
+            <div class="flex flex-wrap gap-2">
+              {#each relatedSearches as term}
+                <a 
+                  href="/search/{encodeURIComponent(term)}/1" 
+                  class="px-2 py-1 bg-gray-100 text-gray-600 text-xs rounded hover:bg-pink-50 hover:text-pink-600 transition-colors"
+                >
+                  {term}
+                </a>
+              {/each}
+            </div>
+          </section>
+        {/if}
+      {/if}
 
       <!-- 相关视频 -->
       {#if relatedVideos.length > 0}
