@@ -45,6 +45,14 @@
     destroyHls();
   });
 
+  // 监听 videoEl 绑定完成后再播放
+  $effect(() => {
+    if (videoEl && playLines.length > 0 && !hlsInstance && !loading) {
+      // videoEl 已绑定，开始播放
+      playEpisode(currentLineIndex, currentEpisodeIndex);
+    }
+  });
+
   async function loadVideo() {
     loading = true;
     errorMsg = '';
@@ -75,10 +83,7 @@
           vod_area: video.vod_area
         });
         
-        // 自动播放第一集
-        if (playLines.length > 0 && playLines[0].episodes.length > 0) {
-          setTimeout(() => playEpisode(0, 0), 100);
-        }
+        // 播放将在 $effect 中处理，等待 videoEl 绑定完成
       } else {
         errorMsg = data.message || '视频不存在';
       }
