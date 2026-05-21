@@ -70,14 +70,8 @@ function getShards(env: Env): D1Database[] {
 	return [env.DB_0, env.DB_1, env.DB_2, env.DB_3, env.DB_4, env.DB_5, env.DB_6, env.DB_7, env.DB_8, env.DB_9];
 }
 
-function getShardForVodId(vodId: string, env: Env): D1Database {
-	const hash = vodId.split('').reduce((a, b) => a + b.charCodeAt(0), 0);
-	const shards = getShards(env);
-	return shards[hash % 10];
-}
-
 // 视频列表列（不包含播放URL）
-const VIDEO_COLS = 'id, vod_id, title, cover, category, views, created_at, vod_year, vod_area';
+const VIDEO_COLS = 'id, vod_id, title, cover, category, views, created_at, vod_year, vod_area, vod_actor';
 // 视频详情列（包含多源播放URL）
 const VIDEO_DETAIL_COLS = 'id, vod_id, fingerprint_id, title, title_normalized, cover, category, views, created_at, updated_at, vod_year, vod_area, vod_director, vod_actor, vod_remarks, vod_lang, play_url_1, play_url_2, play_url_3, play_url_4, play_url_5, duration_1, duration_2, duration_3, duration_4, duration_5, ad_segments';
 
@@ -185,7 +179,10 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 			if (cached) return json({ success: true, data: cached }, 200, strongCacheHeaders(1800));
 
 			const shards = getShards(env);
-			const videoInfo = await getShardForVodId(vodId, env).prepare('SELECT category, vod_area FROM videos WHERE vod_id = ? AND status = 1').bind(vodId).first<{ category: string; vod_area: string }>();
+			const videoResult = await Promise.all(shards.map(db =>
+				db.prepare('SELECT category, vod_area FROM videos WHERE vod_id = ? AND status = 1').bind(vodId).first<{ category: string; vod_area: string }>()
+			));
+			const videoInfo = videoResult.find(r => r !== null);
 			if (!videoInfo) return json({ success: true, data: [] });
 
 			const conditions: string[] = ['status = 1', 'vod_id != ?'];
@@ -210,14 +207,20 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 			const cached = await getCache(request, env, cacheKey);
 			if (cached) return json({ success: true, data: cached }, 200, strongCacheHeaders(3600));
 
-			const shard = getShardForVodId(vodId, env);
-			const row = await shard.prepare('SELECT ' + VIDEO_DETAIL_COLS + ' FROM videos WHERE vod_id = ? AND status = 1').bind(vodId).first<VideoRow>();
+			const shards = getShards(env);
+			const results = await Promise.all(shards.map(db =>
+				db.prepare('SELECT ' + VIDEO_DETAIL_COLS + ' FROM videos WHERE vod_id = ? AND status = 1').bind(vodId).first<VideoRow>()
+			));
+			const row = results.find(r => r !== null);
 			if (!row) return json({ success: false, message: '视频不存在' }, 404);
 
 			const video = formatVideoDetail(row);
 
 			// 异步更新浏览量
-			context.waitUntil(shard.prepare('UPDATE videos SET views = views + 1 WHERE vod_id = ?').bind(vodId).run());
+			const shardIdx = results.indexOf(row);
+			if (shardIdx >= 0) {
+				context.waitUntil(shards[shardIdx].prepare('UPDATE videos SET views = views + 1 WHERE vod_id = ?').bind(vodId).run());
+			}
 
 			await setCache(request, env, cacheKey, video, 3600, true);
 			return json({ success: true, data: video }, 200, strongCacheHeaders(3600));
@@ -226,21 +229,19 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 		// ======== 首页 ========
 		if (path === '/api/home') {
 			const hour = Math.floor(Date.now() / 3600000);
+			const shardIndex = Math.floor(hour / 2) % 10;
 			const cacheKey = `home:${CACHE_VERSION}:h${hour}`;
 			const cached = await getCache(request, env, cacheKey);
-			if (cached) return json({ success: true, data: cached }, 200, strongCacheHeaders(3600));
+			if (cached) return json({ success: true, data: { videos: cached, shard: shardIndex } }, 200, strongCacheHeaders(3600));
 
 			const shards = getShards(env);
-			const results = await Promise.all(shards.map(db =>
-				db.prepare('SELECT ' + VIDEO_COLS + ' FROM videos WHERE status = 1 ORDER BY created_at DESC LIMIT 24').all<VideoRow>()
-			));
-			let allVideos: VideoRow[] = [];
-			for (const r of results) if (r.results) allVideos.push(...r.results);
-			allVideos.sort((a, b) => b.created_at - a.created_at);
-			const videos = allVideos.slice(0, 24);
+			const result = await shards[shardIndex].prepare(
+				'SELECT ' + VIDEO_COLS + ' FROM videos WHERE status = 1 ORDER BY created_at DESC LIMIT 24'
+			).all<VideoRow>();
+			const videos = result.results || [];
 
 			await setCache(request, env, cacheKey, videos, 7200, true);
-			return json({ success: true, data: { videos } }, 200, strongCacheHeaders(3600));
+			return json({ success: true, data: { videos, shard: shardIndex } }, 200, strongCacheHeaders(3600));
 		}
 
 		// ======== 通用视频列表 ========
@@ -257,7 +258,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 			const shards = getShards(env);
 
 			const [videoResults, countResults] = await Promise.all([
-				Promise.all(shards.map(db => db.prepare('SELECT ' + VIDEO_COLS + ' FROM videos ' + where + ' ORDER BY created_at DESC LIMIT 100').bind(...params).all<VideoRow>())),
+				Promise.all(shards.map(db => db.prepare('SELECT ' + VIDEO_COLS + ' FROM videos ' + where + ' ORDER BY created_at DESC LIMIT 200').bind(...params).all<VideoRow>())),
 				Promise.all(shards.map(db => db.prepare('SELECT COUNT(*) as total FROM videos ' + where).bind(...params).first<{ total: number }>()))
 			]);
 
@@ -268,7 +269,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 			const offset = (page - 1) * limit;
 
 			const responseData = { videos: allVideos.slice(offset, offset + limit), pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } };
-			await setCache(request, env, cacheKey, responseData, 1800, true);
+			await setCache(request, env, cacheKey, responseData, 1800, false);
 			return json({ success: true, data: responseData }, 200, strongCacheHeaders(1800));
 		}
 
@@ -355,7 +356,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 			const shards = getShards(env);
 
 			const [videoResults, countResults] = await Promise.all([
-				Promise.all(shards.map(db => db.prepare('SELECT ' + VIDEO_COLS + ' FROM videos WHERE status = 1 AND title LIKE ? ORDER BY created_at DESC LIMIT 100').bind(pattern).all<VideoRow>())),
+				Promise.all(shards.map(db => db.prepare('SELECT ' + VIDEO_COLS + ' FROM videos WHERE status = 1 AND title LIKE ? ORDER BY created_at DESC LIMIT 200').bind(pattern).all<VideoRow>())),
 				Promise.all(shards.map(db => db.prepare('SELECT COUNT(*) as total FROM videos WHERE status = 1 AND title LIKE ?').bind(pattern).first<{ total: number }>()))
 			]);
 
@@ -366,7 +367,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 			const offset = (page - 1) * limit;
 
 			const responseData = { videos: allVideos.slice(offset, offset + limit), pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } };
-			await setCache(request, env, cacheKey, responseData, 600, true);
+			await setCache(request, env, cacheKey, responseData, 600, false);
 			return json({ success: true, data: responseData }, 200, strongCacheHeaders(600));
 		}
 
@@ -379,8 +380,8 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 
 			const shards = getShards(env);
 			const sql = category
-				? 'SELECT ' + VIDEO_COLS + ' FROM videos WHERE status = 1 AND category = ? ORDER BY views DESC LIMIT 10'
-				: 'SELECT ' + VIDEO_COLS + ' FROM videos WHERE status = 1 ORDER BY views DESC LIMIT 10';
+				? 'SELECT ' + VIDEO_COLS + ' FROM videos WHERE status = 1 AND category = ? ORDER BY views DESC LIMIT 50'
+				: 'SELECT ' + VIDEO_COLS + ' FROM videos WHERE status = 1 ORDER BY views DESC LIMIT 50';
 
 			const results = category
 				? await Promise.all(shards.map(db => db.prepare(sql).bind(category).all<VideoRow>()))
@@ -418,7 +419,12 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 			crypto.getRandomValues(bytes);
 			const token = Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
 			await env.CACHE.put(`admin_token:${token}`, String(Math.floor(Date.now() / 1000)), { expirationTtl: 86400 });
-			return json({ success: true, token });
+			// 同步生成定时任务专用 cron token（永不过期）
+			const cronBytes = new Uint8Array(32);
+			crypto.getRandomValues(cronBytes);
+			const cronToken = Array.from(cronBytes, b => b.toString(16).padStart(2, '0')).join('');
+			await env.CACHE.put('cron_admin_token', cronToken);
+			return json({ success: true, token, cron_token: cronToken });
 		}
 
 		// ======== 管理后台（低频，不缓存） ========
@@ -458,16 +464,17 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 		}
 
 		if (path === '/api/aadmin/collect' && request.method === 'POST') {
-			const { source_id } = await request.json<{ source_id?: number }>();
+			const { source_id, mode, pages } = await request.json<{ source_id?: number; mode?: 'full' | 'single'; pages?: number }>();
 			if (!source_id) return json({ success: false, message: '缺少source_id' }, 400);
 			const source = await env.DB_0.prepare('SELECT * FROM sources WHERE id = ?').bind(source_id).first<{ id: number; name: string; api_url: string }>();
 			if (!source) return json({ success: false, message: '采集源不存在' }, 404);
 			const collectUrl = new URL('/api/collect', url.origin);
+			const collectPages = mode === 'full' ? 999 : (pages || 5);
 			const collectRes = await fetch(collectUrl.toString(), {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json', 'Authorization': request.headers.get('Authorization') || '' },
-				body: JSON.stringify({ source_url: source.api_url, pages: 1, source_id: source_id }),
-				signal: AbortSignal.timeout(120000)
+				body: JSON.stringify({ source_url: source.api_url, pages: collectPages, source_id: source_id, mode: mode || 'single' }),
+				signal: AbortSignal.timeout(mode === 'full' ? 3600000 : 300000)
 			});
 			const collectData = await collectRes.json();
 			const newCount = collectData.data?.new || 0;
@@ -490,4 +497,3 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 		return json({ success: false, message: err.message || '服务器错误' }, 500);
 	}
 };
-
