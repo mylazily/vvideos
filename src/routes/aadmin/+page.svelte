@@ -300,7 +300,7 @@
     collecting = true;
     message = '正在执行定时采集...';
     try {
-      const res = await authFetch('/api/timming?enforce=1');
+      const res = await authFetch('/api/timming?force=1');
       const data = await res.json();
       message = data.msg;
       if (data.success) {

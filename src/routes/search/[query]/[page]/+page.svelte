@@ -141,7 +141,7 @@
           class="flex-1 bg-transparent text-sm outline-none"
         />
         {#if searchQuery}
-          <button onclick={() => goto('/search/ /1')} class="text-gray-400 mr-2">×</button>
+          <button onclick={() => goto('/')} class="text-gray-400 mr-2">×</button>
         {/if}
         <button onclick={handleSearch} class="text-pink-500 text-sm">搜索</button>
       </div>

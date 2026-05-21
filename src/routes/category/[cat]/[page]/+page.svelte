@@ -8,7 +8,7 @@
   import type { Video } from '$lib/types';
   import { generateCategorySEO, canonicalUrl } from '$lib/seo';
 
-  let categories = $state<{ name: string; count: number }[]>([]);
+  let categories = $state<string[]>([]);
   let activeCategory = $state('全部');
   let videos = $state<Video[]>([]);
   let loading = $state(true);
@@ -126,12 +126,12 @@
         </button>
         {#each categories as cat}
           <button
-            onclick={() => switchCategory(cat.name)}
-            class="flex-shrink-0 px-4 py-1.5 text-sm rounded-full transition-all {activeCategory === cat.name
+            onclick={() => switchCategory(cat)}
+            class="flex-shrink-0 px-4 py-1.5 text-sm rounded-full transition-all {activeCategory === cat
               ? 'bg-pink-500 text-white'
               : 'text-gray-600 bg-gray-100'}"
           >
-            {cat.name}
+            {cat}
           </button>
         {/each}
       {/if}

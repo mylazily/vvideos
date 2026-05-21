@@ -18,7 +18,7 @@
     SITE_URL,
     SITE_NAME
   } from '$lib/seo';
-  import { addToHistory } from '$lib/storage';
+  import { addToHistory, updateHistoryProgress, flushProgress, addFavorite, removeFavorite, isFavorite } from '$lib/storage';
   import { generateHighlights, generateRecommendation, generateViewingTips, generateRelatedSearches } from '$lib/content-generator';
   import {
     testAllSources,
@@ -63,6 +63,8 @@
   let playbackMonitor: ReturnType<typeof createPlaybackMonitor> | null = null;
   let bandwidth = $state(0);
   let isBuffering = $state(false);
+  let favorited = $state(false);
+  let adSkipListener: (() => void) | null = null;
 
   // ============ 派生状态 ============
   let videoId = $derived($page.params.id);
@@ -176,6 +178,8 @@
         vod_year: video.vod_year,
         vod_area: video.vod_area
       });
+
+      favorited = isFavorite(video.vod_id);
 
       // 处理并行加载的相关视频数据
       if (relatedRes && relatedRes.ok) {
@@ -300,6 +304,10 @@
 
   // 广告跳过逻辑
   function setupAdSkipper(videoEl: HTMLVideoElement) {
+    // 清理旧的监听器
+    if (adSkipListener) {
+      videoEl.removeEventListener('timeupdate', adSkipListener);
+    }
     const checkAndSkip = () => {
       if (isSkippingAd) return;
 
@@ -316,6 +324,7 @@
     };
 
     videoEl.addEventListener('timeupdate', checkAndSkip);
+    adSkipListener = checkAndSkip;
   }
 
   async function playHls(videoEl: HTMLVideoElement, url: string) {
@@ -355,6 +364,17 @@
               autoSwitchManager?.reportSuccess(currentSourceIndex);
             })
             .catch(() => { showPlayButton = true; });
+
+          videoEl.addEventListener('timeupdate', () => {
+            if (videoEl.duration > 0 && videoEl.currentTime > 0) {
+              updateHistoryProgress(
+                video!.vod_id,
+                videoEl.currentTime,
+                videoEl.duration,
+                playSources[currentSourceIndex]?.name || ''
+              );
+            }
+          });
         });
 
         hlsPlayer.on(Hls.Events.ERROR, (_event: any, data: any) => {
@@ -430,6 +450,12 @@
   }
 
   function destroyPlayer() {
+    flushProgress();
+    const videoEl = document.querySelector('video') as HTMLVideoElement;
+    if (videoEl && adSkipListener) {
+      videoEl.removeEventListener('timeupdate', adSkipListener);
+      adSkipListener = null;
+    }
     if (hlsPlayer) {
       hlsPlayer.destroy();
       hlsPlayer = null;
@@ -439,20 +465,6 @@
   function retryLoad() {
     isLoadingVideo = false;
     loadVideo();
-  }
-
-  async function loadRelatedVideos(id: string) {
-    try {
-      const res = await fetch(`/api/video/${id}/related`, {
-        signal: AbortSignal.timeout(5000)
-      });
-      if (res.ok) {
-        const data = await res.json();
-        relatedVideos = data.data || [];
-      }
-    } catch {
-      // 静默失败
-    }
   }
 
   function formatDuration(seconds: number): string {
@@ -651,6 +663,27 @@
           </div>
         {/if}
       </article>
+
+      <!-- 收藏按钮 -->
+      <div class="px-3 py-2 bg-white border-t flex items-center gap-3">
+        <button
+          onclick={() => {
+            if (favorited) {
+              removeFavorite(video.vod_id);
+              favorited = false;
+            } else {
+              addFavorite({ vod_id: video.vod_id, title: video.title, cover: video.cover, category: video.category, vod_year: video.vod_year });
+              favorited = true;
+            }
+          }}
+          class="flex items-center gap-1 px-4 py-2 text-sm rounded-full transition-colors {favorited ? 'bg-pink-500 text-white' : 'bg-gray-100 text-gray-600'}"
+        >
+          <svg class="w-4 h-4" fill={favorited ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+          </svg>
+          {favorited ? '已收藏' : '收藏'}
+        </button>
+      </div>
 
       <!-- 线路选择 -->
       {#if playSources.length > 1}
