@@ -7,7 +7,6 @@
 	import { browser } from '$app/environment';
 	import { applySubdomainSEO } from '$lib/subdomain';
 
-	import { initDomainGuard } from '$lib/domain-guard';
 	import { detectBrowser } from '$lib/browser-detect';
 	import UserGuide from '$components/UserGuide.svelte';
 	import { getLocaleFromPath, getTranslations, generateHreflangTags, DEFAULT_LOCALE, HTML_LANG, type Locale } from '$lib/i18n';
@@ -27,7 +26,8 @@
 
 	onMount(() => {
 		applySubdomainSEO();
-		initDomainGuard();
+		// 禁用域名跳转，用户应留在当前域名
+		// initDomainGuard() 已移除
 		locale = getLocaleFromPath($page.url.pathname);
 
 		if (!browser) {

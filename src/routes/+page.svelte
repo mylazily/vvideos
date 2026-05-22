@@ -88,6 +88,33 @@
   <!-- 搜索框 + 语言切换 -->
   <header class="sticky top-0 bg-white border-b border-gray-100 px-3 py-2 z-50">
     <div class="flex items-center gap-2">
+      <!-- 语言切换器 - 放最左边 -->
+      <div class="relative">
+        <button
+          onclick={(e) => { e.stopPropagation(); showLangMenu = !showLangMenu; }}
+          class="flex items-center gap-1 px-2 py-1.5 text-sm text-gray-600 hover:text-pink-500"
+        >
+          <span>{LOCALE_FLAGS[locale]}</span>
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+          </svg>
+        </button>
+        {#if showLangMenu}
+          <div class="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-lg border border-gray-100 py-1 min-w-[140px] z-50">
+            {#each SUPPORTED_LOCALES as loc}
+              <button
+                onclick={() => switchLanguage(loc)}
+                class="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2 {locale === loc ? 'text-pink-500 font-medium' : 'text-gray-700'}"
+              >
+                <span>{LOCALE_FLAGS[loc]}</span>
+                <span>{LOCALE_NAMES[loc]}</span>
+              </button>
+            {/each}
+          </div>
+        {/if}
+      </div>
+
+      <!-- 搜索框 -->
       <div class="flex-1 flex items-center h-9 px-3 bg-gray-100 rounded-lg">
         <svg class="w-4 h-4 text-gray-400 mr-2 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -100,32 +127,6 @@
           class="flex-1 bg-transparent text-sm outline-none"
         />
         <button onclick={handleSearch} class="text-pink-500 text-sm">{t(locale, 'search')}</button>
-      </div>
-
-      <!-- 语言切换器 -->
-      <div class="relative">
-        <button
-          onclick={(e) => { e.stopPropagation(); showLangMenu = !showLangMenu; }}
-          class="flex items-center gap-1 px-2 py-1.5 text-sm text-gray-600 hover:text-pink-500"
-        >
-          <span>{LOCALE_FLAGS[locale]}</span>
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-          </svg>
-        </button>
-        {#if showLangMenu}
-          <div class="absolute top-full right-0 mt-1 bg-white rounded-lg shadow-lg border border-gray-100 py-1 min-w-[140px] z-50">
-            {#each SUPPORTED_LOCALES as loc}
-              <button
-                onclick={() => switchLanguage(loc)}
-                class="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2 {locale === loc ? 'text-pink-500 font-medium' : 'text-gray-700'}"
-              >
-                <span>{LOCALE_FLAGS[loc]}</span>
-                <span>{LOCALE_NAMES[loc]}</span>
-              </button>
-            {/each}
-          </div>
-        {/if}
       </div>
     </div>
   </header>
