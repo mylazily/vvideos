@@ -193,13 +193,65 @@
       const { default: Hls } = await import('hls.js');
 
       if (Hls.isSupported()) {
-        hlsPlayer = new Hls({
+        // 原生HLS配置 - 5-10分钟超大缓冲区，保证不卡
+        hlsPlayer = new HlsClass({
+          // 启用Web Worker，不阻塞主线程
           enableWorker: true,
+          // 低延迟模式关闭，优先流畅
           lowLatencyMode: false,
+          
+          // ========== 缓冲区配置（核心）==========
+          // 正常播放时缓冲区：5分钟（300秒）
           maxBufferLength: 300,
+          // 最大缓冲区上限：10分钟（600秒）
           maxMaxBufferLength: 600,
+          // 最大缓冲区大小：200MB
           maxBufferSize: 200 * 1000 * 1000,
+          // 缓冲区空洞容忍：0.5秒
+          maxBufferHole: 0.5,
+          // 后向缓冲区：90秒
+          backBufferLength: 90,
+          
+          // ========== 直播配置 ==========
+          liveSyncDuration: 3,
+          liveMaxLatencyDuration: 10,
+          
+          // ========== ABR自适应码率 ==========
+          // 自动选择最佳码率
           startLevel: -1,
+          // 默认带宽估计：1Mbps
+          abrEwmaDefaultEstimate: 1000000,
+          // 带宽因子：0.7（保守策略，保证流畅）
+          abrBandWidthFactor: 0.7,
+          // 带宽上升因子：0.5
+          abrBandWidthUpFactor: 0.5,
+          // 使用真实码率
+          abrMaxWithRealBitrate: true,
+          
+          // ========== 加载超时配置 ==========
+          // 片段加载超时：30秒
+          fragLoadingTimeOut: 30000,
+          // manifest加载超时：15秒
+          manifestLoadingTimeOut: 15000,
+          // 级别加载超时：15秒
+          levelLoadingTimeOut: 15000,
+          
+          // ========== 重试配置 ==========
+          // 片段加载重试：6次
+          fragLoadingMaxRetry: 6,
+          // manifest加载重试：3次
+          manifestLoadingMaxRetry: 3,
+          // 级别加载重试：3次
+          levelLoadingMaxRetry: 3,
+          // 重试延迟：1秒
+          fragLoadingRetryDelay: 1000,
+          
+          // ========== 其他优化 ==========
+          // 禁用字幕，减少开销
+          enableCEA708Captions: false,
+          enableWebVTT: false,
+          enableIMSC1: false,
+          enableID3Metadata: false,
         });
 
         hlsPlayer.on(Hls.Events.MANIFEST_PARSED, () => {
