@@ -1,8 +1,8 @@
-// Service Worker v4 - 极速 PWA
-const STATIC_CACHE = 'evideos-static-v4';
-const API_CACHE = 'evideos-api-v4';
-const IMAGE_CACHE = 'evideos-images-v4';
-const CACHE_VERSION = 'v4';
+// Service Worker v5 - 极速 PWA (强制更新)
+const STATIC_CACHE = 'evideos-static-v5';
+const API_CACHE = 'evideos-api-v5';
+const IMAGE_CACHE = 'evideos-images-v5';
+const CACHE_VERSION = 'v5';
 
 // 核心资源（安装时预缓存）
 const CORE_ASSETS = [
