@@ -189,7 +189,7 @@ export function generatePageTitle(video: VideoSEOData): string {
 }
 
 // 生成结构化数据 (JSON-LD)
-export function generateVideoSchema(video: VideoSEOData & { cover?: string; play_url?: string; vod_id?: string }) {
+export function generateVideoSchema(video: VideoSEOData & { cover?: string; play_url?: string; vod_id?: string; duration?: number | string }) {
   return {
     '@context': 'https://schema.org',
     '@type': 'VideoObject',
@@ -197,6 +197,7 @@ export function generateVideoSchema(video: VideoSEOData & { cover?: string; play
     description: generateSEODescription(video),
     thumbnailUrl: video.cover,
     uploadDate: video.vod_year ? `${video.vod_year}-01-01` : new Date().toISOString(),
+    duration: video.duration ? `PT${Math.floor(Number(video.duration) / 60)}M${Number(video.duration) % 60}S` : undefined,
     contentUrl: video.play_url,
     embedUrl: video.play_url,
     actor: video.vod_actor ? video.vod_actor.split(/[,，]/).map(name => ({

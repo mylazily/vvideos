@@ -4,7 +4,7 @@
 </script>
 
 <svelte:head>
-  <title>页面未找到 - evideos</title>
+  <title>页面未找到 - 必爱必爱</title>
   <meta name="robots" content="noindex, follow" />
 </svelte:head>
 

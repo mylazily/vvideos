@@ -187,6 +187,11 @@
   {@html `<script type="application/ld+json">${JSON.stringify(generateCollectionPageSchema(pageTitle() + '大全', seo.description, '/cross/' + encodeURIComponent(filtersRaw) + '/1'))}</script>`}
   {@html `<script type="application/ld+json">${JSON.stringify(generateItemListSchema(videos.slice(0, 10).map(v => ({ name: v.title, url: '/v/' + v.vod_id, image: v.cover })), pageTitle() + '在线观看'))}</script>`}
   {@html `<script type="application/ld+json">${JSON.stringify(generateFAQSchema(faqs))}</script>`}
+
+  {#if pageParam > 1}
+    <link rel="prev" href="https://evideos.pages.dev/cross/{encodeURIComponent(filtersRaw)}/{pageParam - 1}" />
+  {/if}
+  <link rel="next" href="https://evideos.pages.dev/cross/{encodeURIComponent(filtersRaw)}/{pageParam + 1}" />
 </svelte:head>
 
 <div class="min-h-screen bg-gray-50">

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import NavBar from '$components/NavBar.svelte';
-  import { generateDiscoverSEO } from '$lib/seo';
+  import { generateDiscoverSEO, generateBreadcrumbSchema } from '$lib/seo';
 
   let categories = $state<string[]>([]);
   let areas = $state<string[]>([]);
@@ -41,6 +41,10 @@
   <meta property="og:type" content="website" />
   <meta property="og:url" content="https://evideos.pages.dev/discover" />
   <meta property="og:image" content="https://evideos.pages.dev/icon.svg" />
+  <meta name="twitter:card" content="summary" />
+  <meta name="twitter:title" content={seo.title} />
+  <meta name="twitter:description" content={seo.description} />
+  {@html `<script type="application/ld+json">${JSON.stringify(generateBreadcrumbSchema([{name: '首页', url: 'https://evideos.pages.dev/'}, {name: '发现', url: 'https://evideos.pages.dev/discover'}]))}</script>`}
 </svelte:head>
 
 <div class="min-h-screen bg-gray-50">

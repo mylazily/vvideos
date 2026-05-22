@@ -5,6 +5,7 @@
   import EmptyState from '$components/EmptyState.svelte';
   import VideoCard from '$components/VideoCard.svelte';
   import type { Video } from '$lib/types';
+  import { generateBreadcrumbSchema } from '$lib/seo';
 
   // 不再内置分类，从资源站动态获取
   let categories = $state<string[]>(['全部']);
@@ -67,6 +68,12 @@
   <meta property="og:title" content="排行榜 - 必爱必爱" />
   <meta property="og:description" content="必爱必爱视频排行榜，最热门的内容排行" />
   <meta property="og:url" content="https://evideos.pages.dev/rank" />
+  <meta property="og:type" content="website" />
+  <meta property="og:image" content="https://evideos.pages.dev/icon.svg" />
+  <meta name="twitter:card" content="summary" />
+  <meta name="twitter:title" content="排行榜 - 必爱必爱" />
+  <meta name="twitter:description" content="必爱必爱视频排行榜，热门电影、电视剧、动漫、综艺排行" />
+  {@html `<script type="application/ld+json">${JSON.stringify(generateBreadcrumbSchema([{name: '首页', url: 'https://evideos.pages.dev/'}, {name: '排行榜', url: 'https://evideos.pages.dev/rank'}]))}</script>`}
 </svelte:head>
 
 <PageLayout title="排行榜">

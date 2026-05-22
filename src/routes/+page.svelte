@@ -2,12 +2,14 @@
   import { onMount } from 'svelte';
   import NavBar from '$components/NavBar.svelte';
   import VideoCard from '$components/VideoCard.svelte';
-  import { 
-    generateHomeSEO, 
+  import {
+    generateHomeSEO,
     generateOrganizationSchema,
     generateWebSiteSchema,
-    SITE_NAME, 
-    SITE_URL 
+    generateFAQSchema,
+    generateHomeFAQ,
+    SITE_NAME,
+    SITE_URL
   } from '$lib/seo';
   import { nativeFetch, requestPool } from '$lib/native-utils';
 
@@ -18,6 +20,7 @@
   let seo = $derived(generateHomeSEO());
   const orgSchema = generateOrganizationSchema();
   const webSiteSchema = generateWebSiteSchema();
+  const homeFAQSchema = generateFAQSchema(generateHomeFAQ());
 
   onMount(() => {
     loadVideos();
@@ -49,6 +52,7 @@
 <svelte:head>
   <title>{seo.title}</title>
   <meta name="description" content={seo.description} />
+  <meta name="keywords" content={seo.keywords} />
   <link rel="canonical" href={SITE_URL} />
   <meta property="og:title" content={seo.title} />
   <meta property="og:description" content={seo.description} />
@@ -59,6 +63,10 @@
   <meta name="twitter:description" content={seo.description} />
   {@html `<script type="application/ld+json">${JSON.stringify(webSiteSchema)}</script>`}
   {@html `<script type="application/ld+json">${JSON.stringify(orgSchema)}</script>`}
+  {@html `<script type="application/ld+json">${JSON.stringify(homeFAQSchema)}</script>`}
+  <meta property="og:image" content="https://evideos.pages.dev/icon.svg" />
+  <meta property="og:image:width" content="512" />
+  <meta property="og:image:height" content="512" />
 </svelte:head>
 
 <div class="min-h-screen bg-gray-50">

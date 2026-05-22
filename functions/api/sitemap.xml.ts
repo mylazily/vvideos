@@ -67,13 +67,50 @@ async function getCategoryUrls(env: Env): Promise<{ loc: string; lastmod: string
 
     for (const category of categorySet) {
       urls.push({
-        loc: `${BASE_URL}/category?cat=${encodeURIComponent(category)}`,
+        loc: `${BASE_URL}/category/${encodeURIComponent(category)}/1`,
         lastmod: today,
         priority: '0.6'
       });
     }
   } catch (e) {
     console.error('Category query error:', e);
+  }
+
+  return urls;
+}
+
+type SitemapUrl = { loc: string; lastmod: string; priority: string };
+
+async function getTagUrls(env: Env): Promise<SitemapUrl[]> {
+  const urls: SitemapUrl[] = [];
+  const today = new Date().toISOString().split('T')[0];
+
+  try {
+    const shards = getAllShards(env);
+    const results = await Promise.all(shards.map(db =>
+      db.prepare(
+        'SELECT DISTINCT vod_area FROM videos WHERE status = 1 AND vod_area IS NOT NULL AND vod_area != ""'
+      ).all<{ vod_area: string }>()
+    ));
+
+    const tagSet = new Set<string>();
+    for (const result of results) {
+      if (result.results) {
+        for (const row of result.results) {
+          if (row.vod_area) tagSet.add(row.vod_area);
+        }
+      }
+    }
+
+    for (const tag of tagSet) {
+      urls.push({
+        loc: `${BASE_URL}/tag/${encodeURIComponent(tag)}/1`,
+        lastmod: today,
+        priority: '0.5'
+      });
+    }
+  } catch (e) {
+    console.error('Tag query error:', e);
   }
 
   return urls;
@@ -98,18 +135,18 @@ export const onRequest: PagesFunction<Env> = async (context) => {
     // 获取所有URL
     const videoUrls = await getAllVideoUrls(env);
     const categoryUrls = await getCategoryUrls(env);
+    const tagUrls = await getTagUrls(env);
     const today = new Date().toISOString().split('T')[0];
     
     // 静态页面
     const staticUrls = [
       { loc: BASE_URL, lastmod: today, priority: '1.0' },
       { loc: `${BASE_URL}/category`, lastmod: today, priority: '0.9' },
-      { loc: `${BASE_URL}/search`, lastmod: today, priority: '0.7' },
       { loc: `${BASE_URL}/rank`, lastmod: today, priority: '0.6' },
       { loc: `${BASE_URL}/discover`, lastmod: today, priority: '0.6' }
     ];
     
-    const allUrls = [...staticUrls, ...categoryUrls, ...videoUrls];
+    const allUrls = [...staticUrls, ...categoryUrls, ...tagUrls, ...videoUrls];
     
     // 生成XML
     let xml = '<?xml version="1.0" encoding="UTF-8"?>\n';

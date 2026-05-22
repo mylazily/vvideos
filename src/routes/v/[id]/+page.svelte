@@ -643,7 +643,7 @@
 
       <!-- 视频信息 -->
       <article class="p-3 bg-white" itemscope itemtype="https://schema.org/Movie">
-        <h2 class="text-lg font-bold mb-2" itemprop="name">{video.title}</h2>
+        <h1 class="text-lg font-bold mb-2" itemprop="name">{video.title}</h1>
         <div class="flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-500 mb-2">
           {#if video.category}<span itemprop="genre">{video.category}</span>{/if}
           {#if video.vod_year}<span itemprop="datePublished">{video.vod_year}</span>{/if}

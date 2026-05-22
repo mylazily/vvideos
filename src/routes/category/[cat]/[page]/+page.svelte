@@ -6,7 +6,7 @@
   import VideoCard from '$components/VideoCard.svelte';
   import Pagination from '$components/Pagination.svelte';
   import type { Video } from '$lib/types';
-  import { generateCategorySEO, canonicalUrl } from '$lib/seo';
+  import { generateCategorySEO, canonicalUrl, generateBreadcrumbSchema } from '$lib/seo';
 
   let categories = $state<string[]>([]);
   let activeCategory = $state('全部');
@@ -102,11 +102,12 @@
   {#if currentPage < totalPages}
     <link rel="next" href="https://evideos.pages.dev/category/{encodeURIComponent(activeCategory)}/{currentPage + 1}" />
   {/if}
+  {@html `<script type="application/ld+json">${JSON.stringify(generateBreadcrumbSchema([{name: '首页', url: 'https://evideos.pages.dev/'}, {name: '分类', url: 'https://evideos.pages.dev/category'}, {name: activeCategory, url: `https://evideos.pages.dev/category/${encodeURIComponent(activeCategory)}/1`}]))}</script>`}
 </svelte:head>
 
 <div class="min-h-screen bg-gray-50">
   <header class="sticky top-0 bg-white border-b border-gray-100 px-3 py-2 z-50">
-    <h1 class="text-lg font-bold text-pink-500">分类</h1>
+    <h1 class="text-lg font-bold text-pink-500">{activeCategory} - 在线观看</h1>
   </header>
 
   <div class="sticky top-11 z-40 bg-white border-b border-gray-100">
