@@ -1,0 +1,5 @@
+name: SPA fallback for Cloudflare Pages
+compatibility_date: 2024-01-01
+
+# Cloudflare Pages configuration
+# This file ensures SPA routing works correctly
