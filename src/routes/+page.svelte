@@ -2,25 +2,11 @@
   import { onMount } from 'svelte';
   import NavBar from '$components/NavBar.svelte';
   import VideoCard from '$components/VideoCard.svelte';
-  import {
-    generateHomeSEO,
-    generateOrganizationSchema,
-    generateWebSiteSchema,
-    generateFAQSchema,
-    generateHomeFAQ,
-    SITE_NAME,
-    SITE_URL
-  } from '$lib/seo';
 
   let videos = $state<any[]>([]);
   let loading = $state(true);
   let error = $state('');
   let searchKeyword = $state('');
-
-  let seo = $derived(generateHomeSEO());
-  const orgSchema = generateOrganizationSchema();
-  const webSiteSchema = generateWebSiteSchema();
-  const homeFAQSchema = generateFAQSchema(generateHomeFAQ());
 
   onMount(() => {
     loadVideos();
@@ -30,16 +16,12 @@
     loading = true;
     error = '';
     try {
-      const apiUrl = window.location.origin + '/api/home';
-      const response = await fetch(apiUrl, {
+      const response = await fetch('/api/home', {
         method: 'GET',
         headers: { 'Accept': 'application/json' }
       });
-      
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      
       const res = await response.json();
-      
       if (res.success) {
         videos = (res.data.videos || []).slice(0, 24);
       } else {
@@ -60,23 +42,14 @@
 </script>
 
 <svelte:head>
-  <title>{seo.title}</title>
-  <meta name="description" content={seo.description} />
-  <meta name="keywords" content={seo.keywords} />
-  <link rel="canonical" href={SITE_URL} />
-  <meta property="og:title" content={seo.title} />
-  <meta property="og:description" content={seo.description} />
+  <title>必爱必爱 - 免费在线观看最新电影、电视剧、综艺、动漫</title>
+  <meta name="description" content="必爱必爱提供最新电影、电视剧、综艺、动漫免费在线观看，高清流畅，手机观看。" />
+  <meta name="keywords" content="电影,电视剧,综艺,动漫,免费观看,在线观看" />
+  <link rel="canonical" href="https://evideos.pages.dev/" />
+  <meta property="og:title" content="必爱必爱 - 免费在线观看" />
+  <meta property="og:description" content="最新电影、电视剧、综艺、动漫免费在线观看" />
   <meta property="og:type" content="website" />
-  <meta property="og:url" content={SITE_URL} />
-  <meta name="twitter:card" content="summary" />
-  <meta name="twitter:title" content={seo.title} />
-  <meta name="twitter:description" content={seo.description} />
-  {@html `<script type="application/ld+json">${JSON.stringify(webSiteSchema)}</script>`}
-  {@html `<script type="application/ld+json">${JSON.stringify(orgSchema)}</script>`}
-  {@html `<script type="application/ld+json">${JSON.stringify(homeFAQSchema)}</script>`}
-  <meta property="og:image" content="https://evideos.pages.dev/icon.svg" />
-  <meta property="og:image:width" content="512" />
-  <meta property="og:image:height" content="512" />
+  <meta property="og:url" content="https://evideos.pages.dev/" />
 </svelte:head>
 
 <div class="min-h-screen bg-gray-50">

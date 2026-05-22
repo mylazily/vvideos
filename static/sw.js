@@ -1,7 +1,7 @@
-// Service Worker v6 - 禁用API缓存，解决视频加载问题
-const STATIC_CACHE = 'evideos-static-v6';
-const IMAGE_CACHE = 'evideos-images-v6';
-const CACHE_VERSION = 'v6';
+// Service Worker v7 - 极致性能优化
+const STATIC_CACHE = 'evideos-static-v7';
+const IMAGE_CACHE = 'evideos-images-v7';
+const CACHE_VERSION = 'v7';
 
 // 核心资源（安装时预缓存）
 const CORE_ASSETS = [
