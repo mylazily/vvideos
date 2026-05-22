@@ -160,14 +160,39 @@
 
       video = data.data;
 
-      // 转换播放源
-      playSources = (video.play_sources || []).map((s, i) => ({
-        id: `source-${i}`,
-        name: `线路${i + 1}`,
-        url: s.url,
-        duration: s.duration || 0,
-        priority: 5 - i
-      }));
+      // 解析播放源 - 处理格式: "第1集$url1#第2集$url2"
+      playSources = [];
+      (video.play_sources || []).forEach((s, i) => {
+        const url = s.url;
+        // 检查是否是多集格式
+        if (url.includes('$') && url.includes('#')) {
+          // 分割多集
+          const episodes = url.split('#');
+          episodes.forEach((ep, epIdx) => {
+            const match = ep.match(/(.+?)\$(.+)/);
+            if (match) {
+              const epName = match[1];
+              const epUrl = match[2];
+              playSources.push({
+                id: `source-${i}-ep${epIdx}`,
+                name: episodes.length > 1 ? epName : `线路${i + 1}`,
+                url: epUrl,
+                duration: s.duration || 0,
+                priority: 5 - i
+              });
+            }
+          });
+        } else {
+          // 单集格式
+          playSources.push({
+            id: `source-${i}`,
+            name: `线路${i + 1}`,
+            url: url,
+            duration: s.duration || 0,
+            priority: 5 - i
+          });
+        }
+      });
 
       // 添加到历史记录
       addToHistory({
