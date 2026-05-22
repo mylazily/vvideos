@@ -7,51 +7,55 @@
 	import { browser } from '$app/environment';
 	import { applySubdomainSEO } from '$lib/subdomain';
 	import { detectBrowser } from '$lib/browser-detect';
-	import UserGuide from '$components/UserGuide.svelte';
 
 	let { children }: { children: Snippet } = $props();
 
-	// 0: 检测中, 1: 正常显示, 2: 显示引导
-	let displayMode = $state(0);
+	// 直接显示内容，不阻塞渲染
+	let displayMode = $state(1);
+	let showGuide = $state(false);
 
+	// 异步检测浏览器，不阻塞首屏
 	onMount(() => {
-		applySubdomainSEO();
+		// 使用 requestIdleCallback 在空闲时执行检测
+		const checkBrowser = () => {
+			applySubdomainSEO();
 
-		if (!browser) {
-			displayMode = 1;
-			return;
-		}
+			if (!browser) return;
 
-		const browserInfo = detectBrowser();
+			const browserInfo = detectBrowser();
 
-		if (browserInfo.isBlocked) {
-			const hardBlockedApps = ['wechat', 'qq', 'weibo', 'douyin', 'toutiao', 'alipay', 'baidu_app'];
-			if (hardBlockedApps.includes(browserInfo.type)) {
-				displayMode = 2;
-			} else {
-				const d = localStorage.getItem('guide_dismissed');
-				if (d) {
-					const dismissedTime = parseInt(d);
-					if (Date.now() - dismissedTime < 60 * 60 * 1000) {
-						displayMode = 1;
-						return;
+			if (browserInfo.isBlocked) {
+				const hardBlockedApps = ['wechat', 'qq', 'weibo', 'douyin', 'toutiao', 'alipay', 'baidu_app'];
+				if (hardBlockedApps.includes(browserInfo.type)) {
+					displayMode = 2;
+				} else {
+					const d = localStorage.getItem('guide_dismissed');
+					if (d) {
+						const dismissedTime = parseInt(d);
+						if (Date.now() - dismissedTime < 60 * 60 * 1000) {
+							return;
+						}
 					}
+					displayMode = 2;
 				}
-				displayMode = 2;
 			}
+		};
+
+		// 延迟执行，不阻塞首屏渲染
+		if ('requestIdleCallback' in window) {
+			requestIdleCallback(checkBrowser, { timeout: 100 });
 		} else {
-			displayMode = 1;
+			setTimeout(checkBrowser, 50);
 		}
 	});
 </script>
 
-{#if displayMode === 0}
-	<div class="fixed inset-0 bg-gradient-to-b from-pink-500 to-rose-600 z-[9999] flex flex-col items-center justify-center text-white">
-		<div class="text-6xl mb-4">📲</div>
-		<div class="w-8 h-8 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-		<p class="text-white/70 text-sm mt-4">加载中...</p>
-	</div>
-{:else if displayMode === 1}
+{#if displayMode === 2}
+	<!-- 动态加载UserGuide，减少初始包体积 -->
+	{#await import('$components/UserGuide.svelte') then { default: UserGuide }}
+		<UserGuide blocked={true} />
+	{/await}
+{:else}
 	{#if $navigating}
 		<div class="fixed top-0 left-0 right-0 z-[100]">
 			<div class="h-0.5 bg-pink-100 overflow-hidden">
@@ -60,9 +64,11 @@
 		</div>
 	{/if}
 	{@render children()}
-	<UserGuide blocked={false} />
-{:else}
-	<UserGuide blocked={true} />
+	{#if browser}
+		{#await import('$components/UserGuide.svelte') then { default: UserGuide }}
+			<UserGuide blocked={false} />
+		{/await}
+	{/if}
 {/if}
 
 <style>

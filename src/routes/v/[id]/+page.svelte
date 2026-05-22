@@ -19,7 +19,7 @@
     SITE_NAME
   } from '$lib/seo';
   import { addToHistory, updateHistoryProgress, flushProgress, addFavorite, removeFavorite, isFavorite } from '$lib/storage';
-  import { generateHighlights, generateRecommendation, generateViewingTips, generateRelatedSearches } from '$lib/content-generator';
+  import { generateHighlights, generateRecommendation, generateRelatedSearches } from '$lib/content-generator';
 
   // ============ 类型定义 ============
   interface PlaySource {

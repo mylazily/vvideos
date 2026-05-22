@@ -16,6 +16,25 @@ export interface Env {
 
 import { getBlockedDomains } from './domain-health';
 
+// 屏蔽域名缓存 - 避免每次请求都查询KV
+let blockedDomainsCache: string[] = [];
+let blockedDomainsCacheTime = 0;
+const BLOCKED_DOMAINS_CACHE_TTL = 5 * 60 * 1000; // 5分钟缓存
+
+async function getBlockedDomainsCached(env: Env): Promise<string[]> {
+	const now = Date.now();
+	if (now - blockedDomainsCacheTime < BLOCKED_DOMAINS_CACHE_TTL) {
+		return blockedDomainsCache;
+	}
+	try {
+		blockedDomainsCache = await getBlockedDomains(env);
+		blockedDomainsCacheTime = now;
+	} catch {
+		// 缓存失败返回空数组
+	}
+	return blockedDomainsCache;
+}
+
 interface VideoRow {
 	id: number;
 	vod_id: string;
@@ -136,8 +155,8 @@ function formatVideoDetail(row: VideoRow) {
 	if (row.play_url_4) playSources.push({ url: row.play_url_4, duration: row.duration_4 });
 	if (row.play_url_5) playSources.push({ url: row.play_url_5, duration: row.duration_5 });
 	
-	// 过滤被屏蔽域名的播放源
-	const blockedDomains = await getBlockedDomains(env);
+	// 过滤被屏蔽域名的播放源（使用缓存）
+	const blockedDomains = await getBlockedDomainsCached(env);
 	const filteredSources = playSources.filter((s: any) => {
 		try {
 			const hostname = new URL(s.url).hostname;

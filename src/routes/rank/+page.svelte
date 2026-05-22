@@ -6,7 +6,6 @@
   import VideoCard from '$components/VideoCard.svelte';
   import type { Video } from '$lib/types';
   import { generateBreadcrumbSchema } from '$lib/seo';
-  import { page } from '$app/stores';
 
   // 不再内置分类，从资源站动态获取
   let categories = $state<string[]>(['全部']);
