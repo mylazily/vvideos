@@ -47,16 +47,101 @@
       line-height: 1.6;
       margin-bottom: 28px;
     }
+    /* PWA 推荐区域 */
+    .pwa-section {
+      background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%);
+      border-radius: 16px;
+      padding: 24px 20px;
+      margin-bottom: 24px;
+      border: 2px solid #10b981;
+    }
+    .pwa-badge {
+      display: inline-block;
+      background: #10b981;
+      color: white;
+      font-size: 12px;
+      font-weight: 600;
+      padding: 4px 12px;
+      border-radius: 20px;
+      margin-bottom: 12px;
+    }
+    .pwa-title {
+      font-size: 18px;
+      font-weight: 700;
+      color: #065f46;
+      margin-bottom: 8px;
+    }
+    .pwa-desc {
+      font-size: 14px;
+      color: #047857;
+      line-height: 1.6;
+      margin-bottom: 16px;
+    }
+    .pwa-steps {
+      text-align: left;
+      background: white;
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+    .pwa-step {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      margin-bottom: 12px;
+      font-size: 13px;
+      color: #374151;
+    }
+    .pwa-step:last-child { margin-bottom: 0; }
+    .step-num {
+      width: 24px;
+      height: 24px;
+      background: #10b981;
+      color: white;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      font-weight: 600;
+      flex-shrink: 0;
+    }
+    .pwa-benefits {
+      display: flex;
+      gap: 8px;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+    .benefit-tag {
+      background: white;
+      color: #059669;
+      font-size: 12px;
+      padding: 6px 12px;
+      border-radius: 20px;
+      border: 1px solid #a7f3d0;
+    }
+    /* 浏览器推荐区域 */
+    .browser-section {
+      background: #f9fafb;
+      border-radius: 16px;
+      padding: 20px;
+      margin-bottom: 20px;
+    }
+    .browser-section-title {
+      font-size: 14px;
+      color: #6b7280;
+      margin-bottom: 16px;
+    }
     .browsers {
       display: flex;
       gap: 12px;
       justify-content: center;
-      margin-bottom: 28px;
     }
     .browser {
       flex: 1;
       max-width: 140px;
       padding: 16px 12px;
+      background: white;
       border: 2px solid #e5e7eb;
       border-radius: 12px;
       text-decoration: none;
@@ -89,13 +174,15 @@
       color: #ec4899;
       margin-top: 4px;
     }
-    .tips {
+    /* 当前浏览器提示 */
+    .current-browser {
       background: #fef3c7;
       border-radius: 12px;
       padding: 16px;
       text-align: left;
+      margin-bottom: 20px;
     }
-    .tips-title {
+    .current-browser-title {
       font-weight: 600;
       color: #92400e;
       font-size: 14px;
@@ -104,41 +191,16 @@
       align-items: center;
       gap: 6px;
     }
-    .tips-list {
-      list-style: none;
+    .current-browser-text {
       font-size: 13px;
       color: #a16207;
-    }
-    .tips-list li {
-      padding: 4px 0;
-      padding-left: 16px;
-      position: relative;
-    }
-    .tips-list li::before {
-      content: "•";
-      position: absolute;
-      left: 4px;
-    }
-    .pwa-tip {
-      margin-top: 20px;
-      padding: 16px;
-      background: #ecfdf5;
-      border-radius: 12px;
-      border: 1px solid #a7f3d0;
-    }
-    .pwa-tip-title {
-      font-weight: 600;
-      color: #065f46;
-      font-size: 14px;
-      margin-bottom: 8px;
-    }
-    .pwa-tip-text {
-      font-size: 13px;
-      color: #047857;
       line-height: 1.5;
     }
-    .copy-btn {
+    /* 复制链接 */
+    .copy-section {
       margin-top: 20px;
+    }
+    .copy-btn {
       width: 100%;
       padding: 14px;
       background: #ec4899;
@@ -148,6 +210,10 @@
       font-size: 15px;
       font-weight: 600;
       cursor: pointer;
+      transition: all 0.2s;
+    }
+    .copy-btn:hover {
+      background: #db2777;
     }
     .copy-btn:active {
       transform: scale(0.98);
@@ -166,46 +232,74 @@
 </head>
 <body>
   <div class="container">
-    <div class="icon">🔒</div>
-    <h1>当前浏览器无法访问</h1>
-    <p>您正在使用的内置浏览器限制了视频播放功能，请使用以下推荐浏览器访问本站</p>
+    <div class="icon">📱</div>
+    <h1>当前浏览器不支持</h1>
+    <p>您正在使用的浏览器无法正常播放视频，请按以下方式访问</p>
     
-    <div class="browsers">
-      <a href="https://www.google.com/chrome/" class="browser chrome" target="_blank">
-        <div class="browser-icon">🌐</div>
-        <div class="browser-name">Chrome</div>
-        <div class="browser-tag">推荐</div>
-      </a>
-      <a href="https://www.microsoft.com/edge" class="browser edge" target="_blank">
-        <div class="browser-icon">🌊</div>
-        <div class="browser-name">Edge</div>
-        <div class="browser-tag">推荐</div>
-      </a>
-    </div>
-    
-    <div class="tips">
-      <div class="tips-title">📱 微信/QQ/抖音内打开？</div>
-      <ul class="tips-list">
-        <li>点击右上角「···」菜单</li>
-        <li>选择「在浏览器中打开」</li>
-        <li>或「复制链接」到Chrome/Edge访问</li>
-      </ul>
-    </div>
-    
-    <div class="pwa-tip">
-      <div class="pwa-tip-title">📲 添加到主屏幕</div>
-      <div class="pwa-tip-text">
-        使用Chrome/Edge访问时，点击菜单「添加到主屏幕」，即可像APP一样使用，无需下载安装包
+    <!-- PWA 推荐（首选） -->
+    <div class="pwa-section">
+      <div class="pwa-badge">✨ 最佳体验</div>
+      <div class="pwa-title">添加到主屏幕使用</div>
+      <div class="pwa-desc">
+        无需下载APP，像原生应用一样使用，支持离线缓存、全屏播放
+      </div>
+      <div class="pwa-steps">
+        <div class="pwa-step">
+          <div class="step-num">1</div>
+          <div>使用 <strong>Chrome</strong> 或 <strong>Edge</strong> 浏览器打开本站</div>
+        </div>
+        <div class="pwa-step">
+          <div class="step-num">2</div>
+          <div>点击浏览器菜单（⋮ 或 ...）</div>
+        </div>
+        <div class="pwa-step">
+          <div class="step-num">3</div>
+          <div>选择「<strong>添加到主屏幕</strong>」或「<strong>安装应用</strong>」</div>
+        </div>
+      </div>
+      <div class="pwa-benefits">
+        <span class="benefit-tag">⚡ 秒开</span>
+        <span class="benefit-tag">📲 全屏</span>
+        <span class="benefit-tag">💾 离线</span>
+        <span class="benefit-tag">🚀 流畅</span>
       </div>
     </div>
     
-    <button class="copy-btn" onclick="copyUrl()">复制网址链接</button>
-    <div class="url-box" id="urlBox">https://evideos.pages.dev/</div>
+    <!-- 当前浏览器提示 -->
+    <div class="current-browser">
+      <div class="current-browser-title">📍 您当前的位置</div>
+      <div class="current-browser-text">
+        微信/QQ/抖音等APP内置浏览器限制了视频功能。请点击右上角「···」菜单，选择「在浏览器中打开」，然后按上方步骤添加到主屏幕。
+      </div>
+    </div>
+    
+    <!-- 浏览器下载（备选） -->
+    <div class="browser-section">
+      <div class="browser-section-title">还没有Chrome或Edge？</div>
+      <div class="browsers">
+        <a href="https://www.google.com/chrome/" class="browser chrome" target="_blank">
+          <div class="browser-icon">🌐</div>
+          <div class="browser-name">Chrome</div>
+          <div class="browser-tag">下载</div>
+        </a>
+        <a href="https://www.microsoft.com/edge" class="browser edge" target="_blank">
+          <div class="browser-icon">🌊</div>
+          <div class="browser-name">Edge</div>
+          <div class="browser-tag">下载</div>
+        </a>
+      </div>
+    </div>
+    
+    <!-- 复制链接 -->
+    <div class="copy-section">
+      <button class="copy-btn" onclick="copyUrl()">复制网址，到Chrome/Edge中打开</button>
+      <div class="url-box" id="urlBox">https://evideos.pages.dev/</div>
+    </div>
   </div>
   
   <script>
     function copyUrl() {
-      const url = 'https://evideos.pages.dev/';
+      const url = location.origin + '/';
       if (navigator.clipboard) {
         navigator.clipboard.writeText(url);
       } else {
@@ -217,8 +311,8 @@
         document.body.removeChild(input);
       }
       const btn = document.querySelector('.copy-btn');
-      btn.textContent = '✓ 已复制';
-      setTimeout(() => btn.textContent = '复制网址链接', 2000);
+      btn.textContent = '✓ 已复制，请粘贴到Chrome/Edge';
+      setTimeout(() => btn.textContent = '复制网址，到Chrome/Edge中打开', 3000);
     }
     document.getElementById('urlBox').textContent = location.origin + '/';
   </script>
