@@ -1,8 +1,7 @@
-// Service Worker v5 - 极速 PWA (强制更新)
-const STATIC_CACHE = 'evideos-static-v5';
-const API_CACHE = 'evideos-api-v5';
-const IMAGE_CACHE = 'evideos-images-v5';
-const CACHE_VERSION = 'v5';
+// Service Worker v6 - 禁用API缓存，解决视频加载问题
+const STATIC_CACHE = 'evideos-static-v6';
+const IMAGE_CACHE = 'evideos-images-v6';
+const CACHE_VERSION = 'v6';
 
 // 核心资源（安装时预缓存）
 const CORE_ASSETS = [
@@ -36,13 +35,12 @@ self.addEventListener('activate', (event) => {
 
 // ======== 快速响应策略 ========
 
-// 1. 静态资源：缓存优先，极速响应
+// 1. 静态资源：缓存优先
 async function staticStrategy(request) {
   const cache = await caches.open(STATIC_CACHE);
   const cached = await cache.match(request);
 
   if (cached) {
-    // 后台更新
     fetch(request).then((response) => {
       if (response.ok) cache.put(request, response);
     }).catch(() => {});
@@ -54,57 +52,7 @@ async function staticStrategy(request) {
   return response;
 }
 
-// 2. API：网络优先，带TTL的缓存回退
-const API_CACHE_TTL = 5 * 60 * 1000; // 5分钟
-
-async function apiStrategy(request) {
-  const cache = await caches.open(API_CACHE);
-
-  try {
-    const networkResponse = await fetch(request);
-    if (networkResponse.ok) {
-      // 缓存时添加时间戳
-      const headers = new Headers(networkResponse.headers);
-      headers.set('X-Cache-Time', String(Date.now()));
-      const timestampedResponse = new Response(networkResponse.body, {
-        status: networkResponse.status,
-        statusText: networkResponse.statusText,
-        headers
-      });
-      cache.put(request, timestampedResponse);
-    }
-    return networkResponse;
-  } catch (error) {
-    const cached = await cache.match(request);
-    if (cached) {
-      // 检查缓存是否过期
-      const cacheTime = cached.headers.get('X-Cache-Time');
-      if (cacheTime && (Date.now() - Number(cacheTime)) > API_CACHE_TTL) {
-        // 缓存过期，尝试后台更新，先返回过期数据（stale-while-revalidate）
-        fetch(request).then((response) => {
-          if (response.ok) {
-            const headers = new Headers(response.headers);
-            headers.set('X-Cache-Time', String(Date.now()));
-            const timestampedResponse = new Response(response.body, {
-              status: response.status,
-              statusText: response.statusText,
-              headers
-            });
-            cache.put(request, timestampedResponse);
-          }
-        }).catch(() => {});
-      }
-      return cached;
-    }
-
-    return new Response(
-      JSON.stringify({ success: false, message: '离线模式' }),
-      { status: 503, headers: { 'Content-Type': 'application/json' } }
-    );
-  }
-}
-
-// 3. 图片：缓存优先，LRU 清理
+// 2. 图片：缓存优先
 async function imageStrategy(request) {
   const cache = await caches.open(IMAGE_CACHE);
   const cached = await cache.match(request);
@@ -114,7 +62,6 @@ async function imageStrategy(request) {
   try {
     const response = await fetch(request);
     if (response.ok) {
-      // LRU：限制 100 张图片，超限时批量删除最旧的20张
       const keys = await cache.keys();
       if (keys.length >= 100) {
         const deleteCount = Math.min(20, keys.length - 80);
@@ -133,12 +80,12 @@ self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
 
+  // 不拦截非GET请求
   if (request.method !== 'GET') return;
 
-  // API 请求
+  // 不拦截API请求 - 直接走网络
   if (url.pathname.startsWith('/api/')) {
-    event.respondWith(apiStrategy(request));
-    return;
+    return; // 让浏览器直接处理
   }
 
   // 图片
@@ -153,7 +100,7 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // HTML 页面
+  // HTML页面
   event.respondWith(
     fetch(request)
       .then((response) => {
@@ -167,89 +114,4 @@ self.addEventListener('fetch', (event) => {
   );
 });
 
-// ======== 后台同步 ========
-self.addEventListener('sync', (event) => {
-  if (event.tag === 'sync-favorites') {
-    event.waitUntil(syncData('favorites'));
-  } else if (event.tag === 'sync-history') {
-    event.waitUntil(syncData('history'));
-  }
-});
-
-async function syncData(type) {
-  // 从 IndexedDB 读取离线数据并同步
-  console.log(`[SW] Syncing ${type}...`);
-}
-
-// ======== 推送通知 ========
-self.addEventListener('push', (event) => {
-  if (!event.data) return;
-
-  const data = event.data.json();
-  const options = {
-    body: data.body || '新视频更新',
-    icon: '/icon-192.png',
-    badge: '/icon-192.png',
-    tag: data.tag || 'new-video',
-    requireInteraction: false,
-    actions: [
-      { action: 'open', title: '立即观看' },
-      { action: 'close', title: '关闭' }
-    ],
-    data: { url: data.url || '/' }
-  };
-
-  event.waitUntil(
-    self.registration.showNotification(data.title || '必爱必爱', options)
-  );
-});
-
-self.addEventListener('notificationclick', (event) => {
-  event.notification.close();
-  const url = event.notification.data?.url || '/';
-
-  if (event.action !== 'close') {
-    event.waitUntil(
-      clients.matchAll({ type: 'window' }).then((clientList) => {
-        for (const client of clientList) {
-          if (client.url === url && 'focus' in client) {
-            return client.focus();
-          }
-        }
-        if (clients.openWindow) return clients.openWindow(url);
-      })
-    );
-  }
-});
-
-// ======== 消息通信 ========
-self.addEventListener('message', (event) => {
-  const { type } = event.data;
-
-  switch (type) {
-    case 'SKIP_WAITING':
-      self.skipWaiting();
-      break;
-    case 'GET_CACHE_STATUS':
-      getCacheStatus().then((status) => {
-        event.ports[0]?.postMessage(status);
-      });
-      break;
-  }
-});
-
-async function getCacheStatus() {
-  const [staticCache, apiCache, imageCache] = await Promise.all([
-    caches.open(STATIC_CACHE).then((c) => c.keys()),
-    caches.open(API_CACHE).then((c) => c.keys()),
-    caches.open(IMAGE_CACHE).then((c) => c.keys())
-  ]);
-
-  return {
-    static: staticCache.length,
-    api: apiCache.length,
-    images: imageCache.length
-  };
-}
-
-console.log('[SW] Service Worker v4 active');
+console.log('[SW] Service Worker v6 active - API缓存已禁用');
