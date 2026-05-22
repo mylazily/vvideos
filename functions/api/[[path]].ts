@@ -273,6 +273,37 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 			return json({ success: true, data: responseData }, 200, strongCacheHeaders(1800));
 		}
 
+		// ======== 热门搜索关键字 ========
+		if (path === '/api/keywords') {
+			if (request.method === 'GET') {
+				const cacheKey = `hot_keywords:${CACHE_VERSION}`;
+				const cached = await getCache(request, env, cacheKey);
+				if (cached) return json({ success: true, data: cached }, 200, strongCacheHeaders(300));
+
+				const results = await env.DB_0.prepare('SELECT id, keyword, sort_order FROM hot_keywords ORDER BY sort_order ASC, id DESC').all<{ id: number; keyword: string; sort_order: number }>();
+				const keywords = (results.results || []).map(r => r.keyword);
+				await setCache(env, cacheKey, keywords, 300);
+				return json({ success: true, data: keywords }, 200, strongCacheHeaders(300));
+			}
+			if (request.method === 'POST') {
+				const { keyword, sort_order } = await request.json<{ keyword: string; sort_order?: number }>();
+				if (!keyword || !keyword.trim()) return json({ success: false, message: '关键字不能为空' }, 400);
+				try {
+					await env.DB_0.prepare('INSERT INTO hot_keywords (keyword, sort_order) VALUES (?, ?)').bind(keyword.trim(), sort_order || 0).run();
+					return json({ success: true, message: '添加成功' });
+				} catch (e: any) {
+					if (e.message?.includes('UNIQUE')) return json({ success: false, message: '关键字已存在' }, 409);
+					throw e;
+				}
+			}
+			if (request.method === 'DELETE') {
+				const { id } = await request.json<{ id: number }>();
+				if (!id) return json({ success: false, message: '缺少id' }, 400);
+				await env.DB_0.prepare('DELETE FROM hot_keywords WHERE id = ?').bind(id).run();
+				return json({ success: true, message: '删除成功' });
+			}
+		}
+
 		// ======== 分类列表（用于排行页等，只返回分类名称数组） ========
 		if (path === '/api/categories') {
 			const cacheKey = `catlist:${CACHE_VERSION}`;
@@ -453,6 +484,25 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 			if (!id) return json({ success: false, message: '缺少id' }, 400);
 			await env.DB_0.prepare('DELETE FROM sources WHERE id = ?').bind(id).run();
 			return json({ success: true, message: '删除成功' });
+		}
+
+		// 管理后台：热门搜索关键字管理
+		if (path === '/api/aadmin/keywords') {
+			if (request.method === 'GET') {
+				const results = await env.DB_0.prepare('SELECT id, keyword, sort_order FROM hot_keywords ORDER BY sort_order ASC, id DESC').all<{ id: number; keyword: string; sort_order: number }>();
+				return json({ success: true, data: results.results || [] });
+			}
+			if (request.method === 'DELETE') {
+				const { id, keyword } = await request.json<{ id?: number; keyword?: string }>();
+				if (id) {
+					await env.DB_0.prepare('DELETE FROM hot_keywords WHERE id = ?').bind(id).run();
+				} else if (keyword) {
+					await env.DB_0.prepare('DELETE FROM hot_keywords WHERE keyword = ?').bind(keyword).run();
+				} else {
+					return json({ success: false, message: '缺少id或keyword' }, 400);
+				}
+				return json({ success: true, message: '删除成功' });
+			}
 		}
 
 		if (path === '/api/aadmin/logs') {

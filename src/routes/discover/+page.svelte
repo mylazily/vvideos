@@ -5,18 +5,24 @@
 
   let categories = $state<string[]>([]);
   let areas = $state<string[]>([]);
+  let keywords = $state<string[]>([]);
   let tagsLoading = $state(true);
 
   let seo = $derived(generateDiscoverSEO());
 
   onMount(async () => {
     try {
-      const res = await fetch('/api/filters');
-      if (res.ok) {
-        const data = await res.json();
-        categories = data.data?.categories || [];
-        areas = data.data?.areas || [];
-      }
+      const [filtersRes, keywordsRes] = await Promise.all([
+        fetch('/api/filters'),
+        fetch('/api/keywords')
+      ]);
+      const [filtersData, keywordsData] = await Promise.all([
+        filtersRes.json(),
+        keywordsRes.json()
+      ]);
+      categories = filtersData.data?.categories || [];
+      areas = filtersData.data?.areas || [];
+      keywords = keywordsData.data || [];
     } catch (e) {
       console.error(e);
     } finally {
@@ -48,6 +54,25 @@
         <div class="w-8 h-8 border-2 border-pink-200 border-t-pink-500 rounded-full animate-spin"></div>
       </div>
     {:else}
+      <!-- 热门搜索 -->
+      {#if keywords.length > 0}
+        <section class="bg-white mt-2">
+          <div class="px-3 py-2 border-b border-gray-100">
+            <h2 class="text-sm font-medium text-gray-800">🔥 热门搜索</h2>
+          </div>
+          <div class="flex flex-wrap gap-2 p-3">
+            {#each keywords as kw}
+              <a
+                href="/search/{encodeURIComponent(kw)}/1"
+                class="px-3 py-1.5 text-sm bg-pink-50 text-pink-600 rounded-full hover:bg-pink-100 hover:text-pink-700 transition-colors"
+              >
+                {kw}
+              </a>
+            {/each}
+          </div>
+        </section>
+      {/if}
+
       <!-- 分类 -->
       {#if categories.length > 0}
         <section class="bg-white mt-2">

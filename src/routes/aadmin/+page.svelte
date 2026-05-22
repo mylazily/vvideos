@@ -64,6 +64,10 @@
   let collectPages = $state(5);
   let collectCategories = $state('');
 
+  // 热门搜索关键字
+  let keywords = $state<string[]>([]);
+  let newKeyword = $state('');
+
   // 带认证的 fetch 封装
   function authFetch(url: string, options: RequestInit = {}): Promise<Response> {
     const token = sessionStorage.getItem(AUTH_KEY);
@@ -132,10 +136,11 @@
   async function loadData() {
     loading = true;
     try {
-      const [statsRes, sourcesRes, logsRes] = await Promise.all([
+      const [statsRes, sourcesRes, logsRes, keywordsRes] = await Promise.all([
         authFetch('/api/aadmin/stats'),
         authFetch('/api/aadmin/sources'),
-        authFetch('/api/aadmin/logs?limit=20')
+        authFetch('/api/aadmin/logs?limit=20'),
+        authFetch('/api/keywords')
       ]);
 
       // 检查是否认证失败
@@ -144,15 +149,17 @@
         return;
       }
 
-      const [statsData, sourcesData, logsData] = await Promise.all([
+      const [statsData, sourcesData, logsData, keywordsData] = await Promise.all([
         statsRes.json(),
         sourcesRes.json(),
-        logsRes.json()
+        logsRes.json(),
+        keywordsRes.json()
       ]);
 
       if (statsData.success) stats = statsData.data;
       if (sourcesData.success) sources = sourcesData.data;
       if (logsData.success) logs = logsData.data;
+      if (keywordsData.success) keywords = keywordsData.data;
     } catch (e) {
       console.error(e);
     } finally {
@@ -317,6 +324,53 @@
     if (!ts) return '-';
     const d = new Date(ts * 1000);
     return d.toLocaleString('zh-CN');
+  }
+
+  // 热门搜索关键字管理
+  async function addKeyword() {
+    if (!newKeyword.trim()) return;
+    try {
+      const res = await authFetch('/api/keywords', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ keyword: newKeyword.trim() })
+      });
+      const data = await res.json();
+      message = data.message;
+      if (data.success) {
+        newKeyword = '';
+        await loadKeywords();
+      }
+    } catch {
+      message = '添加失败';
+    }
+  }
+
+  async function deleteKeyword(keyword: string) {
+    if (!confirm(`确定删除关键字"${keyword}"吗？`)) return;
+    try {
+      const res = await authFetch('/api/aadmin/keywords', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ keyword })
+      });
+      const data = await res.json();
+      if (data.success) {
+        await loadKeywords();
+      }
+    } catch {
+      message = '删除失败';
+    }
+  }
+
+  async function loadKeywords() {
+    try {
+      const res = await authFetch('/api/keywords');
+      const data = await res.json();
+      if (data.success) keywords = data.data;
+    } catch {
+      // ignore
+    }
   }
 
   // 进度百分比
@@ -517,6 +571,38 @@
               />
             </div>
           </div>
+        </div>
+
+        <!-- 热门搜索关键字 -->
+        <div class="bg-white rounded-lg p-4 mb-6">
+          <h2 class="font-medium text-gray-800 mb-3">热门搜索关键字</h2>
+          <div class="flex gap-2 mb-3">
+            <input
+              bind:value={newKeyword}
+              type="text"
+              class="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm"
+              placeholder="输入搜索关键字"
+              onkeydown={(e) => e.key === 'Enter' && addKeyword()}
+            />
+            <button
+              onclick={addKeyword}
+              class="px-4 py-2 bg-pink-500 text-white text-sm rounded-lg hover:bg-pink-600"
+            >
+              添加
+            </button>
+          </div>
+          {#if keywords.length > 0}
+            <div class="flex flex-wrap gap-2">
+              {#each keywords as kw}
+                <span class="inline-flex items-center gap-1 px-3 py-1.5 bg-pink-50 text-pink-600 text-sm rounded-full">
+                  {kw}
+                  <button onclick={() => deleteKeyword(kw)} class="text-pink-400 hover:text-pink-700 ml-1" title="删除">×</button>
+                </span>
+              {/each}
+            </div>
+          {:else}
+            <p class="text-sm text-gray-400">暂无关键字，添加后将在发现页展示</p>
+          {/if}
         </div>
 
         <!-- 添加采集源 -->
