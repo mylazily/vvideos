@@ -392,7 +392,7 @@
 
       <!-- 播放器 -->
       <div class="aspect-video bg-black relative">
-        <video controls playsinline preload="metadata" class="w-full h-full" poster={video.cover}>
+        <video controls playsinline preload="auto" class="w-full h-full" poster={video.cover}>
           您的浏览器不支持视频播放
         </video>
         {#if showPlayButton && !isPlaying}

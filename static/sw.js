@@ -1,7 +1,8 @@
-// Service Worker v7 - 极致性能优化
-const STATIC_CACHE = 'evideos-static-v7';
-const IMAGE_CACHE = 'evideos-images-v7';
-const CACHE_VERSION = 'v7';
+// Service Worker v8 - 强制刷新版本
+const STATIC_CACHE = 'evideos-static-v8';
+const IMAGE_CACHE = 'evideos-images-v8';
+const API_CACHE = 'evideos-api-v8';
+const CACHE_VERSION = 'v8';
 
 // 核心资源（安装时预缓存）
 const CORE_ASSETS = [
@@ -20,36 +21,44 @@ self.addEventListener('install', (event) => {
   );
 });
 
-// ======== 激活：清理旧缓存 ========
+// ======== 激活：清理所有旧缓存 ========
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((keys) => {
       return Promise.all(
         keys
           .filter((key) => key.startsWith('evideos-') && !key.includes(CACHE_VERSION))
-          .map((key) => caches.delete(key))
+          .map((key) => {
+            console.log('[SW] 删除旧缓存:', key);
+            return caches.delete(key);
+          })
       );
-    }).then(() => self.clients.claim())
+    }).then(() => {
+      console.log('[SW] v8 激活，旧缓存已清理');
+      return self.clients.claim();
+    })
   );
 });
 
-// ======== 快速响应策略 ========
+// ======== 缓存策略 ========
 
-// 1. 静态资源：缓存优先
+// 1. 静态资源：缓存优先，后台更新
 async function staticStrategy(request) {
   const cache = await caches.open(STATIC_CACHE);
   const cached = await cache.match(request);
 
+  const fetchAndUpdate = fetch(request).then((response) => {
+    if (response.ok) cache.put(request, response.clone());
+    return response;
+  }).catch(() => cached);
+
+  // 如果有缓存立即返回，同时后台更新
   if (cached) {
-    fetch(request).then((response) => {
-      if (response.ok) cache.put(request, response);
-    }).catch(() => {});
+    fetchAndUpdate.catch(() => {});
     return cached;
   }
 
-  const response = await fetch(request);
-  if (response.ok) cache.put(request, response.clone());
-  return response;
+  return fetchAndUpdate;
 }
 
 // 2. 图片：缓存优先
@@ -62,10 +71,10 @@ async function imageStrategy(request) {
   try {
     const response = await fetch(request);
     if (response.ok) {
+      // 限制缓存数量
       const keys = await cache.keys();
-      if (keys.length >= 100) {
-        const deleteCount = Math.min(20, keys.length - 80);
-        await Promise.all(keys.slice(0, deleteCount).map(k => cache.delete(k)));
+      if (keys.length >= 200) {
+        await cache.delete(keys[0]);
       }
       cache.put(request, response.clone());
     }
@@ -75,17 +84,40 @@ async function imageStrategy(request) {
   }
 }
 
+// 3. API：网络优先，缓存兜底（5分钟）
+async function apiStrategy(request) {
+  const cache = await caches.open(API_CACHE);
+  
+  try {
+    const networkResponse = await fetch(request);
+    if (networkResponse.ok) {
+      cache.put(request, networkResponse.clone());
+      return networkResponse;
+    }
+  } catch (e) {
+    // 网络失败，尝试缓存
+    const cached = await cache.match(request);
+    if (cached) return cached;
+  }
+  
+  return new Response(JSON.stringify({ error: 'Network error' }), {
+    status: 503,
+    headers: { 'Content-Type': 'application/json' }
+  });
+}
+
 // ======== 请求拦截 ========
 self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
 
-  // 不拦截非GET请求
+  // 只处理GET请求
   if (request.method !== 'GET') return;
 
-  // 不拦截API请求 - 直接走网络
+  // API请求：网络优先
   if (url.pathname.startsWith('/api/')) {
-    return; // 让浏览器直接处理
+    event.respondWith(apiStrategy(request));
+    return;
   }
 
   // 图片
@@ -100,7 +132,7 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // HTML页面
+  // HTML页面：网络优先，缓存兜底
   event.respondWith(
     fetch(request)
       .then((response) => {
@@ -114,4 +146,4 @@ self.addEventListener('fetch', (event) => {
   );
 });
 
-console.log('[SW] Service Worker v6 active - API缓存已禁用');
+console.log('[SW] Service Worker v8 active - 全站缓存策略');
