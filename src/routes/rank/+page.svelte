@@ -6,6 +6,11 @@
   import VideoCard from '$components/VideoCard.svelte';
   import type { Video } from '$lib/types';
   import { generateBreadcrumbSchema } from '$lib/seo';
+  import { getLocaleFromPath, t, DEFAULT_LOCALE, type Locale } from '$lib/i18n';
+  import { page } from '$app/stores';
+
+  let locale = $state<Locale>(DEFAULT_LOCALE);
+  $effect(() => { locale = getLocaleFromPath($page.url.pathname); });
 
   // 不再内置分类，从资源站动态获取
   let categories = $state<string[]>(['全部']);
@@ -76,7 +81,7 @@
   {@html `<script type="application/ld+json">${JSON.stringify(generateBreadcrumbSchema([{name: '首页', url: 'https://evideos.pages.dev/'}, {name: '排行榜', url: 'https://evideos.pages.dev/rank'}]))}</script>`}
 </svelte:head>
 
-<PageLayout title="排行榜">
+<PageLayout title={t(locale, 'rank')}>
   <!-- 分类切换 -->
   <div class="flex gap-2 px-1 mb-3 overflow-x-auto no-scrollbar">
     {#each categories as cat}
@@ -94,7 +99,7 @@
   {#if loading}
     <LoadingSpinner />
   {:else if videos.length === 0}
-    <EmptyState message="暂无排行数据" />
+    <EmptyState message={t(locale, 'no_data')} />
   {:else}
     <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2">
       {#each videos as video, i (video.vod_id)}

@@ -2,7 +2,7 @@
 	import '../app.css';
 	import type { Snippet } from 'svelte';
 	import { onMount } from 'svelte';
-	import { navigating } from '$app/stores';
+	import { navigating, page } from '$app/stores';
 
 	import { browser } from '$app/environment';
 	import { applySubdomainSEO } from '$lib/subdomain';
@@ -10,15 +10,25 @@
 	import { initDomainGuard } from '$lib/domain-guard';
 	import { detectBrowser } from '$lib/browser-detect';
 	import UserGuide from '$components/UserGuide.svelte';
+	import { getLocaleFromPath, getTranslations, generateHreflangTags, DEFAULT_LOCALE, HTML_LANG, type Locale } from '$lib/i18n';
 
 	let { children }: { children: Snippet } = $props();
 
 	// 0: 检测中, 1: 正常显示, 2: 显示引导
 	let displayMode = $state(0);
 
+	let locale = $state<Locale>(DEFAULT_LOCALE);
+	let hreflangTags = $derived(generateHreflangTags($page.url.pathname.replace(/^\/(en|ko|ja|vi|th)\//, '/')));
+
+	$effect(() => {
+		locale = getLocaleFromPath($page.url.pathname);
+		document.documentElement.lang = HTML_LANG[locale];
+	});
+
 	onMount(() => {
 		applySubdomainSEO();
 		initDomainGuard();
+		locale = getLocaleFromPath($page.url.pathname);
 
 		if (!browser) {
 			displayMode = 1;
@@ -49,6 +59,10 @@
 		}
 	});
 </script>
+
+<svelte:head>
+	{@html hreflangTags}
+</svelte:head>
 
 {#if displayMode === 0}
 	<!-- 检测中：显示加载状态，避免白屏 -->

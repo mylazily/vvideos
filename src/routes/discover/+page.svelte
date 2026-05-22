@@ -2,11 +2,16 @@
   import { onMount } from 'svelte';
   import NavBar from '$components/NavBar.svelte';
   import { generateDiscoverSEO, generateBreadcrumbSchema } from '$lib/seo';
+  import { getLocaleFromPath, t, DEFAULT_LOCALE, type Locale } from '$lib/i18n';
+  import { page } from '$app/stores';
 
   let categories = $state<string[]>([]);
   let areas = $state<string[]>([]);
   let keywords = $state<string[]>([]);
   let tagsLoading = $state(true);
+
+  let locale = $state<Locale>(DEFAULT_LOCALE);
+  $effect(() => { locale = getLocaleFromPath($page.url.pathname); });
 
   let seo = $derived(generateDiscoverSEO());
 
@@ -49,7 +54,7 @@
 
 <div class="min-h-screen bg-gray-50">
   <header class="sticky top-0 bg-white border-b border-gray-100 px-3 py-2 z-50">
-    <h1 class="text-lg font-bold text-pink-500">发现</h1>
+    <h1 class="text-lg font-bold text-pink-500">{t(locale, 'discover')}</h1>
   </header>
 
   <main class="pb-16">
@@ -62,7 +67,7 @@
       {#if keywords.length > 0}
         <section class="bg-white mt-2">
           <div class="px-3 py-2 border-b border-gray-100">
-            <h2 class="text-sm font-medium text-gray-800">🔥 热门搜索</h2>
+            <h2 class="text-sm font-medium text-gray-800">{t(locale, 'hot_search')}</h2>
           </div>
           <div class="flex flex-wrap gap-2 p-3">
             {#each keywords as kw}
@@ -81,7 +86,7 @@
       {#if categories.length > 0}
         <section class="bg-white mt-2">
           <div class="px-3 py-2 border-b border-gray-100">
-            <h2 class="text-sm font-medium text-gray-800">分类</h2>
+            <h2 class="text-sm font-medium text-gray-800">{t(locale, 'categories')}</h2>
           </div>
           <div class="flex flex-wrap gap-2 p-3">
             {#each categories as tag}
@@ -100,7 +105,7 @@
       {#if areas.length > 0}
         <section class="bg-white mt-2">
           <div class="px-3 py-2 border-b border-gray-100">
-            <h2 class="text-sm font-medium text-gray-800">地区</h2>
+            <h2 class="text-sm font-medium text-gray-800">{t(locale, 'areas')}</h2>
           </div>
           <div class="flex flex-wrap gap-2 p-3">
             {#each areas as tag}

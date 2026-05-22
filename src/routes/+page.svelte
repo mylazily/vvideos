@@ -12,10 +12,15 @@
     SITE_URL
   } from '$lib/seo';
   import { nativeFetch, requestPool } from '$lib/native-utils';
+  import { getLocaleFromPath, t, DEFAULT_LOCALE, type Locale } from '$lib/i18n';
+  import { page } from '$app/stores';
 
   let videos = $state<any[]>([]);
   let loading = $state(true);
   let searchKeyword = $state('');
+
+  let locale = $state<Locale>(DEFAULT_LOCALE);
+  $effect(() => { locale = getLocaleFromPath($page.url.pathname); });
 
   let seo = $derived(generateHomeSEO());
   const orgSchema = generateOrganizationSchema();
@@ -82,10 +87,10 @@
           bind:value={searchKeyword}
           onkeydown={(e) => e.key === 'Enter' && handleSearch()}
           type="text"
-          placeholder="搜索影片"
+          placeholder={t(locale, 'search_placeholder')}
           class="flex-1 bg-transparent text-sm outline-none"
         />
-        <button onclick={handleSearch} class="text-pink-500 text-sm">搜索</button>
+        <button onclick={handleSearch} class="text-pink-500 text-sm">{t(locale, 'search')}</button>
       </div>
     </div>
   </header>
@@ -103,7 +108,7 @@
         {/each}
       </div>
     {:else}
-      <div class="text-center py-20 text-gray-400">暂无内容</div>
+      <div class="text-center py-20 text-gray-400">{t(locale, 'no_data')}</div>
     {/if}
   </main>
 
