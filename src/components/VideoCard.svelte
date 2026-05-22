@@ -1,6 +1,5 @@
 <script lang="ts">
   import type { Video } from '$lib/types';
-  import { getLocaleFromPath, localeToUrl, DEFAULT_LOCALE, type Locale } from '$lib/i18n';
 
   interface Props {
     video: Video;
@@ -9,31 +8,16 @@
 
   let { video, loading = 'lazy' }: Props = $props();
 
-  // 获取当前语言
-  let locale = $state<Locale>(DEFAULT_LOCALE);
-  $effect(() => {
-    locale = getLocaleFromPath(window.location.pathname);
-  });
-
-  // 生成带语言前缀的链接
-  let videoHref = $derived(localeToUrl(locale, '/v/' + video.vod_id));
-
   let imageLoaded = $state(false);
   let imageError = $state(false);
 
-  function handleImageLoad() {
-    imageLoaded = true;
-  }
-
-  function handleImageError() {
-    imageError = true;
-    imageLoaded = true;
-  }
+  function handleImageLoad() { imageLoaded = true; }
+  function handleImageError() { imageError = true; imageLoaded = true; }
 
   const placeholderSvg = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxNDUlJyB2aWV3Qm94PSIwIDAgMTY0IDE3NiIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTY0IiBoZWlnaHQ9IjE3NiIgZmlsbD0iI2Y1ZjVmNSIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjOWE5YTlhIiBmb250LWZhbWlseT0ic2Fucy1zZXJpZiIgZm9udC1zaXplPSIxNCI+6I235a2mPC90ZXh0Pjwvc3ZnPg==';
 </script>
 
-<a href={videoHref} class="group block">
+<a href="/v/{video.vod_id}" class="group block">
   <div class="relative aspect-video bg-gray-200 rounded-lg overflow-hidden">
     {#if !imageLoaded}
       <img src={placeholderSvg} alt="" class="absolute inset-0 w-full h-full object-cover" aria-hidden="true" />

@@ -1,14 +1,10 @@
 <script lang="ts">
   import { page } from '$app/stores';
   import NavBar from '$components/NavBar.svelte';
-  import { getLocaleFromPath, t, DEFAULT_LOCALE, type Locale } from '$lib/i18n';
-
-  let locale = $state<Locale>(DEFAULT_LOCALE);
-  $effect(() => { locale = getLocaleFromPath($page.url.pathname); });
 </script>
 
 <svelte:head>
-  <title>{t(locale, 'not_found')} - 必爱必爱</title>
+  <title>页面未找到 - 必爱必爱</title>
   <meta name="robots" content="noindex, follow" />
 </svelte:head>
 
@@ -19,16 +15,16 @@
       <div class="text-8xl font-bold text-pink-200 mb-4">404</div>
       <h1 class="text-xl font-medium text-gray-700 mb-2">
         {#if $page.status === 404}
-          {t(locale, 'not_found')}
+          页面未找到
         {:else}
-          {t(locale, 'load_error')}
+          加载错误
         {/if}
       </h1>
       <p class="text-sm text-gray-400 mb-8">
         {#if $page.status === 404}
-          {t(locale, 'not_found_desc')}
+          您访问的页面不存在或已被移除
         {:else}
-          {t(locale, 'load_error_desc')} ({$page.status})
+          页面加载失败，请稍后重试 ({$page.status})
         {/if}
       </p>
       <a
@@ -36,7 +32,7 @@
         class="inline-flex items-center gap-2 px-6 py-2.5 bg-pink-500 text-white text-sm rounded-full hover:bg-pink-600 active:bg-pink-700 transition-colors"
       >
         <span>&larr;</span>
-        {t(locale, 'back_home')}
+        返回首页
       </a>
     </div>
   </main>

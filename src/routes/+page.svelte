@@ -11,17 +11,11 @@
     SITE_NAME,
     SITE_URL
   } from '$lib/seo';
-  import { getLocaleFromPath, t, DEFAULT_LOCALE, LOCALE_FLAGS, LOCALE_NAMES, SUPPORTED_LOCALES, localeToUrl, type Locale } from '$lib/i18n';
-  import { page } from '$app/stores';
 
   let videos = $state<any[]>([]);
   let loading = $state(true);
   let error = $state('');
   let searchKeyword = $state('');
-  let showLangMenu = $state(false);
-
-  let locale = $state<Locale>(DEFAULT_LOCALE);
-  $effect(() => { locale = getLocaleFromPath($page.url.pathname); });
 
   let seo = $derived(generateHomeSEO());
   const orgSchema = generateOrganizationSchema();
@@ -36,16 +30,13 @@
     loading = true;
     error = '';
     try {
-      // 使用完整URL，避免Service Worker拦截问题
       const apiUrl = window.location.origin + '/api/home';
       const response = await fetch(apiUrl, {
         method: 'GET',
         headers: { 'Accept': 'application/json' }
       });
       
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
       
       const res = await response.json();
       
@@ -55,7 +46,6 @@
         throw new Error(res.message || '加载失败');
       }
     } catch (e: any) {
-      console.error('Failed to load videos:', e);
       error = e.message || '加载失败';
     } finally {
       loading = false;
@@ -64,19 +54,10 @@
 
   function handleSearch() {
     if (searchKeyword.trim()) {
-      window.location.href = localeToUrl(locale, '/search/' + encodeURIComponent(searchKeyword.trim()) + '/1');
+      window.location.href = '/search/' + encodeURIComponent(searchKeyword.trim()) + '/1';
     }
   }
-
-  function switchLanguage(newLocale: Locale) {
-    const pathname = window.location.pathname;
-    const pathWithoutLocale = pathname.replace(/^\/(en|ko|ja|vi|th)/, '') || '/';
-    const newPath = localeToUrl(newLocale, pathWithoutLocale);
-    window.location.href = newPath;
-  }
 </script>
-
-<svelte:window onclick={() => showLangMenu = false} />
 
 <svelte:head>
   <title>{seo.title}</title>
@@ -99,53 +80,24 @@
 </svelte:head>
 
 <div class="min-h-screen bg-gray-50">
-  <!-- 搜索框 + 语言切换 -->
+  <!-- 搜索框 -->
   <header class="sticky top-0 bg-white border-b border-gray-100 px-3 py-2 z-50">
-    <div class="flex items-center gap-2">
-      <!-- 语言切换器 - 放最左边 -->
-      <div class="relative">
-        <button
-          onclick={(e) => { e.stopPropagation(); showLangMenu = !showLangMenu; }}
-          class="flex items-center gap-1 px-2 py-1.5 text-sm text-gray-600 hover:text-pink-500"
-        >
-          <span>{LOCALE_FLAGS[locale]}</span>
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-          </svg>
-        </button>
-        {#if showLangMenu}
-          <div class="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-lg border border-gray-100 py-1 min-w-[140px] z-50">
-            {#each SUPPORTED_LOCALES as loc}
-              <button
-                onclick={() => switchLanguage(loc)}
-                class="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2 {locale === loc ? 'text-pink-500 font-medium' : 'text-gray-700'}"
-              >
-                <span>{LOCALE_FLAGS[loc]}</span>
-                <span>{LOCALE_NAMES[loc]}</span>
-              </button>
-            {/each}
-          </div>
-        {/if}
-      </div>
-
-      <!-- 搜索框 -->
-      <div class="flex-1 flex items-center h-9 px-3 bg-gray-100 rounded-lg">
-        <svg class="w-4 h-4 text-gray-400 mr-2 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-        </svg>
-        <input
-          bind:value={searchKeyword}
-          onkeydown={(e) => e.key === 'Enter' && handleSearch()}
-          type="text"
-          placeholder={t(locale, 'search_placeholder')}
-          class="flex-1 bg-transparent text-sm outline-none"
-        />
-        <button onclick={handleSearch} class="text-pink-500 text-sm">{t(locale, 'search')}</button>
-      </div>
+    <div class="flex items-center h-9 px-3 bg-gray-100 rounded-lg">
+      <svg class="w-4 h-4 text-gray-400 mr-2 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+      </svg>
+      <input
+        bind:value={searchKeyword}
+        onkeydown={(e) => e.key === 'Enter' && handleSearch()}
+        type="text"
+        placeholder="搜索电影、电视剧、动漫..."
+        class="flex-1 bg-transparent text-sm outline-none"
+      />
+      <button onclick={handleSearch} class="text-pink-500 text-sm">搜索</button>
     </div>
   </header>
 
-  <!-- 24个视频 -->
+  <!-- 视频列表 -->
   <main class="pb-16">
     {#if loading}
       <div class="flex items-center justify-center py-20">
@@ -163,10 +115,9 @@
         {/each}
       </div>
     {:else}
-      <div class="text-center py-20 text-gray-400">{t(locale, 'no_data')}</div>
+      <div class="text-center py-20 text-gray-400">暂无数据</div>
     {/if}
   </main>
 
-  <!-- 底部导航栏 -->
   <NavBar />
 </div>

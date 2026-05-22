@@ -11,7 +11,10 @@ export interface Env {
 	DB_9: D1Database;
 	CACHE: KVNamespace;
 	ADMIN_PASSWORD: string;
+	VIDEOS_KV: KVNamespace;
 }
+
+import { getBlockedDomains } from './domain-health';
 
 interface VideoRow {
 	id: number;
@@ -133,6 +136,15 @@ function formatVideoDetail(row: VideoRow) {
 	if (row.play_url_4) playSources.push({ url: row.play_url_4, duration: row.duration_4 });
 	if (row.play_url_5) playSources.push({ url: row.play_url_5, duration: row.duration_5 });
 	
+	// 过滤被屏蔽域名的播放源
+	const blockedDomains = await getBlockedDomains(env);
+	const filteredSources = playSources.filter((s: any) => {
+		try {
+			const hostname = new URL(s.url).hostname;
+			return !blockedDomains.includes(hostname);
+		} catch { return true; }
+	});
+
 	// 解析广告段
 	let adSegments = [];
 	try {
@@ -154,7 +166,7 @@ function formatVideoDetail(row: VideoRow) {
 		vod_actor: row.vod_actor,
 		vod_remarks: row.vod_remarks,
 		vod_lang: row.vod_lang,
-		play_sources: playSources,
+		play_sources: filteredSources.length > 0 ? filteredSources : playSources,
 		ad_segments: adSegments
 	};
 }
