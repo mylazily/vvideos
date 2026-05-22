@@ -233,35 +233,8 @@ export function canonicalUrl(path: string): string {
   return SITE_URL + path;
 }
 
-// 生成分页 rel prev/next
-export function paginationLinks(baseUrl: string, currentPage: number, totalPages: number): { prev?: string; next?: string } {
-  const links: { prev?: string; next?: string } = {};
-  if (currentPage > 1) {
-    links.prev = `${baseUrl}?page=${currentPage - 1}`;
-  }
-  if (currentPage < totalPages) {
-    links.next = `${baseUrl}?page=${currentPage + 1}`;
-  }
-  return links;
-}
-
 // SearchAction Schema（Google 搜索框直达）
-export function generateSearchActionSchema() {
-  return {
-    '@context': 'https://schema.org',
-    '@type': 'WebSite',
-    name: SITE_NAME,
-    url: SITE_URL,
-    potentialAction: {
-      '@type': 'SearchAction',
-      target: {
-        '@type': 'EntryPoint',
-        urlTemplate: `${SITE_URL}/search/{search_term_string}/1`
-      },
-      'query-input': 'required name=search_term_string'
-    }
-  };
-}
+// 已整合到 generateWebSiteSchema 中
 
 // Image alt 文本优化
 export function generateImageAlt(video: VideoSEOData): string {
