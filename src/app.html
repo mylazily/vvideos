@@ -44,40 +44,11 @@
       /* 首屏关键样式 - 防止FOUC */
       html { background-color: #f9fafb; }
       body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
-      /* 骨架屏样式 */
-      .skeleton { background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%); background-size: 200% 100%; animation: loading 1.5s infinite; }
-      @keyframes loading { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
     </style>
     
     %sveltekit.head%
   </head>
   <body data-sveltekit-preload-data="hover">
     <div style="display: contents">%sveltekit.body%</div>
-    
-    <!-- Service Worker 注册 - 延迟加载 -->
-    <script>
-      if ('serviceWorker' in navigator) {
-        // 使用 requestIdleCallback 延迟注册，不阻塞首屏
-        const registerSW = function() {
-          navigator.serviceWorker.register('/sw.js').then(function(reg) {
-            reg.onupdatefound = function() {
-              var newWorker = reg.installing;
-              newWorker.onstatechange = function() {
-                if (newWorker.state === 'activated') {
-                  // 新版本可用
-                }
-              };
-            };
-          }).catch(function() {});
-        };
-        
-        // 延迟注册Service Worker
-        if ('requestIdleCallback' in window) {
-          window.requestIdleCallback(registerSW, { timeout: 5000 });
-        } else {
-          setTimeout(registerSW, 3000);
-        }
-      }
-    </script>
   </body>
 </html>
