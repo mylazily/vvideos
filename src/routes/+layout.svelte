@@ -10,14 +10,45 @@
 
 	let { children }: { children: Snippet } = $props();
 
-	// 直接显示内容，不阻塞渲染
 	let displayMode = $state(1);
 
-	// 异步检测浏览器 + 注册SW（仅在客户端SPA页面执行）
+	// 仅客户端SPA页面执行：PWA注入 + SW注册 + 浏览器检测
 	onMount(() => {
 		if (!browser) return;
 
-		// 注册 Service Worker（延迟执行）
+		// 动态注入PWA manifest（首页prerender不包含这些）
+		const injectPWA = () => {
+			const head = document.head;
+			const links = [
+				{ rel: 'manifest', href: '/manifest.json' },
+				{ rel: 'apple-touch-icon', href: '/icon-192.png' }
+			];
+			for (const l of links) {
+				if (!head.querySelector(`link[href="${l.href}"]`)) {
+					const el = document.createElement('link');
+					el.rel = l.rel;
+					el.href = l.href;
+					head.appendChild(el);
+				}
+			}
+			const metas = [
+				{ name: 'theme-color', content: '#ec4899' },
+				{ name: 'msapplication-TileColor', content: '#ec4899' },
+				{ name: 'apple-mobile-web-app-capable', content: 'yes' },
+				{ name: 'apple-mobile-web-app-status-bar-style', content: 'default' },
+				{ name: 'apple-mobile-web-app-title', content: '必爱必爱' }
+			];
+			for (const m of metas) {
+				if (!head.querySelector(`meta[name="${m.name}"]`)) {
+					const el = document.createElement('meta');
+					el.name = m.name;
+					el.content = m.content;
+					head.appendChild(el);
+				}
+			}
+		};
+
+		// 注册 Service Worker
 		const registerSW = () => {
 			if ('serviceWorker' in navigator) {
 				navigator.serviceWorker.register('/sw.js').catch(() => {});
@@ -27,9 +58,7 @@
 		// 浏览器检测
 		const checkBrowser = () => {
 			applySubdomainSEO();
-
 			const browserInfo = detectBrowser();
-
 			if (browserInfo.isBlocked) {
 				const hardBlockedApps = ['wechat', 'qq', 'weibo', 'douyin', 'toutiao', 'alipay', 'baidu_app'];
 				if (hardBlockedApps.includes(browserInfo.type)) {
@@ -38,25 +67,23 @@
 					const d = localStorage.getItem('guide_dismissed');
 					if (d) {
 						const dismissedTime = parseInt(d);
-						if (Date.now() - dismissedTime < 60 * 60 * 1000) {
-							return;
-						}
+						if (Date.now() - dismissedTime < 60 * 60 * 1000) return;
 					}
 					displayMode = 2;
 				}
 			}
 		};
 
+		const init = () => {
+			injectPWA();
+			registerSW();
+			checkBrowser();
+		};
+
 		if ('requestIdleCallback' in window) {
-			requestIdleCallback(() => {
-				registerSW();
-				checkBrowser();
-			}, { timeout: 100 });
+			requestIdleCallback(init, { timeout: 100 });
 		} else {
-			setTimeout(() => {
-				registerSW();
-				checkBrowser();
-			}, 50);
+			setTimeout(init, 50);
 		}
 	});
 </script>
