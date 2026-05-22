@@ -20,6 +20,10 @@ const config = {
 			precompress: true,
 			strict: false
 		}),
+		// SPA模式：未爬取的路由忽略（使用fallback）
+		prerender: {
+			handleUnseenRoutes: 'ignore'
+		},
 		alias: {
 			$components: 'src/components',
 			$lib: 'src/lib'

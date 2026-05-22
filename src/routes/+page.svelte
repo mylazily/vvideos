@@ -38,30 +38,24 @@
     try {
       // 使用完整URL，避免Service Worker拦截问题
       const apiUrl = window.location.origin + '/api/home';
-      console.log('[首页] 请求API:', apiUrl);
-      
       const response = await fetch(apiUrl, {
         method: 'GET',
         headers: { 'Accept': 'application/json' }
       });
-      
-      console.log('[首页] API响应状态:', response.status);
       
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`);
       }
       
       const res = await response.json();
-      console.log('[首页] API响应数据:', res);
       
       if (res.success) {
         videos = (res.data.videos || []).slice(0, 24);
-        console.log('[首页] 加载视频数量:', videos.length);
       } else {
         throw new Error(res.message || '加载失败');
       }
     } catch (e: any) {
-      console.error('[首页] 加载视频失败:', e);
+      console.error('Failed to load videos:', e);
       error = e.message || '加载失败';
     } finally {
       loading = false;
@@ -70,7 +64,7 @@
 
   function handleSearch() {
     if (searchKeyword.trim()) {
-      window.location.href = '/search/' + encodeURIComponent(searchKeyword.trim()) + '/1';
+      window.location.href = localeToUrl(locale, '/search/' + encodeURIComponent(searchKeyword.trim()) + '/1');
     }
   }
 

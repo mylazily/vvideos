@@ -282,7 +282,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 
 				const results = await env.DB_0.prepare('SELECT id, keyword, sort_order FROM hot_keywords ORDER BY sort_order ASC, id DESC').all<{ id: number; keyword: string; sort_order: number }>();
 				const keywords = (results.results || []).map(r => r.keyword);
-				await setCache(env, cacheKey, keywords, 300);
+				await setCache(request, env, cacheKey, keywords, 300);
 				return json({ success: true, data: keywords }, 200, strongCacheHeaders(300));
 			}
 			if (request.method === 'POST') {
