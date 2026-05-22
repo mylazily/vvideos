@@ -11,12 +11,12 @@
     SITE_NAME,
     SITE_URL
   } from '$lib/seo';
-  import { nativeFetch, requestPool } from '$lib/native-utils';
   import { getLocaleFromPath, t, DEFAULT_LOCALE, LOCALE_FLAGS, LOCALE_NAMES, SUPPORTED_LOCALES, localeToUrl, type Locale } from '$lib/i18n';
   import { page } from '$app/stores';
 
   let videos = $state<any[]>([]);
   let loading = $state(true);
+  let error = $state('');
   let searchKeyword = $state('');
   let showLangMenu = $state(false);
 
@@ -34,15 +34,35 @@
 
   async function loadVideos() {
     loading = true;
+    error = '';
     try {
-      const res = await requestPool.add(() => 
-        nativeFetch('/api/home', { cache: true, cacheTTL: 300000 })
-      );
+      // 使用完整URL，避免Service Worker拦截问题
+      const apiUrl = window.location.origin + '/api/home';
+      console.log('[首页] 请求API:', apiUrl);
+      
+      const response = await fetch(apiUrl, {
+        method: 'GET',
+        headers: { 'Accept': 'application/json' }
+      });
+      
+      console.log('[首页] API响应状态:', response.status);
+      
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      
+      const res = await response.json();
+      console.log('[首页] API响应数据:', res);
+      
       if (res.success) {
         videos = (res.data.videos || []).slice(0, 24);
+        console.log('[首页] 加载视频数量:', videos.length);
+      } else {
+        throw new Error(res.message || '加载失败');
       }
-    } catch (e) {
-      console.error('Failed to load videos:', e);
+    } catch (e: any) {
+      console.error('[首页] 加载视频失败:', e);
+      error = e.message || '加载失败';
     } finally {
       loading = false;
     }
@@ -136,6 +156,11 @@
     {#if loading}
       <div class="flex items-center justify-center py-20">
         <div class="w-8 h-8 border-2 border-pink-200 border-t-pink-500 rounded-full animate-spin"></div>
+      </div>
+    {:else if error}
+      <div class="text-center py-20">
+        <p class="text-red-500 mb-4">{error}</p>
+        <button onclick={loadVideos} class="px-4 py-2 bg-pink-500 text-white rounded-lg">重试</button>
       </div>
     {:else if videos.length > 0}
       <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2 p-2">
