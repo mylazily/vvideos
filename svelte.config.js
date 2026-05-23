@@ -32,7 +32,8 @@ const config = {
 		},
 		paths: {
 			// 使用绝对路径，确保SPA路由正确加载资源
-			base: ''
+			base: '',
+			relative: false
 		}
 	}
 };
