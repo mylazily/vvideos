@@ -147,7 +147,7 @@ async function setCache(request: Request, env: Env, key: string, data: any, cach
 }
 
 // 格式化视频数据（提取播放源列表）
-function formatVideoDetail(row: VideoRow) {
+async function formatVideoDetail(row: VideoRow) {
 	const playSources = [];
 	if (row.play_url_1) playSources.push({ url: row.play_url_1, duration: row.duration_1 });
 	if (row.play_url_2) playSources.push({ url: row.play_url_2, duration: row.duration_2 });
@@ -245,7 +245,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 			const row = results.find(r => r !== null);
 			if (!row) return json({ success: false, message: '视频不存在' }, 404);
 
-			const video = formatVideoDetail(row);
+			const video = await formatVideoDetail(row);
 
 			// 异步更新浏览量
 			const shardIdx = results.indexOf(row);
