@@ -53,7 +53,7 @@
 			}
 		};
 
-		// 浏览器检测 - 动态导入避免增加基础chunk体积
+		// 浏览器检测 - 延迟到空闲时执行
 		const checkBrowser = async () => {
 			const { applySubdomainSEO } = await import('$lib/subdomain');
 			const { detectBrowser } = await import('$lib/browser-detect');
@@ -67,7 +67,8 @@
 		const init = () => {
 			injectPWA();
 			registerSW();
-			checkBrowser();
+			// 延迟浏览器检测，不阻塞首屏
+			setTimeout(checkBrowser, 2000);
 		};
 
 		if ('requestIdleCallback' in window) {
@@ -91,11 +92,6 @@
 		</div>
 	{/if}
 	{@render children()}
-	{#if browser}
-		{#await import('$components/UserGuide.svelte') then { default: UserGuide }}
-			<UserGuide blocked={false} />
-		{/await}
-	{/if}
 {/if}
 
 <style>

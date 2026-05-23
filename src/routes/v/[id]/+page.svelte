@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
   import { page } from '$app/stores';
   import NavBar from '$components/NavBar.svelte';
   import VideoCard from '$components/VideoCard.svelte';
@@ -41,42 +41,57 @@
   let hlsPlayer: any = null;
   let relatedVideos = $state<Video[]>([]);
   let favorited = $state(false);
+  let playerLoading = $state(false); // 播放器加载状态
+  let HlsModule: any = null; // 预加载的 HLS.js 模块
 
   // ============ 派生状态 ============
   let videoId = $derived($page.params.id);
 
-  // ============ SEO 数据 ============
+  // ============ 生命周期 ============
+  onMount(() => {
+    // 并行预加载 HLS.js 和视频数据
+    preloadHls();
+    loadVideo();
+    return () => destroyPlayer();
+  });
+
+  // 预加载 HLS.js（不阻塞渲染）
+  async function preloadHls() {
+    try {
+      HlsModule = (await import('hls.js/light')).default;
+    } catch {
+      // 静默失败，播放时再尝试
+    }
+  }
+
+  // 预连接 m3u8 域名（节省 DNS + TCP + TLS 时间）
+  function prefetchStreamDomain(url: string) {
+    try {
+      const host = new URL(url).host;
+      if (host && host !== location.host) {
+        const link = document.createElement('link');
+        link.rel = 'preconnect';
+        link.href = `https://${host}`;
+        link.crossOrigin = '';
+        document.head.appendChild(link);
+      }
+    } catch {}
+  }
+
+  // ============ SEO 数据（延迟计算） ============
   let autoDescription = $derived(video ? generateAutoDescription(video) : '');
   let seoTitle = $derived(video ? generatePageTitle({
-    title: video.title,
-    category: video.category,
-    vod_year: video.vod_year,
-    vod_area: video.vod_area
+    title: video.title, category: video.category, vod_year: video.vod_year, vod_area: video.vod_area
   }) : '');
   let seoDesc = $derived(video ? generateSEODescription({
-    title: video.title,
-    category: video.category,
-    vod_year: video.vod_year,
-    vod_area: video.vod_area,
-    vod_actor: video.vod_actor,
-    vod_director: video.vod_director
+    title: video.title, category: video.category, vod_year: video.vod_year, vod_area: video.vod_area,
+    vod_actor: video.vod_actor, vod_director: video.vod_director
   }) : '');
   let breadcrumbs = $derived(video ? [
     { name: '首页', url: SITE_URL },
     { name: video.category || '视频', url: `${SITE_URL}/category/${encodeURIComponent(video.category || '全部')}/1` },
     { name: video.title, url: `${SITE_URL}/v/${video.vod_id}` }
   ] : []);
-  let faqs = $derived(video ? [
-    { question: `${video.title}在哪里可以免费观看？`, answer: `${SITE_NAME}提供《${video.title}》${video.category || ''}在线免费观看，高清完整版，支持手机播放。` },
-    { question: `${video.title}是谁演的？`, answer: video.vod_actor ? `《${video.title}》由${video.vod_actor}主演。` : `《${video.title}》演员信息请查看页面详情。` },
-    { question: `${video.title}是什么时候上映的？`, answer: video.vod_year ? `《${video.title}》${video.vod_year}年上映。` : `《${video.title}》上映时间请查看页面详情。` }
-  ] : []);
-
-  // ============ 生命周期 ============
-  onMount(() => {
-    loadVideo();
-    return () => destroyPlayer();
-  });
 
   // ============ 核心函数 ============
   function generateAutoDescription(v: VideoDetail): string {
@@ -150,9 +165,12 @@
         try { relatedVideos = (await relatedRes.json()).data || []; } catch {}
       }
 
-      // 直接播放第一个源
+      // 立即播放第一个源（不等待 setTimeout）
       if (playSources.length > 0) {
-        setTimeout(() => playSource(0), 100);
+        // 预连接流媒体域名
+        prefetchStreamDomain(playSources[0].url);
+        // 立即触发播放
+        playSource(0);
       }
     } catch (e: any) {
       errorMsg = e.name === 'TimeoutError' ? '请求超时，请重试' : '网络错误，请稍后重试';
@@ -167,47 +185,54 @@
     if (!source) return;
 
     const videoEl = document.querySelector('video') as HTMLVideoElement | null;
-    if (!videoEl) { setTimeout(() => playSource(index), 50); return; }
+    if (!videoEl) { 
+      // 等待 Svelte 渲染 video 元素
+      tick().then(() => playSource(index));
+      return;
+    }
 
     destroyPlayer();
+    playerLoading = true;
 
     if (source.url.includes('.m3u8')) {
       await playHls(videoEl, source.url);
     } else {
       videoEl.src = source.url;
       videoEl.play().catch(() => {});
+      playerLoading = false;
     }
   }
 
   async function playHls(videoEl: HTMLVideoElement, url: string) {
     try {
-      const { default: Hls } = await import('hls.js/light');
+      // 使用预加载的模块或动态加载
+      const Hls = HlsModule || (await import('hls.js/light')).default;
 
       if (Hls.isSupported()) {
-        // 精简优化配置 - 5-10分钟缓冲区，极速加载
+        // 极速启动配置
         hlsPlayer = new Hls({
           enableWorker: true,
           lowLatencyMode: false,
           
-          // 缓冲区配置：5-10分钟
-          maxBufferLength: 300,
-          maxMaxBufferLength: 600,
-          maxBufferSize: 0,
+          // 缓冲区配置：首帧优先
+          maxBufferLength: 30,        // 减少初始缓冲，加快首帧
+          maxMaxBufferLength: 300,    // 最大缓冲5分钟
+          maxBufferSize: 50 * 1000 * 1000, // 50MB
           
           // 快速启动配置
-          startLevel: -1,
-          startFragPrefetch: true,
+          startLevel: -1,             // 自动选择最佳质量
+          startFragPrefetch: true,    // 预取第一个分片
           
-          // 加载超时
-          fragLoadingTimeOut: 20000,
-          manifestLoadingTimeOut: 10000,
-          levelLoadingTimeOut: 10000,
+          // 加载超时（缩短以快速失败）
+          fragLoadingTimeOut: 10000,
+          manifestLoadingTimeOut: 5000,
+          levelLoadingTimeOut: 5000,
           
           // 重试配置
-          fragLoadingMaxRetry: 3,
-          manifestLoadingMaxRetry: 2,
-          levelLoadingMaxRetry: 2,
-          fragLoadingRetryDelay: 500,
+          fragLoadingMaxRetry: 2,
+          manifestLoadingMaxRetry: 1,
+          levelLoadingMaxRetry: 1,
+          fragLoadingRetryDelay: 200,
           
           // 禁用所有非核心功能
           enableCEA708Captions: false,
@@ -222,11 +247,13 @@
         });
 
         hlsPlayer.on(Hls.Events.MANIFEST_PARSED, () => {
+          playerLoading = false;
           videoEl.play().catch(() => {});
         });
 
         hlsPlayer.on(Hls.Events.ERROR, (_event: any, data: any) => {
           if (!data.fatal) return;
+          playerLoading = false;
           if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
             hlsPlayer?.startLoad();
           } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
@@ -241,12 +268,16 @@
         hlsPlayer.attachMedia(videoEl);
         hlsPlayer.loadSource(url);
       } else if (videoEl.canPlayType('application/vnd.apple.mpegurl')) {
+        // Safari 原生 HLS 支持
+        playerLoading = false;
         videoEl.src = url;
         videoEl.play().catch(() => {});
       } else {
+        playerLoading = false;
         errorMsg = '浏览器不支持播放';
       }
     } catch {
+      playerLoading = false;
       errorMsg = '播放器加载失败';
     }
   }
@@ -337,9 +368,17 @@
 
       <!-- 播放器 -->
       <div class="aspect-video bg-black relative">
-        <video controls playsinline preload="auto" class="w-full h-full" poster={video.cover}>
+        <video controls playsinline preload="metadata" class="w-full h-full" poster={video.cover}>
           您的浏览器不支持视频播放
         </video>
+        {#if playerLoading}
+          <div class="absolute inset-0 flex items-center justify-center bg-black/50">
+            <div class="flex flex-col items-center gap-2">
+              <div class="w-10 h-10 border-3 border-pink-200 border-t-pink-500 rounded-full animate-spin"></div>
+              <span class="text-white text-sm">加载播放器...</span>
+            </div>
+          </div>
+        {/if}
       </div>
 
       <!-- 视频信息 -->

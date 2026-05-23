@@ -1,13 +1,13 @@
-// Service Worker v9 - 极速缓存版本
-const STATIC_CACHE = 'evideos-static-v9';
-const IMAGE_CACHE = 'evideos-images-v9';
-const API_CACHE = 'evideos-api-v9';
-const CACHE_VERSION = 'v9';
+// Service Worker v11 - 播放器极速优化
+const STATIC_CACHE = 'evideos-static-v11';
+const IMAGE_CACHE = 'evideos-images-v11';
+const API_CACHE = 'evideos-api-v11';
+const CACHE_VERSION = 'v11';
 
-// 缓存TTL（毫秒）
-const API_TTL = 5 * 60 * 1000;       // API缓存5分钟
-const HTML_TTL = 30 * 60 * 1000;     // HTML缓存30分钟
-const IMAGE_MAX = 500;                // 图片缓存上限500张
+// 缓存TTL（毫秒）- 延长缓存时间减少请求
+const API_TTL = 10 * 60 * 1000;      // API缓存10分钟
+const HTML_TTL = 60 * 60 * 1000;     // HTML缓存1小时
+const IMAGE_MAX = 300;                // 图片缓存上限300张（控制内存）
 
 // 核心资源（安装时预缓存）
 const CORE_ASSETS = [
@@ -78,7 +78,7 @@ async function staticStrategy(request) {
   }
 }
 
-// 2. 图片：缓存优先（LRU，上限500张）
+// 2. 图片：缓存优先（LRU，上限300张）
 async function imageStrategy(request) {
   const cached = await cacheGet(IMAGE_CACHE, request, 0);
   if (cached) return cached;
@@ -98,9 +98,24 @@ async function imageStrategy(request) {
   }
 }
 
-// 3. API：网络优先，缓存兜底（5分钟TTL）
+// 3. API：缓存优先，后台更新（Stale-While-Revalidate）
 async function apiStrategy(request) {
-  const cached = await cacheGet(API_CACHE, request, API_TTL);
+  const cache = await caches.open(API_CACHE);
+  const cached = await cache.match(request);
+  
+  // 如果有缓存且未过期，直接返回
+  if (cached) {
+    const dateHeader = cached.headers.get('sw-cache-time');
+    if (dateHeader && (Date.now() - parseInt(dateHeader)) < API_TTL) {
+      // 后台更新缓存
+      fetch(request).then(response => {
+        if (response.ok) cacheSet(API_CACHE, request, response, API_TTL);
+      }).catch(() => {});
+      return cached;
+    }
+  }
+  
+  // 无缓存或过期，请求网络
   try {
     const response = await fetch(request);
     if (response.ok) {
@@ -121,7 +136,7 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(request.url);
   if (request.method !== 'GET') return;
 
-  // API
+  // API - 使用Stale-While-Revalidate策略
   if (url.pathname.startsWith('/api/')) {
     event.respondWith(apiStrategy(request));
     return;
@@ -139,19 +154,24 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // HTML：网络优先，缓存兜底（30分钟TTL）
+  // HTML：网络优先，缓存兜底（1小时TTL）
   event.respondWith(
     (async () => {
-      const cached = await cacheGet(STATIC_CACHE, request, HTML_TTL);
       try {
         const response = await fetch(request);
         if (response.ok) {
           cacheSet(STATIC_CACHE, request, response, HTML_TTL);
           return response;
         }
-        return cached || response;
+        // 非OK响应：尝试缓存或返回200.html SPA shell
+        const cached = await cacheGet(STATIC_CACHE, request, HTML_TTL);
+        if (cached) return cached;
+        return caches.match('/200.html') || response;
       } catch {
-        return cached || caches.match('/');
+        // 离线：尝试缓存或返回200.html SPA shell
+        const cached = await cacheGet(STATIC_CACHE, request, HTML_TTL);
+        if (cached) return cached;
+        return caches.match('/200.html') || caches.match('/');
       }
     })()
   );

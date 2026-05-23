@@ -4,9 +4,8 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     
-    <!-- Favicon -->
+    <!-- Favicon（仅PNG，无SVG） -->
     <link rel="icon" href="%sveltekit.assets%/favicon.png" />
-    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
     
     <!-- SEO -->
     <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1" />
@@ -15,15 +14,12 @@
     <meta name="format-detection" content="telephone=no" />
     <link rel="canonical" href="https://evideos.pages.dev/" />
 
-    <!-- Open Graph -->
+    <!-- Open Graph（无图片引用） -->
     <meta property="og:site_name" content="必爱必爱" />
     <meta property="og:locale" content="zh_CN" />
     <meta property="og:type" content="website" />
-    <meta property="og:image" content="%sveltekit.assets%/icon.svg" />
-    <meta property="og:image:width" content="512" />
-    <meta property="og:image:height" content="512" />
     
-    <!-- 预连接：加速图片CDN和API -->
+    <!-- 预连接：加速图片CDN -->
     <link rel="preconnect" href="https://xinlangtupian.com" crossorigin />
     <link rel="dns-prefetch" href="https://xinlangtupian.com" />
     
@@ -37,5 +33,30 @@
   </head>
   <body>
     <div style="display: contents">%sveltekit.body%</div>
+    <script>
+    // 首页专用：纯原生JS动态加载视频列表（仅首页执行，其他页面不触发）
+    if(location.pathname==='/'&&document.getElementById('vg')){
+      var _t;
+      function _esc(s){var d=document.createElement('div');d.textContent=s;return d.innerHTML}
+      function _card(v,i){
+        return '<a href="/v/'+v.vod_id+'" class="group block"><div class="relative aspect-video bg-gray-200 rounded-lg overflow-hidden"><img src="'+_esc(v.cover)+'" alt="'+_esc(v.title)+'" '+(i<4?'fetchpriority="high"':'loading="lazy"')+' decoding="'+(i<4?'sync':'async')+'" class="absolute inset-0 w-full h-full object-cover" onerror="this.style.display=\'none\'"/>'+(v.vod_remarks?'<div class="absolute bottom-1 right-1 px-1.5 py-0.5 bg-black/70 text-white text-xs rounded">'+_esc(v.vod_remarks)+'</div>':'')+'</div><h3 class="mt-1 text-xs text-gray-800 line-clamp-2">'+_esc(v.title)+'</h3></a>';
+      }
+      function _render(list){
+        var g=document.getElementById('vg');if(!g)return;
+        if(!list||!list.length){g.innerHTML='<div class="text-center py-20 text-gray-400">暂无数据</div>';return}
+        var seen={},out=[];
+        for(var i=0;i<list.length;i++){var v=list[i];if(!seen[v.vod_id]){seen[v.vod_id]=1;out.push(_card(v,out.length))}}
+        g.innerHTML=out.join('');
+      }
+      function _refresh(){
+        clearTimeout(_t);_t=setTimeout(function(){
+          fetch('/api/home').then(function(r){return r.json()}).then(function(j){
+            if(j.success&&j.data){var a=j.data.latest||[],b=j.data.hot||[];_render(a.concat(b))}
+          }).catch(function(){});
+        },100);
+      }
+      if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',_refresh);else _refresh();
+    }
+    </script>
   </body>
 </html>

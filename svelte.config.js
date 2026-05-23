@@ -21,7 +21,8 @@ const config = {
 		prerender: {
 			// 只有首页预渲染为纯静态HTML
 			entries: ['/'],
-			handleUnseenRoutes: 'ignore'
+			handleUnseenRoutes: 'ignore',
+			handleHttpError: 'warn'
 		},
 		alias: {
 			$components: 'src/components',
