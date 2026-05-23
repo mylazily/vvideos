@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "include": ["/*"],
+  "exclude": [
+    "/api/*",
+    "/collect/*",
+    "/health",
+    "/sitemap.xml",
+    "/video-sitemap.xml",
+    "/rss.xml",
+    "/cross",
+    "/timming",
+    "/tag",
+    "/domain-health"
+  ]
+}
