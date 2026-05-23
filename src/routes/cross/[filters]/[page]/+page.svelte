@@ -249,7 +249,7 @@
               <details class="group">
                 <summary class="text-sm font-medium cursor-pointer text-gray-700 list-none flex items-center justify-between">
                   {faq.question}
-                  <svg class="w-4 h-4 text-gray-400 transition-transform group-open:rotate-180 flex-shrink-0 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                  <span class="text-gray-400 transition-transform group-open:rotate-180 flex-shrink-0 ml-2">▼</span>
                 </summary>
                 <p class="mt-1 text-sm text-gray-500">{faq.answer}</p>
               </details>

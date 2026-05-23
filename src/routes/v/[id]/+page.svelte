@@ -19,7 +19,6 @@
     SITE_NAME
   } from '$lib/seo';
   import { addToHistory, updateHistoryProgress, flushProgress, addFavorite, removeFavorite, isFavorite } from '$lib/storage';
-  import { generateHighlights, generateRecommendation, generateRelatedSearches } from '$lib/content-generator';
 
   // ============ 类型定义 ============
   interface PlaySource {
@@ -40,15 +39,11 @@
   let playSources = $state<PlaySource[]>([]);
   let currentSourceIndex = $state(0);
   let hlsPlayer: any = null;
-  let showPlayButton = $state(false);
-  let isPlaying = $state(false);
-  let isLoadingVideo = false;
   let relatedVideos = $state<Video[]>([]);
   let favorited = $state(false);
 
   // ============ 派生状态 ============
   let videoId = $derived($page.params.id);
-  let currentSource = $derived(playSources[currentSourceIndex]);
 
   // ============ SEO 数据 ============
   let autoDescription = $derived(video ? generateAutoDescription(video) : '');
@@ -99,15 +94,10 @@
   }
 
   async function loadVideo() {
-    if (isLoadingVideo || (video && video.vod_id === videoId)) return;
-
-    isLoadingVideo = true;
     loading = true;
     errorMsg = '';
     playSources = [];
     currentSourceIndex = 0;
-    isPlaying = false;
-    showPlayButton = false;
     destroyPlayer();
 
     try {
@@ -123,7 +113,7 @@
 
       video = data.data;
 
-      // 解析播放源 - 处理格式: "第1集$url1#第2集$url2"
+      // 解析播放源
       playSources = [];
       (video.play_sources || []).forEach((s, i) => {
         const url = s.url;
@@ -161,12 +151,13 @@
       }
 
       // 直接播放第一个源
-      if (playSources.length > 0) playSource(0);
+      if (playSources.length > 0) {
+        setTimeout(() => playSource(0), 100);
+      }
     } catch (e: any) {
       errorMsg = e.name === 'TimeoutError' ? '请求超时，请重试' : '网络错误，请稍后重试';
     } finally {
       loading = false;
-      isLoadingVideo = false;
     }
   }
 
@@ -176,7 +167,7 @@
     if (!source) return;
 
     const videoEl = document.querySelector('video') as HTMLVideoElement | null;
-    if (!videoEl) { requestAnimationFrame(() => playSource(index)); return; }
+    if (!videoEl) { setTimeout(() => playSource(index), 50); return; }
 
     destroyPlayer();
 
@@ -184,104 +175,66 @@
       await playHls(videoEl, source.url);
     } else {
       videoEl.src = source.url;
-      videoEl.play().catch(() => { showPlayButton = true; });
+      videoEl.play().catch(() => {});
     }
   }
 
   async function playHls(videoEl: HTMLVideoElement, url: string) {
     try {
-      const { default: Hls } = await import('hls.js');
+      const { default: Hls } = await import('hls.js/light');
 
       if (Hls.isSupported()) {
-        // 原生HLS配置 - 5-10分钟超大缓冲区，保证不卡
-        hlsPlayer = new HlsClass({
-          // 启用Web Worker，不阻塞主线程
+        // 精简优化配置 - 5-10分钟缓冲区，极速加载
+        hlsPlayer = new Hls({
           enableWorker: true,
-          // 低延迟模式关闭，优先流畅
           lowLatencyMode: false,
           
-          // ========== 缓冲区配置（核心）==========
-          // 正常播放时缓冲区：5分钟（300秒）
+          // 缓冲区配置：5-10分钟
           maxBufferLength: 300,
-          // 最大缓冲区上限：10分钟（600秒）
           maxMaxBufferLength: 600,
-          // 最大缓冲区大小：200MB
-          maxBufferSize: 200 * 1000 * 1000,
-          // 缓冲区空洞容忍：0.5秒
-          maxBufferHole: 0.5,
-          // 后向缓冲区：90秒
-          backBufferLength: 90,
+          maxBufferSize: 0,
           
-          // ========== 直播配置 ==========
-          liveSyncDuration: 3,
-          liveMaxLatencyDuration: 10,
-          
-          // ========== ABR自适应码率 ==========
-          // 自动选择最佳码率
+          // 快速启动配置
           startLevel: -1,
-          // 默认带宽估计：1Mbps
-          abrEwmaDefaultEstimate: 1000000,
-          // 带宽因子：0.7（保守策略，保证流畅）
-          abrBandWidthFactor: 0.7,
-          // 带宽上升因子：0.5
-          abrBandWidthUpFactor: 0.5,
-          // 使用真实码率
-          abrMaxWithRealBitrate: true,
+          startFragPrefetch: true,
           
-          // ========== 加载超时配置 ==========
-          // 片段加载超时：30秒
-          fragLoadingTimeOut: 30000,
-          // manifest加载超时：15秒
-          manifestLoadingTimeOut: 15000,
-          // 级别加载超时：15秒
-          levelLoadingTimeOut: 15000,
+          // 加载超时
+          fragLoadingTimeOut: 20000,
+          manifestLoadingTimeOut: 10000,
+          levelLoadingTimeOut: 10000,
           
-          // ========== 重试配置 ==========
-          // 片段加载重试：6次
-          fragLoadingMaxRetry: 6,
-          // manifest加载重试：3次
-          manifestLoadingMaxRetry: 3,
-          // 级别加载重试：3次
-          levelLoadingMaxRetry: 3,
-          // 重试延迟：1秒
-          fragLoadingRetryDelay: 1000,
+          // 重试配置
+          fragLoadingMaxRetry: 3,
+          manifestLoadingMaxRetry: 2,
+          levelLoadingMaxRetry: 2,
+          fragLoadingRetryDelay: 500,
           
-          // ========== 其他优化 ==========
-          // 禁用字幕，减少开销
+          // 禁用所有非核心功能
           enableCEA708Captions: false,
           enableWebVTT: false,
           enableIMSC1: false,
           enableID3Metadata: false,
+          enableAES128KeyLoad: false,
+          enableSoftwareAES: false,
+          enableMP2TSDTS: false,
+          enableEPG: false,
+          enableMSE: true,
         });
 
         hlsPlayer.on(Hls.Events.MANIFEST_PARSED, () => {
-          videoEl.muted = true;
-          videoEl.play()
-            .then(() => { isPlaying = true; showPlayButton = false; setTimeout(() => { videoEl.muted = false; }, 300); })
-            .catch(() => { showPlayButton = true; });
-
-          videoEl.addEventListener('timeupdate', () => {
-            if (videoEl.duration > 0 && videoEl.currentTime > 0 && video) {
-              updateHistoryProgress(video.vod_id, videoEl.currentTime, videoEl.duration, playSources[currentSourceIndex]?.name || '');
-            }
-          });
+          videoEl.play().catch(() => {});
         });
 
         hlsPlayer.on(Hls.Events.ERROR, (_event: any, data: any) => {
           if (!data.fatal) return;
-          switch (data.type) {
-            case Hls.ErrorTypes.NETWORK_ERROR:
-              hlsPlayer?.startLoad();
-              break;
-            case Hls.ErrorTypes.MEDIA_ERROR:
-              hlsPlayer?.recoverMediaError();
-              break;
-            default:
-              // 尝试下一个线路
-              const nextIdx = currentSourceIndex + 1;
-              if (nextIdx < playSources.length) playSource(nextIdx);
-              else errorMsg = '所有线路均不可用，请稍后重试';
-              break;
+          if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+            hlsPlayer?.startLoad();
+          } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+            hlsPlayer?.recoverMediaError();
+          } else {
+            const nextIdx = currentSourceIndex + 1;
+            if (nextIdx < playSources.length) playSource(nextIdx);
+            else errorMsg = '播放失败，请重试';
           }
         });
 
@@ -289,9 +242,9 @@
         hlsPlayer.loadSource(url);
       } else if (videoEl.canPlayType('application/vnd.apple.mpegurl')) {
         videoEl.src = url;
-        videoEl.play().catch(() => { showPlayButton = true; });
+        videoEl.play().catch(() => {});
       } else {
-        errorMsg = '浏览器不支持HLS播放';
+        errorMsg = '浏览器不支持播放';
       }
     } catch {
       errorMsg = '播放器加载失败';
@@ -303,7 +256,7 @@
     if (hlsPlayer) { hlsPlayer.destroy(); hlsPlayer = null; }
   }
 
-  function retryLoad() { isLoadingVideo = false; loadVideo(); }
+  function retryLoad() { loadVideo(); }
 
   function formatDuration(seconds: number): string {
     if (seconds <= 0) return '';
@@ -326,12 +279,8 @@
     <meta property="og:title" content={video.title} />
     <meta property="og:description" content={seoDesc} />
     <meta property="og:image" content={video.cover} />
-    <meta property="og:image:alt" content={generateImageAlt({ title: video.title, category: video.category, vod_year: video.vod_year })} />
     <meta property="og:type" content="video.movie" />
     <meta property="og:url" content={canonicalUrl(`/v/${video.vod_id}`)} />
-    {#if video.vod_year}
-      <meta property="og:video:release_date" content={`${video.vod_year}-01-01`} />
-    {/if}
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content={video.title} />
     <meta name="twitter:description" content={seoDesc} />
@@ -354,7 +303,7 @@
 <div class="min-h-screen bg-gray-50">
   <!-- Header -->
   <header class="sticky top-0 bg-white/95 backdrop-blur-sm border-b border-gray-100 px-3 py-2 z-50 flex items-center gap-2">
-    <a href="/" class="text-gray-600 text-xl leading-none" aria-label="返回首页">←</a>
+    <a href="/" class="text-gray-600 text-xl leading-none">←</a>
     <h1 class="text-lg font-bold text-pink-500 truncate flex-1">{video?.title || '视频详情'}</h1>
   </header>
 
@@ -367,23 +316,19 @@
     {:else if errorMsg}
       <div class="flex flex-col items-center justify-center py-20">
         <p class="text-red-500 text-sm mb-4">{errorMsg}</p>
-        <button onclick={retryLoad} class="px-4 py-2 bg-pink-500 text-white text-sm rounded-lg active:bg-pink-600">重新加载</button>
+        <button onclick={retryLoad} class="px-4 py-2 bg-pink-500 text-white text-sm rounded-lg">重新加载</button>
       </div>
     {:else if video}
       <!-- 面包屑 -->
       <nav aria-label="面包屑" class="bg-white px-3 py-2 text-sm border-b">
-        <ol class="flex items-center gap-1" itemscope itemtype="https://schema.org/BreadcrumbList">
+        <ol class="flex items-center gap-1">
           {#each breadcrumbs as crumb, i}
-            <li itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem" class="flex items-center">
+            <li class="flex items-center">
               {#if i > 0}<span class="text-gray-400 mx-1">/</span>{/if}
               {#if i < breadcrumbs.length - 1}
-                <a href={crumb.url} class="text-pink-500 hover:underline" itemprop="item">
-                  <span itemprop="name">{crumb.name}</span>
-                </a>
-                <meta itemprop="position" content={String(i + 1)} />
+                <a href={crumb.url} class="text-pink-500">{crumb.name}</a>
               {:else}
-                <span class="text-gray-600" itemprop="name">{crumb.name}</span>
-                <meta itemprop="position" content={String(i + 1)} />
+                <span class="text-gray-600">{crumb.name}</span>
               {/if}
             </li>
           {/each}
@@ -395,38 +340,22 @@
         <video controls playsinline preload="auto" class="w-full h-full" poster={video.cover}>
           您的浏览器不支持视频播放
         </video>
-        {#if showPlayButton && !isPlaying}
-          <div
-            class="absolute inset-0 flex items-center justify-center bg-black/50 cursor-pointer"
-            role="button" tabindex="0" aria-label="点击播放"
-            onclick={() => {
-              const el = document.querySelector('video') as HTMLVideoElement;
-              if (el) el.play().then(() => { isPlaying = true; showPlayButton = false; }).catch(() => {});
-            }}
-          >
-            <div class="w-20 h-20 bg-white/90 rounded-full flex items-center justify-center">
-              <svg class="w-10 h-10 text-pink-500 ml-1" fill="currentColor" viewBox="0 0 24 24">
-                <path d="M8 5v14l11-7z" />
-              </svg>
-            </div>
-          </div>
-        {/if}
       </div>
 
       <!-- 视频信息 -->
-      <article class="p-3 bg-white" itemscope itemtype="https://schema.org/Movie">
-        <h1 class="text-lg font-bold mb-2" itemprop="name">{video.title}</h1>
+      <article class="p-3 bg-white">
+        <h1 class="text-lg font-bold mb-2">{video.title}</h1>
         <div class="flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-500 mb-2">
-          {#if video.category}<span itemprop="genre">{video.category}</span>{/if}
-          {#if video.vod_year}<span itemprop="datePublished">{video.vod_year}</span>{/if}
+          {#if video.category}<span>{video.category}</span>{/if}
+          {#if video.vod_year}<span>{video.vod_year}</span>{/if}
           {#if video.vod_area}<span>{video.vod_area}</span>{/if}
           {#if video.vod_remarks}<span class="text-pink-500">{video.vod_remarks}</span>{/if}
         </div>
         {#if video.vod_director}
-          <div class="text-sm mb-1"><span class="text-gray-500">导演：</span><span itemprop="director">{video.vod_director}</span></div>
+          <div class="text-sm mb-1"><span class="text-gray-500">导演：</span><span>{video.vod_director}</span></div>
         {/if}
         {#if video.vod_actor}
-          <div class="text-sm"><span class="text-gray-500">演员：</span><span itemprop="actor">{video.vod_actor}</span></div>
+          <div class="text-sm"><span class="text-gray-500">演员：</span><span>{video.vod_actor}</span></div>
         {/if}
       </article>
 
@@ -439,10 +368,7 @@
           }}
           class="flex items-center gap-1 px-4 py-2 text-sm rounded-full transition-colors {favorited ? 'bg-pink-500 text-white' : 'bg-gray-100 text-gray-600'}"
         >
-          <svg class="w-4 h-4" fill={favorited ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
-          </svg>
-          {favorited ? '已收藏' : '收藏'}
+          {favorited ? '♥' : '♡'} {favorited ? '已收藏' : '收藏'}
         </button>
       </div>
 
@@ -454,7 +380,7 @@
             {#each playSources as source, idx}
               <button
                 onclick={() => playSource(idx)}
-                class="px-3 py-1.5 text-sm rounded transition-colors {currentSourceIndex === idx ? 'bg-pink-500 text-white' : 'bg-gray-100 active:bg-gray-200'}"
+                class="px-3 py-1.5 text-sm rounded transition-colors {currentSourceIndex === idx ? 'bg-pink-500 text-white' : 'bg-gray-100'}"
               >
                 {source.name}
                 {#if source.duration > 0}
@@ -464,53 +390,13 @@
             {/each}
           </div>
         </section>
-      {:else if playSources.length === 1}
-        <section class="mt-2 bg-white p-3">
-          <span class="text-sm text-gray-500">{playSources[0].name}</span>
-        </section>
       {/if}
 
       <!-- 简介 -->
       <section class="mt-2 bg-white p-3">
         <h3 class="font-medium mb-2">简介</h3>
-        <p class="text-sm text-gray-600 leading-relaxed" itemprop="description">{autoDescription}</p>
-        {#if video}
-          {@const highlights = generateHighlights(video)}
-          {#if highlights.length > 0}
-            <div class="flex flex-wrap gap-2 mt-3">
-              {#each highlights as h}
-                <span class="px-2 py-1 bg-pink-50 text-pink-600 text-xs rounded-full">{h}</span>
-              {/each}
-            </div>
-          {/if}
-        {/if}
+        <p class="text-sm text-gray-600 leading-relaxed">{autoDescription}</p>
       </section>
-
-      <!-- 推荐理由 -->
-      {#if video}
-        {@const recommendation = generateRecommendation(video)}
-        {#if recommendation}
-          <section class="mt-2 bg-white p-3">
-            <h3 class="font-medium mb-2">推荐理由</h3>
-            <p class="text-sm text-gray-600 leading-relaxed">{recommendation}</p>
-          </section>
-        {/if}
-      {/if}
-
-      <!-- 相关搜索 -->
-      {#if video}
-        {@const relatedSearches = generateRelatedSearches(video)}
-        {#if relatedSearches.length > 0}
-          <section class="mt-2 bg-white p-3">
-            <h3 class="font-medium mb-2">相关搜索</h3>
-            <div class="flex flex-wrap gap-2">
-              {#each relatedSearches as term}
-                <a href="/search/{encodeURIComponent(term)}/1" class="px-2 py-1 bg-gray-100 text-gray-600 text-xs rounded hover:bg-pink-50 hover:text-pink-600 transition-colors">{term}</a>
-              {/each}
-            </div>
-          </section>
-        {/if}
-      {/if}
 
       <!-- 相关视频 -->
       {#if relatedVideos.length > 0}

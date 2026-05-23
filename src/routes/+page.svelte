@@ -1,27 +1,59 @@
 <script lang="ts">
   import type { PageData } from './$types';
+  import { generateOrganizationSchema, generateWebSiteSchema, SITE_URL, SITE_NAME } from '$lib/seo';
 
   let { data }: { data: PageData } = $props();
+
+  // 首页FAQ结构化数据
+  const homeFAQ = [
+    { question: '必爱必爱是什么网站？', answer: '必爱必爱是一个免费在线观看最新电影、电视剧、综艺、动漫的视频网站，高清流畅，支持手机观看。' },
+    { question: '必爱必爱收费吗？', answer: '必爱必爱完全免费，无需注册即可观看所有视频内容。' },
+    { question: '手机可以观看吗？', answer: '可以，必爱必爱支持手机、平板、电脑等多种设备在线观看。' }
+  ];
 </script>
 
 <svelte:head>
   <title>必爱必爱 - 免费在线观看最新电影、电视剧、综艺、动漫</title>
-  <meta name="description" content="必爱必爱提供最新电影、电视剧、综艺、动漫免费在线观看，高清流畅，手机观看。" />
-  <meta name="keywords" content="电影,电视剧,综艺,动漫,免费观看,在线观看" />
+  <meta name="description" content="必爱必爱提供最新电影、电视剧、综艺、动漫免费在线观看，高清流畅，支持手机观看，无需注册。" />
+  <meta name="keywords" content="电影,电视剧,综艺,动漫,免费观看,在线观看,高清电影,最新电视剧,必爱必爱" />
   <link rel="canonical" href="https://evideos.pages.dev/" />
-  <meta property="og:title" content="必爱必爱 - 免费在线观看" />
-  <meta property="og:description" content="最新电影、电视剧、综艺、动漫免费在线观看" />
+  
+  <!-- Open Graph -->
+  <meta property="og:title" content="必爱必爱 - 免费在线观看最新电影、电视剧、综艺、动漫" />
+  <meta property="og:description" content="必爱必爱提供最新电影、电视剧、综艺、动漫免费在线观看，高清流畅，支持手机观看。" />
   <meta property="og:type" content="website" />
   <meta property="og:url" content="https://evideos.pages.dev/" />
+  <meta property="og:image" content="https://evideos.pages.dev/icon-512.png" />
+  <meta property="og:site_name" content="必爱必爱" />
+  <meta property="og:locale" content="zh_CN" />
+  
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="必爱必爱 - 免费在线观看最新电影、电视剧、综艺、动漫" />
+  <meta name="twitter:description" content="必爱必爱提供最新电影、电视剧、综艺、动漫免费在线观看，高清流畅。" />
+  <meta name="twitter:image" content="https://evideos.pages.dev/icon-512.png" />
+  
+  <!-- JSON-LD 结构化数据 -->
+  {@html `<script type="application/ld+json">${JSON.stringify(generateOrganizationSchema())}</script>`}
+  {@html `<script type="application/ld+json">${JSON.stringify(generateWebSiteSchema())}</script>`}
+  {@html `<script type="application/ld+json">${JSON.stringify({
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    "mainEntity": homeFAQ.map(faq => ({
+      "@type": "Question",
+      "name": faq.question,
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": faq.answer
+      }
+    }))
+  })}</script>`}
 </svelte:head>
 
 <div class="min-h-screen bg-gray-50">
   <!-- 搜索框 - 纯HTML form，零JS -->
   <header class="sticky top-0 bg-white border-b border-gray-100 px-3 py-2 z-50">
     <form action="/search" method="get" class="flex items-center h-9 px-3 bg-gray-100 rounded-lg">
-      <svg class="w-4 h-4 text-gray-400 mr-2 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-      </svg>
       <input
         name="q"
         type="text"
@@ -48,13 +80,6 @@
                 fetchpriority={i < 4 ? 'high' : 'auto'}
                 class="absolute inset-0 w-full h-full object-cover"
               />
-              <div class="absolute inset-0 flex items-center justify-center bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity">
-                <div class="w-12 h-12 bg-white/90 rounded-full flex items-center justify-center">
-                  <svg class="w-6 h-6 text-pink-500 ml-1" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M8 5v14l11-7z" />
-                  </svg>
-                </div>
-              </div>
               {#if video.duration}
                 <div class="absolute bottom-1 right-1 px-1.5 py-0.5 bg-black/70 text-white text-xs rounded">
                   {video.duration}

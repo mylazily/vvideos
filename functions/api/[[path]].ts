@@ -12,9 +12,104 @@ export interface Env {
 	CACHE: KVNamespace;
 	ADMIN_PASSWORD: string;
 	VIDEOS_KV: KVNamespace;
+	ASSETS: Fetcher;
 }
 
 import { getBlockedDomains } from './domain-health';
+
+// SPA fallback HTML - 直接嵌入 200.html 内容，避免 CF Pages Functions 内部请求问题
+const SPA_HTML = `<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    
+    <!-- Favicon -->
+    <link rel="icon" href="/favicon.png" />
+    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+    
+    <!-- SEO -->
+    <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1" />
+    <meta name="googlebot" content="index, follow" />
+    <meta name="baiduspider" content="index, follow" />
+    <meta name="format-detection" content="telephone=no" />
+    <link rel="canonical" href="https://evideos.pages.dev/" />
+
+    <!-- Open Graph -->
+    <meta property="og:site_name" content="必爱必爱" />
+    <meta property="og:locale" content="zh_CN" />
+    <meta property="og:type" content="website" />
+    <meta property="og:image" content="/icon.svg" />
+    <meta property="og:image:width" content="512" />
+    <meta property="og:image:height" content="512" />
+    
+    <!-- 关键CSS内联 -->
+    <style>
+      html { background-color: #f9fafb; }
+      body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+    </style>
+    
+    <link href="/_app/immutable/entry/start.CE6hAcdg.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/Mpm0Mn0p.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/BQ-_32WO.js" rel="modulepreload">
+		<link href="/_app/immutable/entry/app.DzymNt7g.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/0.CUyECfrS.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/NHEufRxa.js" rel="modulepreload">
+		
+		<link href="/_app/immutable/assets/0.BJqnn7L4.css" rel="stylesheet">
+  </head>
+  <body>
+    <script>
+      // 立即执行：检测被屏蔽的APP/浏览器，直接跳转引导页
+      (function() {
+        var ua = navigator.userAgent.toLowerCase();
+        var isBlocked = false;
+        
+        // 完全屏蔽的APP（内置浏览器无法正常使用）
+        if (ua.indexOf('micromessenger') !== -1) isBlocked = true;      // 微信
+        else if (ua.indexOf('weibo') !== -1) isBlocked = true;          // 微博
+        else if (ua.indexOf('qq/') !== -1 || ua.indexOf('mqqbrowser') !== -1) isBlocked = true; // QQ
+        else if (ua.indexOf('aweme') !== -1 || ua.indexOf('douyin') !== -1) isBlocked = true;   // 抖音
+        else if (ua.indexOf('newsarticle') !== -1 || ua.indexOf('bytedance') !== -1) isBlocked = true; // 今日头条
+        else if (ua.indexOf('alipay') !== -1) isBlocked = true;         // 支付宝
+        else if (ua.indexOf('baiduboxapp') !== -1) isBlocked = true;    // 百度APP
+        
+        // 体验受限的国产浏览器（建议跳转）
+        else if (ua.indexOf('ucbrowser') !== -1 || ua.indexOf('ucweb') !== -1) isBlocked = true; // UC
+        else if (ua.indexOf('360se') !== -1 || ua.indexOf('360ee') !== -1) isBlocked = true;     // 360
+        else if (ua.indexOf('sogou') !== -1 && /mobile/.test(ua)) isBlocked = true;              // 搜狗移动版
+        else if (ua.indexOf('liebao') !== -1 || ua.indexOf('lbbrowser') !== -1) isBlocked = true; // 猎豹
+        else if (ua.indexOf('baidu') !== -1 && /mobile/.test(ua)) isBlocked = true;              // 百度移动版
+        else if (ua.indexOf('miui') !== -1 || (ua.indexOf('xiaomi') !== -1 && /mobile/.test(ua))) isBlocked = true; // 小米
+        else if (ua.indexOf('huawei') !== -1 || ua.indexOf('harmony') !== -1) isBlocked = true;   // 华为
+        else if (ua.indexOf('vivo') !== -1 && /mobile/.test(ua)) isBlocked = true;               // vivo
+        else if (ua.indexOf('oppo') !== -1 && /mobile/.test(ua)) isBlocked = true;               // OPPO
+        
+        if (isBlocked && !location.pathname.includes('/blocked.html')) {
+          location.replace('/blocked.html');
+        }
+      })();
+    </script>
+    <div style="display: contents">
+			<script>
+				{
+					__sveltekit_1lzbl0c = {
+						base: ""
+					};
+
+					const element = document.currentScript.parentElement;
+
+					Promise.all([
+						import("/_app/immutable/entry/start.CE6hAcdg.js"),
+						import("/_app/immutable/entry/app.DzymNt7g.js")
+					]).then(([kit, app]) => {
+						kit.start(app, element);
+					});
+				}
+			</script>
+		</div>
+  </body>
+</html>`;
 
 // 屏蔽域名缓存 - 避免每次请求都查询KV
 let blockedDomainsCache: string[] = [];
@@ -147,7 +242,7 @@ async function setCache(request: Request, env: Env, key: string, data: any, cach
 }
 
 // 格式化视频数据（提取播放源列表）
-async function formatVideoDetail(row: VideoRow) {
+async function formatVideoDetail(row: VideoRow, env: Env) {
 	const playSources = [];
 	if (row.play_url_1) playSources.push({ url: row.play_url_1, duration: row.duration_1 });
 	if (row.play_url_2) playSources.push({ url: row.play_url_2, duration: row.duration_2 });
@@ -191,13 +286,27 @@ async function formatVideoDetail(row: VideoRow) {
 }
 
 export const onRequest: PagesFunction<Env> = async (context) => {
-	const { request, env } = context;
+	const { request, env, next } = context;
 	const url = new URL(request.url);
 	const path = url.pathname;
 
 	if (request.method === 'OPTIONS') {
 		return new Response(null, {
 			headers: { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type' }
+		});
+	}
+
+	// SPA 路由：直接返回嵌入的 200.html 内容
+	// 匹配所有非 API、非静态资源的路由
+	if (!path.startsWith('/api/') && !path.startsWith('/collect/') && 
+			!path.startsWith('/_app/') && !path.startsWith('/static/') &&
+			!path.match(/\.(css|js|json|png|jpg|svg|ico|webp|woff|woff2|ttf|eot)$/)) {
+		return new Response(SPA_HTML, {
+			status: 200,
+			headers: {
+				'content-type': 'text/html; charset=utf-8',
+				'cache-control': 'public, max-age=3600'
+			}
 		});
 	}
 
@@ -245,7 +354,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 			const row = results.find(r => r !== null);
 			if (!row) return json({ success: false, message: '视频不存在' }, 404);
 
-			const video = await formatVideoDetail(row);
+			const video = await formatVideoDetail(row, env);
 
 			// 异步更新浏览量
 			const shardIdx = results.indexOf(row);

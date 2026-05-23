@@ -9,17 +9,14 @@ export default defineConfig({
 			output: {
 				// 手动分包策略
 				manualChunks: (id) => {
-					// hls.js 必须单独分包，只在播放页加载
-					if (id.includes('hls.js')) {
+					// hls.js light版本单独分包，只在播放页加载
+					if (id.includes('hls.js/dist/hls.light')) {
 						return 'hls';
 					}
-
 					// 只分包 node_modules
 					if (!id.includes('node_modules')) return;
-
 					// 核心框架
 					if (id.includes('svelte')) return 'svelte';
-
 					// 其他第三方库
 					return 'vendor';
 				},

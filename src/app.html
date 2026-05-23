@@ -23,6 +23,10 @@
     <meta property="og:image:width" content="512" />
     <meta property="og:image:height" content="512" />
     
+    <!-- 预连接：加速图片CDN和API -->
+    <link rel="preconnect" href="https://xinlangtupian.com" crossorigin />
+    <link rel="dns-prefetch" href="https://xinlangtupian.com" />
+    
     <!-- 关键CSS内联 -->
     <style>
       html { background-color: #f9fafb; }
@@ -32,37 +36,6 @@
     %sveltekit.head%
   </head>
   <body>
-    <script>
-      // 立即执行：检测被屏蔽的APP/浏览器，直接跳转引导页
-      (function() {
-        var ua = navigator.userAgent.toLowerCase();
-        var isBlocked = false;
-        
-        // 完全屏蔽的APP（内置浏览器无法正常使用）
-        if (ua.indexOf('micromessenger') !== -1) isBlocked = true;      // 微信
-        else if (ua.indexOf('weibo') !== -1) isBlocked = true;          // 微博
-        else if (ua.indexOf('qq/') !== -1 || ua.indexOf('mqqbrowser') !== -1) isBlocked = true; // QQ
-        else if (ua.indexOf('aweme') !== -1 || ua.indexOf('douyin') !== -1) isBlocked = true;   // 抖音
-        else if (ua.indexOf('newsarticle') !== -1 || ua.indexOf('bytedance') !== -1) isBlocked = true; // 今日头条
-        else if (ua.indexOf('alipay') !== -1) isBlocked = true;         // 支付宝
-        else if (ua.indexOf('baiduboxapp') !== -1) isBlocked = true;    // 百度APP
-        
-        // 体验受限的国产浏览器（建议跳转）
-        else if (ua.indexOf('ucbrowser') !== -1 || ua.indexOf('ucweb') !== -1) isBlocked = true; // UC
-        else if (ua.indexOf('360se') !== -1 || ua.indexOf('360ee') !== -1) isBlocked = true;     // 360
-        else if (ua.indexOf('sogou') !== -1 && /mobile/.test(ua)) isBlocked = true;              // 搜狗移动版
-        else if (ua.indexOf('liebao') !== -1 || ua.indexOf('lbbrowser') !== -1) isBlocked = true; // 猎豹
-        else if (ua.indexOf('baidu') !== -1 && /mobile/.test(ua)) isBlocked = true;              // 百度移动版
-        else if (ua.indexOf('miui') !== -1 || (ua.indexOf('xiaomi') !== -1 && /mobile/.test(ua))) isBlocked = true; // 小米
-        else if (ua.indexOf('huawei') !== -1 || ua.indexOf('harmony') !== -1) isBlocked = true;   // 华为
-        else if (ua.indexOf('vivo') !== -1 && /mobile/.test(ua)) isBlocked = true;               // vivo
-        else if (ua.indexOf('oppo') !== -1 && /mobile/.test(ua)) isBlocked = true;               // OPPO
-        
-        if (isBlocked && !location.pathname.includes('/blocked.html')) {
-          location.replace('/blocked.html');
-        }
-      })();
-    </script>
     <div style="display: contents">%sveltekit.body%</div>
   </body>
 </html>

@@ -5,8 +5,6 @@
 	import { navigating } from '$app/stores';
 
 	import { browser } from '$app/environment';
-	import { applySubdomainSEO } from '$lib/subdomain';
-	import { detectBrowser } from '$lib/browser-detect';
 
 	let { children }: { children: Snippet } = $props();
 
@@ -55,22 +53,14 @@
 			}
 		};
 
-		// 浏览器检测
-		const checkBrowser = () => {
+		// 浏览器检测 - 动态导入避免增加基础chunk体积
+		const checkBrowser = async () => {
+			const { applySubdomainSEO } = await import('$lib/subdomain');
+			const { detectBrowser } = await import('$lib/browser-detect');
 			applySubdomainSEO();
 			const browserInfo = detectBrowser();
 			if (browserInfo.isBlocked) {
-				const hardBlockedApps = ['wechat', 'qq', 'weibo', 'douyin', 'toutiao', 'alipay', 'baidu_app'];
-				if (hardBlockedApps.includes(browserInfo.type)) {
-					displayMode = 2;
-				} else {
-					const d = localStorage.getItem('guide_dismissed');
-					if (d) {
-						const dismissedTime = parseInt(d);
-						if (Date.now() - dismissedTime < 60 * 60 * 1000) return;
-					}
-					displayMode = 2;
-				}
+				displayMode = 2;
 			}
 		};
 

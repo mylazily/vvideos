@@ -1,5 +1,5 @@
 {
   "version": 1,
-  "include": ["/api/*", "/collect/*", "/health", "/sitemap.xml", "/video-sitemap.xml", "/rss.xml", "/cross", "/timming", "/tag", "/domain-health"],
-  "exclude": []
+  "include": ["/*"],
+  "exclude": ["/_app/*", "/static/*", "/favicon.png", "/icon.svg", "/icon-192.png", "/icon-512.png", "/manifest.json", "/robots.txt", "/sw.js", "/blocked.html", "/index.html", "/200.html", "/*.css", "/*.js", "/*.png", "/*.jpg", "/*.svg", "/*.ico", "/*.webp", "/*.woff", "/*.woff2", "/*.ttf", "/*.eot"]
 }

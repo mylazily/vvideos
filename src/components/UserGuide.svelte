@@ -161,14 +161,10 @@
         <button onclick={copyUrl}
           class="w-full py-3.5 bg-white/15 backdrop-blur-sm text-white rounded-xl font-medium hover:bg-white/25 transition-colors flex items-center justify-center gap-2">
           {#if copied}
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
-            </svg>
+            ✓
             已复制链接
           {:else}
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-            </svg>
+            📋
             复制链接，在浏览器打开
           {/if}
         </button>
@@ -231,10 +227,7 @@
         <button onclick={copyUrl}
           class="w-full py-3 bg-gray-100 text-gray-700 rounded-xl font-medium hover:bg-gray-200 transition-colors flex items-center justify-center gap-2 mb-4">
           {#if copied}
-            <svg class="w-5 h-5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
-            </svg>
-            已复制
+            ✓ 已复制
           {:else}
             复制链接
           {/if}

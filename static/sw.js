@@ -1,8 +1,13 @@
-// Service Worker v8 - 强制刷新版本
-const STATIC_CACHE = 'evideos-static-v8';
-const IMAGE_CACHE = 'evideos-images-v8';
-const API_CACHE = 'evideos-api-v8';
-const CACHE_VERSION = 'v8';
+// Service Worker v9 - 极速缓存版本
+const STATIC_CACHE = 'evideos-static-v9';
+const IMAGE_CACHE = 'evideos-images-v9';
+const API_CACHE = 'evideos-api-v9';
+const CACHE_VERSION = 'v9';
+
+// 缓存TTL（毫秒）
+const API_TTL = 5 * 60 * 1000;       // API缓存5分钟
+const HTML_TTL = 30 * 60 * 1000;     // HTML缓存30分钟
+const IMAGE_MAX = 500;                // 图片缓存上限500张
 
 // 核心资源（安装时预缓存）
 const CORE_ASSETS = [
@@ -28,93 +33,95 @@ self.addEventListener('activate', (event) => {
       return Promise.all(
         keys
           .filter((key) => key.startsWith('evideos-') && !key.includes(CACHE_VERSION))
-          .map((key) => {
-            console.log('[SW] 删除旧缓存:', key);
-            return caches.delete(key);
-          })
+          .map((key) => caches.delete(key))
       );
-    }).then(() => {
-      console.log('[SW] v8 激活，旧缓存已清理');
-      return self.clients.claim();
-    })
+    }).then(() => self.clients.claim())
   );
 });
 
-// ======== 缓存策略 ========
-
-// 1. 静态资源：缓存优先，后台更新
-async function staticStrategy(request) {
-  const cache = await caches.open(STATIC_CACHE);
+// ======== 带TTL的缓存读写 ========
+async function cacheGet(cacheName, request, ttl) {
+  const cache = await caches.open(cacheName);
   const cached = await cache.match(request);
-
-  const fetchAndUpdate = fetch(request).then((response) => {
-    if (response.ok) cache.put(request, response.clone());
-    return response;
-  }).catch(() => cached);
-
-  // 如果有缓存立即返回，同时后台更新
-  if (cached) {
-    fetchAndUpdate.catch(() => {});
-    return cached;
-  }
-
-  return fetchAndUpdate;
+  if (!cached) return null;
+  if (!ttl) return cached;
+  const dateHeader = cached.headers.get('sw-cache-time');
+  if (dateHeader && (Date.now() - parseInt(dateHeader)) > ttl) return null;
+  return cached;
 }
 
-// 2. 图片：缓存优先
-async function imageStrategy(request) {
-  const cache = await caches.open(IMAGE_CACHE);
-  const cached = await cache.match(request);
+async function cacheSet(cacheName, request, response, ttl) {
+  const cache = await caches.open(cacheName);
+  if (ttl) {
+    const headers = new Headers(response.headers);
+    headers.set('sw-cache-time', String(Date.now()));
+    const body = await response.blob();
+    const newResponse = new Response(body, { status: response.status, statusText: response.statusText, headers });
+    cache.put(request, newResponse);
+  } else {
+    cache.put(request, response.clone());
+  }
+}
 
+// ======== 缓存策略 ========
+
+// 1. 静态资源：缓存优先（文件名带hash，永不过期）
+async function staticStrategy(request) {
+  const cached = await cacheGet(STATIC_CACHE, request, 0);
   if (cached) return cached;
+  try {
+    const response = await fetch(request);
+    if (response.ok) cacheSet(STATIC_CACHE, request, response, 0);
+    return response;
+  } catch {
+    return cached || new Response('', { status: 404 });
+  }
+}
 
+// 2. 图片：缓存优先（LRU，上限500张）
+async function imageStrategy(request) {
+  const cached = await cacheGet(IMAGE_CACHE, request, 0);
+  if (cached) return cached;
   try {
     const response = await fetch(request);
     if (response.ok) {
-      // 限制缓存数量
+      const cache = await caches.open(IMAGE_CACHE);
       const keys = await cache.keys();
-      if (keys.length >= 200) {
+      if (keys.length >= IMAGE_MAX) {
         await cache.delete(keys[0]);
       }
-      cache.put(request, response.clone());
+      cacheSet(IMAGE_CACHE, request, response, 0);
     }
     return response;
   } catch {
-    return new Response('', { status: 404 });
+    return cached || new Response('', { status: 404 });
   }
 }
 
-// 3. API：网络优先，缓存兜底（5分钟）
+// 3. API：网络优先，缓存兜底（5分钟TTL）
 async function apiStrategy(request) {
-  const cache = await caches.open(API_CACHE);
-  
+  const cached = await cacheGet(API_CACHE, request, API_TTL);
   try {
-    const networkResponse = await fetch(request);
-    if (networkResponse.ok) {
-      cache.put(request, networkResponse.clone());
-      return networkResponse;
+    const response = await fetch(request);
+    if (response.ok) {
+      cacheSet(API_CACHE, request, response, API_TTL);
+      return response;
     }
-  } catch (e) {
-    // 网络失败，尝试缓存
-    const cached = await cache.match(request);
-    if (cached) return cached;
+    return cached || response;
+  } catch {
+    return cached || new Response(JSON.stringify({ error: 'Network error' }), {
+      status: 503, headers: { 'Content-Type': 'application/json' }
+    });
   }
-  
-  return new Response(JSON.stringify({ error: 'Network error' }), {
-    status: 503,
-    headers: { 'Content-Type': 'application/json' }
-  });
 }
 
 // ======== 请求拦截 ========
 self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
-
-  // 只处理GET请求
   if (request.method !== 'GET') return;
 
-  // API请求：网络优先
+  // API
   if (url.pathname.startsWith('/api/')) {
     event.respondWith(apiStrategy(request));
     return;
@@ -126,24 +133,26 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // 静态资源
+  // 静态资源（JS/CSS/字体）
   if (/\.(js|css|woff2?)$/.test(url.pathname)) {
     event.respondWith(staticStrategy(request));
     return;
   }
 
-  // HTML页面：网络优先，缓存兜底
+  // HTML：网络优先，缓存兜底（30分钟TTL）
   event.respondWith(
-    fetch(request)
-      .then((response) => {
+    (async () => {
+      const cached = await cacheGet(STATIC_CACHE, request, HTML_TTL);
+      try {
+        const response = await fetch(request);
         if (response.ok) {
-          const clone = response.clone();
-          caches.open(STATIC_CACHE).then((c) => c.put(request, clone));
+          cacheSet(STATIC_CACHE, request, response, HTML_TTL);
+          return response;
         }
-        return response;
-      })
-      .catch(() => caches.match(request).then((c) => c || caches.match('/')))
+        return cached || response;
+      } catch {
+        return cached || caches.match('/');
+      }
+    })()
   );
 });
-
-console.log('[SW] Service Worker v8 active - 全站缓存策略');
