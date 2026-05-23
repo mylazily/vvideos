@@ -86,12 +86,9 @@ export default defineConfig({
 	},
 	// 实验性功能 - Vite 8
 	experimental: {
-		// 优化构建性能
+		// 优化构建性能 - 使用绝对路径确保SPA路由正确加载
 		renderBuiltUrl: (filename, { hostType }) => {
-			if (hostType === 'js') {
-				return { relative: true };
-			}
-			return { relative: true };
+			return '/' + filename;
 		}
 	}
 });
