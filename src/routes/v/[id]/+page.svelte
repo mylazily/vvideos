@@ -12,7 +12,6 @@
     generateBreadcrumbSchema,
     generateOrganizationSchema,
     generateWebPageSchema,
-    generateFAQSchema,
     canonicalUrl,
     SITE_URL,
     SITE_NAME
@@ -343,7 +342,6 @@
     {@html `<script type="application/ld+json">${JSON.stringify(generateBreadcrumbSchema(breadcrumbs))}</script>`}
     {@html `<script type="application/ld+json">${JSON.stringify(generateOrganizationSchema())}</script>`}
     {@html `<script type="application/ld+json">${JSON.stringify(generateWebPageSchema({ title: seoTitle, description: seoDesc, url: canonicalUrl(`/v/${video.vod_id}`) }))}</script>`}
-    {@html `<script type="application/ld+json">${JSON.stringify(generateFAQSchema(faqs))}</script>`}
   {:else}
     <title>视频详情 - {SITE_NAME}</title>
     <meta name="robots" content="noindex, follow" />
