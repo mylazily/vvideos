@@ -7,7 +7,6 @@
   }
 
   let { video, loading = 'lazy' }: Props = $props();
-
   let imageLoaded = $state(false);
   let imageError = $state(false);
 
@@ -41,20 +40,10 @@
         <span class="text-xs text-gray-400">加载失败</span>
       </div>
     {/if}
-    {#if video.duration}
-      <div class="absolute bottom-1 right-1 px-1.5 py-0.5 bg-black/70 text-white text-xs rounded">
-        {video.duration}
-      </div>
-    {/if}
   </div>
   <h3 class="mt-1.5 text-sm text-gray-800 line-clamp-2 group-hover:text-pink-500 transition-colors">
     {video.title}
   </h3>
-  {#if video.category || video.vod_remarks}
-    <p class="mt-0.5 text-xs text-gray-400 truncate">
-      {video.category || ''}{video.vod_remarks ? ' · ' + video.vod_remarks : ''}
-    </p>
-  {/if}
 </a>
 
 <style>

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, tick } from 'svelte';
+  import { onMount } from 'svelte';
   import { page } from '$app/stores';
   import NavBar from '$components/NavBar.svelte';
   import VideoCard from '$components/VideoCard.svelte';
@@ -17,6 +17,9 @@
     SITE_NAME
   } from '$lib/seo';
   import { addToHistory, updateHistoryProgress, flushProgress, addFavorite, removeFavorite, isFavorite } from '$lib/storage';
+
+  // HLS.js 类型声明（CDN加载为全局变量）
+  declare const Hls: any;
 
   // ============ 类型定义 ============
   interface PlaySource {
@@ -40,7 +43,6 @@
   let relatedVideos = $state<Video[]>([]);
   let favorited = $state(false);
   let playerLoading = $state(false);
-  let HlsModule: any = null;
   let videoEl: HTMLVideoElement | null = $state(null);
 
   // ============ 派生状态 ============
@@ -48,20 +50,9 @@
 
   // ============ 生命周期 ============
   onMount(() => {
-    // 三路并行：HLS.js预加载 + API数据 + video元素引用
-    preloadHls();
     loadVideo();
     return () => destroyPlayer();
   });
-
-  // 预加载 HLS.js（不阻塞渲染）
-  async function preloadHls() {
-    try {
-      HlsModule = (await import('hls.js/light')).default;
-    } catch {
-      // 静默失败，播放时再尝试
-    }
-  }
 
   // 预连接 m3u8 域名（节省 DNS + TCP + TLS 时间）
   function prefetchStreamDomain(url: string) {
@@ -222,38 +213,35 @@
 
   async function playHls(videoEl: HTMLVideoElement, url: string) {
     try {
-      const Hls = HlsModule || (await import('hls.js/light')).default;
+      const canNative = videoEl.canPlayType('application/vnd.apple.mpegurl');
+      if (canNative) {
+        // Safari原生HLS
+        playerLoading = false;
+        videoEl.src = url;
+        videoEl.load();
+        videoEl.play().catch(() => {});
+        return;
+      }
 
-      if (Hls.isSupported()) {
+      if (typeof Hls !== 'undefined' && Hls.isSupported()) {
         hlsPlayer = new Hls({
           enableWorker: true,
           lowLatencyMode: false,
-
-          // 缓冲区配置：首帧极速
-          maxBufferLength: 10,         // 首帧只需10秒缓冲即可开始播放
-          maxMaxBufferLength: 300,     // 播放后逐步缓冲到5分钟
+          maxBufferLength: 5,
+          maxMaxBufferLength: 30,
           maxBufferSize: 50 * 1000 * 1000,
-          maxBufferHole: 0.5,         // 允许0.5秒缓冲 hole（减少等待）
-
-          // 快速启动：从最低画质开始，加载最快
-          startLevel: 0,
-          abrEwmaDefaultEstimate: 500000, // 初始带宽估算500kbps（保守，选低画质）
+          maxBufferHole: 0.5,
+          startLevel: -1,
           startFragPrefetch: true,
-
-          // 加载超时（缩短以快速失败/切换）
           fragLoadingTimeOut: 8000,
           manifestLoadingTimeOut: 4000,
           levelLoadingTimeOut: 4000,
-
-          // 重试配置
           fragLoadingMaxRetry: 3,
           manifestLoadingMaxRetry: 2,
           levelLoadingMaxRetry: 2,
           fragLoadingRetryDelay: 100,
           manifestLoadingRetryDelay: 100,
           levelLoadingRetryDelay: 100,
-
-          // 禁用所有非核心功能
           enableCEA708Captions: false,
           enableWebVTT: false,
           enableIMSC1: false,
@@ -286,13 +274,9 @@
 
         hlsPlayer.attachMedia(videoEl);
         hlsPlayer.loadSource(url);
-      } else if (videoEl.canPlayType('application/vnd.apple.mpegurl')) {
-        playerLoading = false;
-        videoEl.src = url;
-        videoEl.play().catch(() => {});
       } else {
         playerLoading = false;
-        errorMsg = '浏览器不支持播放';
+        errorMsg = '播放器加载中，请稍后刷新重试';
       }
     } catch {
       playerLoading = false;

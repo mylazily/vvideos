@@ -69,7 +69,7 @@
   <meta property="og:description" content="必爱必爱视频排行榜，最热门的内容排行" />
   <meta property="og:url" content="https://evideos.pages.dev/rank" />
   <meta property="og:type" content="website" />
-  <meta property="og:image" content="https://evideos.pages.dev/icon.svg" />
+  <meta property="og:image" content="https://evideos.pages.dev/icon-512.png" />
   <meta name="twitter:card" content="summary" />
   <meta name="twitter:title" content="排行榜 - 必爱必爱" />
   <meta name="twitter:description" content="必爱必爱视频排行榜，热门电影、电视剧、动漫、综艺排行" />

@@ -15,15 +15,15 @@ const SHARD_COUNT = 10;
 
 // 缓存时间配置（秒）- 优化为更长缓存减少数据库压力
 const CACHE_TTL = {
-	home: 7200,           // 首页2小时
-	video: 3600,          // 视频详情1小时
-	related: 3600,        // 相关视频1小时
-	list: 1800,           // 列表30分钟
-	search: 600,          // 搜索10分钟
-	rank: 43200,          // 排行12小时
-	categories: 604800,   // 分类7天
-	filters: 604800,      // 筛选条件7天
-	keywords: 1800,       // 热门关键词30分钟
+	home: 7200,
+	video: 7200,
+	related: 7200,
+	list: 7200,
+	search: 7200,
+	rank: 7200,
+	categories: 7200,
+	filters: 7200,
+	keywords: 7200,
 };
 
 // 屏蔽域名缓存
@@ -362,31 +362,37 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 		const category = url.searchParams.get('category') || '';
 		const page = parseInt(url.searchParams.get('page') || '1');
 		const cacheKey = `videos-${category}-${page}`;
-		
+
 		return dedupeRequest(cacheKey, async () => {
 			const cached = await getEdgeCache(request);
 			if (cached) return json(cached, 200, CACHE_TTL.list);
-			
+
 			const limit = Math.min(parseInt(url.searchParams.get('limit') || '20'), 50);
 			const offset = (page - 1) * limit;
-			
+
 			// 只查1个分片获取数据（减少负载）
 			const db = env.DB_0;
-			
+
 			let where = 'WHERE status = 1';
-			if (category && category !== '全部') where += ` AND category = '${category}'`;
-			
+			let queryParams: any[] = [];
+			if (category && category !== '全部') {
+				where += ' AND category = ?';
+				queryParams.push(category);
+			}
+
+			const listQuery = `SELECT id, vod_id, title, cover, category, views, vod_year, vod_remarks FROM videos ${where} ORDER BY created_at DESC LIMIT ${limit} OFFSET ${offset}`;
+			const countQuery = `SELECT COUNT(*) as count FROM videos ${where}`;
+
 			const [listResult, countResult] = await Promise.all([
-				db.prepare(`SELECT id, vod_id, title, cover, category, views, vod_year, vod_remarks FROM videos ${where} ORDER BY created_at DESC LIMIT ${limit} OFFSET ${offset}`)
-					.all<{ results: any[] }>().then(r => r.results),
-				db.prepare(`SELECT COUNT(*) as count FROM videos ${where}`)
-					.first<{ count: number }>().then(r => r?.count || 0)
+				db.prepare(listQuery).bind(...queryParams).all<{ results: any[] }>().then(r => r.results),
+				db.prepare(countQuery).bind(...queryParams).first<{ count: number }>().then(r => r?.count || 0)
 			]);
-			
+
 			const total = countResult * SHARD_COUNT; // 估算总数
-			
+
 			const data = { success: true, data: { videos: listResult, total, page, limit, totalPages: Math.ceil(total / limit) } };
 			await setEdgeCache(request, data, CACHE_TTL.list);
+
 			return json(data, 200, CACHE_TTL.list);
 		});
 	}

@@ -9,10 +9,6 @@ export default defineConfig({
 			output: {
 				// 手动分包策略
 				manualChunks: (id) => {
-					// hls.js light版本单独分包，只在播放页加载
-					if (id.includes('hls.js/dist/hls.light')) {
-						return 'hls';
-					}
 					// 只分包 node_modules
 					if (!id.includes('node_modules')) return;
 					// 核心框架
@@ -62,8 +58,6 @@ export default defineConfig({
 	},
 	// 优化依赖预构建 - Vite 8
 	optimizeDeps: {
-		// 排除hls.js让它完全延迟加载
-		exclude: ['hls.js'],
 		// 强制预构建
 		force: true
 	},

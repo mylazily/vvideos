@@ -15,7 +15,7 @@ export async function spaResponse(context: { env: Env }): Promise<Response> {
 				status: 200,
 				headers: {
 					'content-type': 'text/html; charset=utf-8',
-					'cache-control': 'public, max-age=3600'
+					'cache-control': 'no-store'
 				}
 			});
 		}

@@ -14,13 +14,6 @@
       首页
     </a>
     <a
-      href="/discover"
-      class="flex-1 h-full flex items-center justify-center text-sm {currentPath === '/discover' ? 'text-pink-500 font-medium' : 'text-gray-600'}"
-      aria-current={currentPath === '/discover' ? 'page' : undefined}
-    >
-      发现
-    </a>
-    <a
       href="/category/全部/1"
       class="flex-1 h-full flex items-center justify-center text-sm {currentPath.includes('/category') ? 'text-pink-500 font-medium' : 'text-gray-600'}"
       aria-current={currentPath.includes('/category') ? 'page' : undefined}
@@ -28,11 +21,18 @@
       分类
     </a>
     <a
+      href="/discover"
+      class="flex-1 h-full flex items-center justify-center text-sm {currentPath === '/discover' ? 'text-pink-500 font-medium' : 'text-gray-600'}"
+      aria-current={currentPath === '/discover' ? 'page' : undefined}
+    >
+      发现
+    </a>
+    <a
       href="/profile"
       class="flex-1 h-full flex items-center justify-center text-sm {currentPath === '/profile' ? 'text-pink-500 font-medium' : 'text-gray-600'}"
       aria-current={currentPath === '/profile' ? 'page' : undefined}
     >
-      我的
+      我
     </a>
   </div>
 </nav>

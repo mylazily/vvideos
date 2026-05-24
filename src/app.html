@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     
-    <!-- Favicon（仅PNG，无SVG） -->
+    <!-- Favicon -->
     <link rel="icon" href="%sveltekit.assets%/favicon.png" />
     
     <!-- SEO -->
@@ -14,7 +14,7 @@
     <meta name="format-detection" content="telephone=no" />
     <link rel="canonical" href="https://evideos.pages.dev/" />
 
-    <!-- Open Graph（无图片引用） -->
+    <!-- Open Graph -->
     <meta property="og:site_name" content="必爱必爱" />
     <meta property="og:locale" content="zh_CN" />
     <meta property="og:type" content="website" />
@@ -23,7 +23,7 @@
     <link rel="preconnect" href="https://xinlangtupian.com" crossorigin />
     <link rel="dns-prefetch" href="https://xinlangtupian.com" />
     
-    <!-- 预连接：加速常用流媒体CDN（视频秒开） -->
+    <!-- 预连接：加速常用流媒体CDN -->
     <link rel="preconnect" href="https://v3.cdtlas.com" crossorigin />
     <link rel="dns-prefetch" href="https://v3.cdtlas.com" />
     <link rel="preconnect" href="https://bfzyapi.com" crossorigin />
@@ -35,7 +35,6 @@
     <link rel="preconnect" href="https://zyapi.com" crossorigin />
     <link rel="dns-prefetch" href="https://zyapi.com" />
     
-    <!-- 关键CSS内联 -->
     <style>
       html { background-color: #f9fafb; }
       body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
@@ -46,48 +45,90 @@
   <body>
     <div style="display: contents">%sveltekit.body%</div>
     <script>
-    // 首页专用：纯原生JS动态加载视频列表（仅首页执行，其他页面不触发）
-    if(location.pathname==='/'&&document.getElementById('vg')){
+    // ===== HLS.js lite版本预加载（所有页面都加载，CDN缓存） =====
+    (function(){
+      var s = document.createElement('script');
+      s.src = 'https://cdn.jsdelivr.net/npm/hls.js@1/dist/hls.light.min.js';
+      s.async = true;
+      s.crossOrigin = 'anonymous';
+      document.head.appendChild(s);
+    })();
+
+    // ===== 视频页极速预取 =====
+    var _VPD = {};
+    (function(){
+      var m = location.pathname.match(/^\/v\/([^\/]+)/);
+      if (!m) return;
+      var vid = m[1];
+      fetch('/api/video/' + vid, { signal: AbortSignal.timeout(8000) })
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+          if (d && d.success && d.data) {
+            _VPD.video = d.data;
+            // 预连接流媒体域名
+            var sources = d.data.play_sources || [];
+            if (sources.length > 0) {
+              try {
+                var firstUrl = sources[0].url;
+                var host = new URL(firstUrl).host;
+                if (host && host !== location.host) {
+                  var link = document.createElement('link');
+                  link.rel = 'preconnect';
+                  link.href = 'https://' + host;
+                  link.crossOrigin = '';
+                  document.head.appendChild(link);
+                }
+              } catch(e) {}
+            }
+          }
+        }).catch(function() {});
+      fetch('/api/video/' + vid + '/related', { signal: AbortSignal.timeout(5000) })
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+          if (d && d.data) _VPD.related = d.data;
+        }).catch(function() {});
+    })();
+
+    // ===== 首页专用：纯原生JS动态加载视频列表 =====
+    if (location.pathname === '/' && document.getElementById('vg')) {
       var _t;
-      function _esc(s){var d=document.createElement('div');d.textContent=s;return d.innerHTML}
-      function _card(v,i){
-        return '<a href="/v/'+v.vod_id+'" data-vid="'+_esc(v.vod_id)+'" class="group block"><div class="relative aspect-video bg-gray-200 rounded-lg overflow-hidden"><img src="'+_esc(v.cover)+'" alt="'+_esc(v.title)+'" '+(i<4?'fetchpriority="high"':'loading="lazy"')+' decoding="'+(i<4?'sync':'async')+'" class="absolute inset-0 w-full h-full object-cover" onerror="this.style.display=\'none\'"/></div><h3 class="mt-1.5 text-sm text-gray-800 line-clamp-2 group-hover:text-pink-500 transition-colors">'+_esc(v.title)+'</h3></a>';
+      function _esc(s) { var d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+      function _card(v, i) {
+        return '<a href="/v/' + v.vod_id + '" data-vid="' + _esc(v.vod_id) + '" class="group block"><div class="relative aspect-video bg-gray-200 rounded-lg overflow-hidden"><img src="' + _esc(v.cover) + '" alt="' + _esc(v.title) + '" ' + (i < 4 ? 'fetchpriority="high"' : 'loading="lazy"') + ' decoding="' + (i < 4 ? 'sync' : 'async') + '" class="absolute inset-0 w-full h-full object-cover" onerror="this.style.display=\'none\'"/></div><h3 class="mt-1.5 text-sm text-gray-800 line-clamp-2 group-hover:text-pink-500 transition-colors">' + _esc(v.title) + '</h3></a>';
       }
-      function _render(list){
-        var g=document.getElementById('vg');if(!g)return;
-        if(!list||!list.length){g.className='text-center py-20 text-gray-400';g.innerHTML='暂无数据';return}
-        g.className='grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2 p-2';
-        var seen={},out=[];
-        for(var i=0;i<list.length;i++){var v=list[i];if(!seen[v.vod_id]){seen[v.vod_id]=1;out.push(_card(v,out.length))}}
-        g.innerHTML=out.join('');
-        // 绑定hover/touch预取事件
+      function _render(list) {
+        var g = document.getElementById('vg'); if (!g) return;
+        if (!list || !list.length) { g.className = 'text-center py-20 text-gray-400'; g.innerHTML = '暂无数据'; return; }
+        g.className = 'grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2 p-2';
+        var seen = {}, out = [];
+        for (var i = 0; i < list.length; i++) { var v = list[i]; if (!seen[v.vod_id]) { seen[v.vod_id] = 1; out.push(_card(v, out.length)); } }
+        g.innerHTML = out.join('');
         _bindPrefetch(g);
       }
-      // 视频卡片hover/touch预取API数据（秒开优化）
-      var _prefetched={};
-      function _bindPrefetch(g){
-        g.addEventListener('mouseover',function(e){
-          var a=e.target.closest('a[data-vid]');
-          if(a)_prefetch(a.dataset.vid);
-        },{passive:true});
-        g.addEventListener('touchstart',function(e){
-          var a=e.target.closest('a[data-vid]');
-          if(a)_prefetch(a.dataset.vid);
-        },{passive:true});
+      var _prefetched = {};
+      function _bindPrefetch(g) {
+        g.addEventListener('mouseover', function(e) {
+          var a = e.target.closest('a[data-vid]');
+          if (a) _prefetch(a.dataset.vid);
+        }, { passive: true });
+        g.addEventListener('touchstart', function(e) {
+          var a = e.target.closest('a[data-vid]');
+          if (a) _prefetch(a.dataset.vid);
+        }, { passive: true });
       }
-      function _prefetch(vid){
-        if(_prefetched[vid])return;
-        _prefetched[vid]=1;
-        fetch('/api/video/'+vid,{signal:AbortSignal.timeout(5000)}).catch(function(){});
+      function _prefetch(vid) {
+        if (_prefetched[vid]) return;
+        _prefetched[vid] = 1;
+        fetch('/api/video/' + vid, { signal: AbortSignal.timeout(5000) }).catch(function() {});
       }
-      function _refresh(){
-        clearTimeout(_t);_t=setTimeout(function(){
-          fetch('/api/home').then(function(r){return r.json()}).then(function(j){
-            if(j.success&&j.data){var a=j.data.latest||[],b=j.data.hot||[];_render(a.concat(b))}
-          }).catch(function(){});
-        },100);
+      function _refresh() {
+        clearTimeout(_t); _t = setTimeout(function() {
+          fetch('/api/home').then(function(r) { return r.json(); }).then(function(j) {
+            if (j.success && j.data) { var a = j.data.latest || [], b = j.data.hot || []; _render(a.concat(b)); }
+          }).catch(function() {});
+        }, 100);
       }
-      if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',_refresh);else _refresh();
+      if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', _refresh); else _refresh();
     }
     </script>
   </body>
