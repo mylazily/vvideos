@@ -13,7 +13,6 @@
     generateOrganizationSchema,
     generateWebPageSchema,
     generateFAQSchema,
-    generateImageAlt,
     canonicalUrl,
     SITE_URL,
     SITE_NAME
@@ -41,15 +40,16 @@
   let hlsPlayer: any = null;
   let relatedVideos = $state<Video[]>([]);
   let favorited = $state(false);
-  let playerLoading = $state(false); // 播放器加载状态
-  let HlsModule: any = null; // 预加载的 HLS.js 模块
+  let playerLoading = $state(false);
+  let HlsModule: any = null;
+  let videoEl: HTMLVideoElement | null = $state(null);
 
   // ============ 派生状态 ============
   let videoId = $derived($page.params.id);
 
   // ============ 生命周期 ============
   onMount(() => {
-    // 并行预加载 HLS.js 和视频数据
+    // 三路并行：HLS.js预加载 + API数据 + video元素引用
     preloadHls();
     loadVideo();
     return () => destroyPlayer();
@@ -69,11 +69,17 @@
     try {
       const host = new URL(url).host;
       if (host && host !== location.host) {
-        const link = document.createElement('link');
-        link.rel = 'preconnect';
-        link.href = `https://${host}`;
-        link.crossOrigin = '';
-        document.head.appendChild(link);
+        // 同时添加 preconnect 和 dns-prefetch
+        const rels = ['preconnect', 'dns-prefetch'];
+        for (const rel of rels) {
+          if (!document.querySelector(`link[rel="${rel}"][href="https://${host}"]`)) {
+            const link = document.createElement('link');
+            link.rel = rel;
+            link.href = `https://${host}`;
+            if (rel === 'preconnect') link.crossOrigin = '';
+            document.head.appendChild(link);
+          }
+        }
       }
     } catch {}
   }
@@ -98,7 +104,7 @@
     const parts: string[] = [];
     parts.push(`《${v.title}》`);
     if (v.category) parts.push(`是一部${v.category}作品`);
-    if (v.vod_year) parts.push(`，${v.vod_year}年${v.vod_area || ''}出品`);
+    if (v.vod_year) parts.push(`，${v.vod_year}年${v.v_area || ''}出品`);
     if (v.vod_director) parts.push(`，由${v.vod_director}执导`);
     if (v.vod_actor) {
       const actors = v.vod_actor.split(/[,，]/).slice(0, 4).join('、');
@@ -165,12 +171,13 @@
         try { relatedVideos = (await relatedRes.json()).data || []; } catch {}
       }
 
-      // 立即播放第一个源（不等待 setTimeout）
+      // 立即播放：不等 loading 状态切换，直接操作 video 元素
       if (playSources.length > 0) {
-        // 预连接流媒体域名
-        prefetchStreamDomain(playSources[0].url);
-        // 立即触发播放
-        playSource(0);
+        const url = playSources[0].url;
+        // 先预连接（不阻塞播放启动）
+        prefetchStreamDomain(url);
+        // 直接播放（video 元素始终在 DOM 中，无需 tick 等待）
+        startPlayback(url);
       }
     } catch (e: any) {
       errorMsg = e.name === 'TimeoutError' ? '请求超时，请重试' : '网络错误，请稍后重试';
@@ -179,17 +186,28 @@
     }
   }
 
+  // 直接启动播放（不经过 playSource 的 tick 等待）
+  function startPlayback(url: string) {
+    if (!videoEl) return;
+    destroyPlayer();
+    playerLoading = true;
+
+    if (url.includes('.m3u8')) {
+      playHls(videoEl, url);
+    } else {
+      videoEl.src = url;
+      videoEl.play().catch(() => {});
+      playerLoading = false;
+    }
+  }
+
   async function playSource(index: number) {
     currentSourceIndex = index;
     const source = playSources[index];
     if (!source) return;
 
-    const videoEl = document.querySelector('video') as HTMLVideoElement | null;
-    if (!videoEl) { 
-      // 等待 Svelte 渲染 video 元素
-      tick().then(() => playSource(index));
-      return;
-    }
+    // video 元素始终在 DOM 中，直接使用引用
+    if (!videoEl) return;
 
     destroyPlayer();
     playerLoading = true;
@@ -205,35 +223,37 @@
 
   async function playHls(videoEl: HTMLVideoElement, url: string) {
     try {
-      // 使用预加载的模块或动态加载
       const Hls = HlsModule || (await import('hls.js/light')).default;
 
       if (Hls.isSupported()) {
-        // 极速启动配置
         hlsPlayer = new Hls({
           enableWorker: true,
           lowLatencyMode: false,
-          
-          // 缓冲区配置：首帧优先
-          maxBufferLength: 30,        // 减少初始缓冲，加快首帧
-          maxMaxBufferLength: 300,    // 最大缓冲5分钟
-          maxBufferSize: 50 * 1000 * 1000, // 50MB
-          
-          // 快速启动配置
-          startLevel: -1,             // 自动选择最佳质量
-          startFragPrefetch: true,    // 预取第一个分片
-          
-          // 加载超时（缩短以快速失败）
-          fragLoadingTimeOut: 10000,
-          manifestLoadingTimeOut: 5000,
-          levelLoadingTimeOut: 5000,
-          
+
+          // 缓冲区配置：首帧极速
+          maxBufferLength: 10,         // 首帧只需10秒缓冲即可开始播放
+          maxMaxBufferLength: 300,     // 播放后逐步缓冲到5分钟
+          maxBufferSize: 50 * 1000 * 1000,
+          maxBufferHole: 0.5,         // 允许0.5秒缓冲 hole（减少等待）
+
+          // 快速启动：从最低画质开始，加载最快
+          startLevel: 0,
+          abrEwmaDefaultEstimate: 500000, // 初始带宽估算500kbps（保守，选低画质）
+          startFragPrefetch: true,
+
+          // 加载超时（缩短以快速失败/切换）
+          fragLoadingTimeOut: 8000,
+          manifestLoadingTimeOut: 4000,
+          levelLoadingTimeOut: 4000,
+
           // 重试配置
-          fragLoadingMaxRetry: 2,
-          manifestLoadingMaxRetry: 1,
-          levelLoadingMaxRetry: 1,
-          fragLoadingRetryDelay: 200,
-          
+          fragLoadingMaxRetry: 3,
+          manifestLoadingMaxRetry: 2,
+          levelLoadingMaxRetry: 2,
+          fragLoadingRetryDelay: 100,
+          manifestLoadingRetryDelay: 100,
+          levelLoadingRetryDelay: 100,
+
           // 禁用所有非核心功能
           enableCEA708Captions: false,
           enableWebVTT: false,
@@ -268,7 +288,6 @@
         hlsPlayer.attachMedia(videoEl);
         hlsPlayer.loadSource(url);
       } else if (videoEl.canPlayType('application/vnd.apple.mpegurl')) {
-        // Safari 原生 HLS 支持
         playerLoading = false;
         videoEl.src = url;
         videoEl.play().catch(() => {});
@@ -365,22 +384,24 @@
           {/each}
         </ol>
       </nav>
+    {/if}
 
-      <!-- 播放器 -->
-      <div class="aspect-video bg-black relative">
-        <video controls playsinline preload="metadata" class="w-full h-full" poster={video.cover}>
-          您的浏览器不支持视频播放
-        </video>
-        {#if playerLoading}
-          <div class="absolute inset-0 flex items-center justify-center bg-black/50">
-            <div class="flex flex-col items-center gap-2">
-              <div class="w-10 h-10 border-3 border-pink-200 border-t-pink-500 rounded-full animate-spin"></div>
-              <span class="text-white text-sm">加载播放器...</span>
-            </div>
+    <!-- 播放器：始终在DOM中，不被loading状态隐藏 -->
+    <div class="aspect-video bg-black relative">
+      <video bind:this={videoEl} controls playsinline preload="none" class="w-full h-full" poster={video?.cover}>
+        您的浏览器不支持视频播放
+      </video>
+      {#if playerLoading}
+        <div class="absolute inset-0 flex items-center justify-center bg-black/50">
+          <div class="flex flex-col items-center gap-2">
+            <div class="w-10 h-10 border-3 border-pink-200 border-t-pink-500 rounded-full animate-spin"></div>
+            <span class="text-white text-sm">加载播放器...</span>
           </div>
-        {/if}
-      </div>
+        </div>
+      {/if}
+    </div>
 
+    {#if video}
       <!-- 视频信息 -->
       <article class="p-3 bg-white">
         <h1 class="text-lg font-bold mb-2">{video.title}</h1>
