@@ -13,9 +13,17 @@
 
   function handleImageLoad() { imageLoaded = true; }
   function handleImageError() { imageError = true; imageLoaded = true; }
+
+  // hover/touch预取视频API数据（秒开优化）
+  let prefetched = false;
+  function handleHover() {
+    if (prefetched) return;
+    prefetched = true;
+    fetch(`/api/video/${video.vod_id}`, { signal: AbortSignal.timeout(5000) }).catch(() => {});
+  }
 </script>
 
-<a href="/v/{video.vod_id}" class="group block">
+<a href="/v/{video.vod_id}" class="group block" onmouseenter={handleHover} ontouchstart={handleHover}>
   <div class="relative aspect-video bg-gray-200 rounded-lg overflow-hidden">
     {#if !imageError}
       <img

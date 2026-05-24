@@ -23,6 +23,18 @@
     <link rel="preconnect" href="https://xinlangtupian.com" crossorigin />
     <link rel="dns-prefetch" href="https://xinlangtupian.com" />
     
+    <!-- 预连接：加速常用流媒体CDN（视频秒开） -->
+    <link rel="preconnect" href="https://v3.cdtlas.com" crossorigin />
+    <link rel="dns-prefetch" href="https://v3.cdtlas.com" />
+    <link rel="preconnect" href="https://bfzyapi.com" crossorigin />
+    <link rel="dns-prefetch" href="https://bfzyapi.com" />
+    <link rel="preconnect" href="https://lzyapi.com" crossorigin />
+    <link rel="dns-prefetch" href="https://lzyapi.com" />
+    <link rel="preconnect" href="https://hdzyapi.com" crossorigin />
+    <link rel="dns-prefetch" href="https://hdzyapi.com" />
+    <link rel="preconnect" href="https://zyapi.com" crossorigin />
+    <link rel="dns-prefetch" href="https://zyapi.com" />
+    
     <!-- 关键CSS内联 -->
     <style>
       html { background-color: #f9fafb; }
@@ -39,7 +51,7 @@
       var _t;
       function _esc(s){var d=document.createElement('div');d.textContent=s;return d.innerHTML}
       function _card(v,i){
-        return '<a href="/v/'+v.vod_id+'" class="group block"><div class="relative aspect-video bg-gray-200 rounded-lg overflow-hidden"><img src="'+_esc(v.cover)+'" alt="'+_esc(v.title)+'" '+(i<4?'fetchpriority="high"':'loading="lazy"')+' decoding="'+(i<4?'sync':'async')+'" class="absolute inset-0 w-full h-full object-cover" onerror="this.style.display=\'none\'"/></div><h3 class="mt-1.5 text-sm text-gray-800 line-clamp-2 group-hover:text-pink-500 transition-colors">'+_esc(v.title)+'</h3></a>';
+        return '<a href="/v/'+v.vod_id+'" data-vid="'+_esc(v.vod_id)+'" class="group block"><div class="relative aspect-video bg-gray-200 rounded-lg overflow-hidden"><img src="'+_esc(v.cover)+'" alt="'+_esc(v.title)+'" '+(i<4?'fetchpriority="high"':'loading="lazy"')+' decoding="'+(i<4?'sync':'async')+'" class="absolute inset-0 w-full h-full object-cover" onerror="this.style.display=\'none\'"/></div><h3 class="mt-1.5 text-sm text-gray-800 line-clamp-2 group-hover:text-pink-500 transition-colors">'+_esc(v.title)+'</h3></a>';
       }
       function _render(list){
         var g=document.getElementById('vg');if(!g)return;
@@ -48,6 +60,25 @@
         var seen={},out=[];
         for(var i=0;i<list.length;i++){var v=list[i];if(!seen[v.vod_id]){seen[v.vod_id]=1;out.push(_card(v,out.length))}}
         g.innerHTML=out.join('');
+        // 绑定hover/touch预取事件
+        _bindPrefetch(g);
+      }
+      // 视频卡片hover/touch预取API数据（秒开优化）
+      var _prefetched={};
+      function _bindPrefetch(g){
+        g.addEventListener('mouseover',function(e){
+          var a=e.target.closest('a[data-vid]');
+          if(a)_prefetch(a.dataset.vid);
+        },{passive:true});
+        g.addEventListener('touchstart',function(e){
+          var a=e.target.closest('a[data-vid]');
+          if(a)_prefetch(a.dataset.vid);
+        },{passive:true});
+      }
+      function _prefetch(vid){
+        if(_prefetched[vid])return;
+        _prefetched[vid]=1;
+        fetch('/api/video/'+vid,{signal:AbortSignal.timeout(5000)}).catch(function(){});
       }
       function _refresh(){
         clearTimeout(_t);_t=setTimeout(function(){
