@@ -39,8 +39,7 @@
       var _t;
       function _esc(s){var d=document.createElement('div');d.textContent=s;return d.innerHTML}
       function _card(v,i){
-        var info=(v.category||'')+(v.vod_remarks?' · '+v.vod_remarks:'');
-        return '<a href="/v/'+v.vod_id+'" class="group block"><div class="relative aspect-video bg-gray-200 rounded-lg overflow-hidden"><img src="'+_esc(v.cover)+'" alt="'+_esc(v.title)+'" '+(i<4?'fetchpriority="high"':'loading="lazy"')+' decoding="'+(i<4?'sync':'async')+'" class="absolute inset-0 w-full h-full object-cover" onerror="this.style.display=\'none\'"/>'+(v.duration?'<div class="absolute bottom-1 right-1 px-1.5 py-0.5 bg-black/70 text-white text-xs rounded">'+_esc(v.duration)+'</div>':'')+'</div><h3 class="mt-1.5 text-sm text-gray-800 line-clamp-2 group-hover:text-pink-500 transition-colors">'+_esc(v.title)+'</h3>'+(info?'<p class="mt-0.5 text-xs text-gray-400 truncate">'+_esc(info)+'</p>':'')+'</a>';
+        return '<a href="/v/'+v.vod_id+'" class="group block"><div class="relative aspect-video bg-gray-200 rounded-lg overflow-hidden"><img src="'+_esc(v.cover)+'" alt="'+_esc(v.title)+'" '+(i<4?'fetchpriority="high"':'loading="lazy"')+' decoding="'+(i<4?'sync':'async')+'" class="absolute inset-0 w-full h-full object-cover" onerror="this.style.display=\'none\'"/></div><h3 class="mt-1.5 text-sm text-gray-800 line-clamp-2 group-hover:text-pink-500 transition-colors">'+_esc(v.title)+'</h3></a>';
       }
       function _render(list){
         var g=document.getElementById('vg');if(!g)return;

@@ -53,20 +53,10 @@
                 fetchpriority={i < 4 ? 'high' : 'auto'}
                 class="absolute inset-0 w-full h-full object-cover"
               />
-              {#if video.duration}
-                <div class="absolute bottom-1 right-1 px-1.5 py-0.5 bg-black/70 text-white text-xs rounded">
-                  {video.duration}
-                </div>
-              {/if}
             </div>
             <h3 class="mt-1.5 text-sm text-gray-800 line-clamp-2 group-hover:text-pink-500 transition-colors">
               {video.title}
             </h3>
-            {#if video.category || video.vod_remarks}
-              <p class="mt-0.5 text-xs text-gray-400 truncate">
-                {video.category || ''}{video.vod_remarks ? ' · ' + video.vod_remarks : ''}
-              </p>
-            {/if}
           </a>
         {/each}
       </div>
@@ -75,13 +65,13 @@
     {/if}
   </main>
 
-  <!-- 底部导航 -->
+  <!-- 底部导航：首页、分类、发现、我 -->
   <nav class="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 z-50" aria-label="主导航">
     <div class="flex items-center justify-around h-12">
       <a href="/" class="flex-1 h-full flex items-center justify-center text-sm text-pink-500 font-medium" aria-current="page">首页</a>
-      <a href="/discover" class="flex-1 h-full flex items-center justify-center text-sm text-gray-600">发现</a>
       <a href="/category/全部/1" class="flex-1 h-full flex items-center justify-center text-sm text-gray-600">分类</a>
-      <a href="/profile" class="flex-1 h-full flex items-center justify-center text-sm text-gray-600">我的</a>
+      <a href="/discover" class="flex-1 h-full flex items-center justify-center text-sm text-gray-600">发现</a>
+      <a href="/profile" class="flex-1 h-full flex items-center justify-center text-sm text-gray-600">我</a>
     </div>
   </nav>
 </div>
