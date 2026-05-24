@@ -31,30 +31,62 @@ const PBKDF2_ITERATIONS = 100000;
 const HASH_PREFIX = 'pbkdf2:';
 
 async function hashPassword(password: string): Promise<string> {
-	const encoder = new TextEncoder();
-	const salt = encoder.encode('vvideos_salt_2024_secure');
-	const keyMaterial = encoder.encode(password);
-	const cryptoKey = await crypto.subtle.importKey('raw', keyMaterial, 'PBKDF2', false, ['deriveBits']);
-	const derivedBits = await crypto.subtle.deriveBits(
-		{ name: 'PBKDF2', salt, iterations: PBKDF2_ITERATIONS, hash: 'SHA-256' },
-		cryptoKey,
-		256
-	);
-	const hashArray = Array.from(new Uint8Array(derivedBits)).map(b => b.toString(16).padStart(2, '0')).join('');
-	return HASH_PREFIX + hashArray;
+    const encoder = new TextEncoder();
+    // 生成随机盐值（每个用户独立）
+    const saltBytes = new Uint8Array(16);
+    crypto.getRandomValues(saltBytes);
+    const salt = Array.from(saltBytes).map(b => b.toString(16).padStart(2, '0')).join('');
+    const saltBuffer = encoder.encode(salt);
+    const keyMaterial = encoder.encode(password);
+    const cryptoKey = await crypto.subtle.importKey('raw', keyMaterial, 'PBKDF2', false, ['deriveBits']);
+    const derivedBits = await crypto.subtle.deriveBits(
+        { name: 'PBKDF2', salt: saltBuffer, iterations: PBKDF2_ITERATIONS, hash: 'SHA-256' },
+        cryptoKey,
+        256
+    );
+    const hashArray = Array.from(new Uint8Array(derivedBits)).map(b => b.toString(16).padStart(2, '0')).join('');
+    return `${HASH_PREFIX}${salt}:${hashArray}`;
 }
 
 async function verifyPassword(password: string, hash: string): Promise<boolean> {
-	// 兼容旧版 SHA-256 哈希（平滑迁移）
-	if (!hash.startsWith(HASH_PREFIX)) {
-		const encoder = new TextEncoder();
-		const data = encoder.encode(password + '_vvideos_salt_2024');
-		const oldHash = await crypto.subtle.digest('SHA-256', data);
-		const oldHashStr = Array.from(new Uint8Array(oldHash)).map(b => b.toString(16).padStart(2, '0')).join('');
-		return oldHashStr === hash;
-	}
-	const passwordHash = await hashPassword(password);
-	return passwordHash === hash;
+    // 兼容旧版固定盐值哈希（平滑迁移）
+    if (hash.startsWith(HASH_PREFIX) && !hash.includes(':')) {
+        // 旧版 pbkdf2 格式（无独立盐值）
+        const encoder = new TextEncoder();
+        const salt = encoder.encode('vvideos_salt_2024_secure');
+        const keyMaterial = encoder.encode(password);
+        const cryptoKey = await crypto.subtle.importKey('raw', keyMaterial, 'PBKDF2', false, ['deriveBits']);
+        const derivedBits = await crypto.subtle.deriveBits(
+            { name: 'PBKDF2', salt, iterations: PBKDF2_ITERATIONS, hash: 'SHA-256' },
+            cryptoKey,
+            256
+        );
+        const hashArray = Array.from(new Uint8Array(derivedBits)).map(b => b.toString(16).padStart(2, '0')).join('');
+        return HASH_PREFIX + hashArray === hash;
+    }
+    if (!hash.startsWith(HASH_PREFIX)) {
+        // 更旧的 SHA-256 格式
+        const encoder = new TextEncoder();
+        const data = encoder.encode(password + '_vvideos_salt_2024');
+        const oldHash = await crypto.subtle.digest('SHA-256', data);
+        const oldHashStr = Array.from(new Uint8Array(oldHash)).map(b => b.toString(16).padStart(2, '0')).join('');
+        return oldHashStr === hash;
+    }
+    // 新版格式：pbkdf2:salt:hash
+    const parts = hash.slice(HASH_PREFIX.length).split(':');
+    if (parts.length !== 2) return false;
+    const [salt, expectedHash] = parts;
+    const encoder = new TextEncoder();
+    const saltBuffer = encoder.encode(salt);
+    const keyMaterial = encoder.encode(password);
+    const cryptoKey = await crypto.subtle.importKey('raw', keyMaterial, 'PBKDF2', false, ['deriveBits']);
+    const derivedBits = await crypto.subtle.deriveBits(
+        { name: 'PBKDF2', salt: saltBuffer, iterations: PBKDF2_ITERATIONS, hash: 'SHA-256' },
+        cryptoKey,
+        256
+    );
+    const hashArray = Array.from(new Uint8Array(derivedBits)).map(b => b.toString(16).padStart(2, '0')).join('');
+    return hashArray === expectedHash;
 }
 
 function generateToken(): string {

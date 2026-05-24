@@ -43,6 +43,16 @@
 <svelte:head>
   <title>设置 - 必爱必爱</title>
   <meta name="robots" content="noindex, nofollow" />
+  <meta name="description" content="必爱必爱设置页面，管理收藏数据、观看历史和缓存，自定义您的使用体验。" />
+  <link rel="canonical" href="https://evideos.pages.dev/settings" />
+  <meta property="og:title" content="设置 - 必爱必爱" />
+  <meta property="og:description" content="必爱必爱设置页面，管理收藏数据、观看历史和缓存，自定义您的使用体验。" />
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://evideos.pages.dev/settings" />
+  <meta property="og:image" content="https://evideos.pages.dev/icon-512.png" />
+  <meta name="twitter:card" content="summary" />
+  <meta name="twitter:title" content="设置 - 必爱必爱" />
+  <meta name="twitter:description" content="必爱必爱设置页面，管理收藏数据、观看历史和缓存，自定义您的使用体验。" />
 </svelte:head>
 
 <PageLayout title="设置">

@@ -52,6 +52,16 @@
 <svelte:head>
   <title>观看历史 - 必爱必爱</title>
   <meta name="robots" content="noindex, nofollow" />
+  <meta name="description" content="查看您在必爱必爱上的观看历史记录，继续观看未看完的影视内容。" />
+  <link rel="canonical" href="https://evideos.pages.dev/history" />
+  <meta property="og:title" content="观看历史 - 必爱必爱" />
+  <meta property="og:description" content="查看您在必爱必爱上的观看历史记录，继续观看未看完的影视内容。" />
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://evideos.pages.dev/history" />
+  <meta property="og:image" content="https://evideos.pages.dev/icon-512.png" />
+  <meta name="twitter:card" content="summary" />
+  <meta name="twitter:title" content="观看历史 - 必爱必爱" />
+  <meta name="twitter:description" content="查看您在必爱必爱上的观看历史记录，继续观看未看完的影视内容。" />
 </svelte:head>
 
 <PageLayout title="观看历史">

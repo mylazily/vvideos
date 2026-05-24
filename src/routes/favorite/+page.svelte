@@ -29,6 +29,16 @@
 <svelte:head>
   <title>我的收藏 - 必爱必爱</title>
   <meta name="robots" content="noindex, nofollow" />
+  <meta name="description" content="查看和管理您在必爱必爱上收藏的视频，随时回顾喜爱的影视内容。" />
+  <link rel="canonical" href="https://evideos.pages.dev/favorite" />
+  <meta property="og:title" content="我的收藏 - 必爱必爱" />
+  <meta property="og:description" content="查看和管理您在必爱必爱上收藏的视频，随时回顾喜爱的影视内容。" />
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://evideos.pages.dev/favorite" />
+  <meta property="og:image" content="https://evideos.pages.dev/icon-512.png" />
+  <meta name="twitter:card" content="summary" />
+  <meta name="twitter:title" content="我的收藏 - 必爱必爱" />
+  <meta name="twitter:description" content="查看和管理您在必爱必爱上收藏的视频，随时回顾喜爱的影视内容。" />
 </svelte:head>
 
 <PageLayout title="我的收藏">

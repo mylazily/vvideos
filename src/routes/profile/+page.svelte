@@ -86,6 +86,16 @@
 <svelte:head>
   <title>我的 - 必爱必爱</title>
   <meta name="robots" content="noindex, nofollow" />
+  <meta name="description" content="管理您的必爱必爱个人账户，查看个人信息、观看历史和收藏内容。" />
+  <link rel="canonical" href="https://evideos.pages.dev/profile" />
+  <meta property="og:title" content="我的 - 必爱必爱" />
+  <meta property="og:description" content="管理您的必爱必爱个人账户，查看个人信息、观看历史和收藏内容。" />
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://evideos.pages.dev/profile" />
+  <meta property="og:image" content="https://evideos.pages.dev/icon-512.png" />
+  <meta name="twitter:card" content="summary" />
+  <meta name="twitter:title" content="我的 - 必爱必爱" />
+  <meta name="twitter:description" content="管理您的必爱必爱个人账户，查看个人信息、观看历史和收藏内容。" />
 </svelte:head>
 
 <div class="min-h-screen bg-gray-50">
