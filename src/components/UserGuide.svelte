@@ -17,6 +17,7 @@
   let installGuide = $state<{ title: string; steps: string[] } | null>(null);
   let copied = $state(false);
   let guideStep = $state<'pwa' | 'browser'>('pwa');
+  let isDomainBlocked = $state(false); // 域名被屏蔽（非浏览器问题）
 
   onMount(() => {
     browserInfo = detectBrowser();
@@ -24,8 +25,17 @@
     backupLinks = getBackupLinks();
     installGuide = getPWAInstallGuide();
 
+    // 检测是否域名被屏蔽（非浏览器问题）
+    try {
+      const healthCache = sessionStorage.getItem('domain_health_cache');
+      if (healthCache) {
+        const { healthy } = JSON.parse(healthCache);
+        if (!healthy) isDomainBlocked = true;
+      }
+    } catch { /* 忽略 */ }
+
     if (blocked) {
-      // 国产APP/浏览器内打开 → 全屏引导
+      // 国产APP/浏览器内打开 或 域名被屏蔽 → 全屏引导
       guideStep = (pwaInfo && !pwaInfo.isInstalled) ? 'pwa' : 'browser';
       return;
     }
@@ -71,7 +81,13 @@
         {#if guideStep === 'pwa'}
           <div class="text-6xl mb-4">📲</div>
           <h2 class="text-2xl font-bold mb-2">安装到手机桌面</h2>
-          <p class="text-white/80 text-sm mb-6">离线可用，永不失联，体验更佳</p>
+          <p class="text-white/80 text-sm mb-6">
+            {#if isDomainBlocked}
+              当前域名可能被屏蔽，安装后可离线使用，永不失联
+            {:else}
+              离线可用，永不失联，体验更佳
+            {/if}
+          </p>
 
           {#if !pwaInfo}
             <div class="w-full max-w-sm py-8">
@@ -110,6 +126,12 @@
             </div>
           {/if}
 
+          {#if pwaInfo?.isInstalled}
+            <div class="w-full max-w-sm bg-green-500/20 backdrop-blur-sm rounded-2xl p-4 mb-6">
+              <p class="text-sm text-green-100">✅ 已安装PWA，打开桌面图标即可使用（离线可用）</p>
+            </div>
+          {/if}
+
           <button onclick={() => guideStep = 'browser'}
             class="text-white/70 text-sm underline underline-offset-2 mt-4">
             无法安装？查看推荐浏览器 →
@@ -117,8 +139,20 @@
         {:else}
           <!-- 浏览器推荐 -->
           <div class="text-6xl mb-4">{browserInfo?.appGuide.icon || '📱'}</div>
-          <h2 class="text-2xl font-bold mb-2">{browserInfo?.appGuide.title || '浏览器体验受限'}</h2>
-          <p class="text-white/80 text-sm mb-6">{browserInfo?.appGuide.tip || '建议使用Chrome或Edge浏览器'}</p>
+          <h2 class="text-2xl font-bold mb-2">
+            {#if isDomainBlocked}
+              域名可能被屏蔽
+            {:else}
+              {browserInfo?.appGuide.title || '浏览器体验受限'}
+            {/if}
+          </h2>
+          <p class="text-white/80 text-sm mb-6">
+            {#if isDomainBlocked}
+              当前域名无法正常访问，请安装PWA或使用备用域名
+            {:else}
+              {browserInfo?.appGuide.tip || '建议使用Chrome或Edge浏览器'}
+            {/if}
+          </p>
 
           <div class="w-full max-w-sm grid grid-cols-3 gap-3 mb-6">
             <!-- Chrome -->

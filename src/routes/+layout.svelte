@@ -8,7 +8,7 @@
 
 	let { children }: { children: Snippet } = $props();
 
-	let displayMode = $state(1);
+	let displayMode = $state(1); // 1=正常, 2=全屏引导
 
 	// 仅客户端SPA页面执行：PWA注入 + SW注册 + 浏览器检测
 	onMount(() => {
@@ -53,13 +53,56 @@
 			}
 		};
 
-		// 浏览器检测 - 延迟到空闲时执行
+		// 浏览器检测 + 域名连接检测
 		const checkBrowser = async () => {
 			const { applySubdomainSEO } = await import('$lib/subdomain');
 			const { detectBrowser } = await import('$lib/browser-detect');
 			applySubdomainSEO();
 			const browserInfo = detectBrowser();
+
+			// 国产APP/浏览器 → 直接全屏引导（UA检测即可，无需网络检测）
 			if (browserInfo.isBlocked) {
+				displayMode = 2;
+				return;
+			}
+
+			// 非屏蔽浏览器：检测域名是否可访问（GFW/污染检测）
+			// 仅在非PWA standalone模式下检测
+			const isStandalone = window.matchMedia('(display-mode: standalone)').matches
+				|| (window.navigator as any).standalone === true;
+			if (isStandalone) return; // PWA已安装，跳过域名检测
+
+			// 检查域名健康缓存（5分钟TTL）
+			try {
+				const HEALTH_CACHE_KEY = 'domain_health_cache';
+				const HEALTH_CACHE_TTL = 5 * 60 * 1000;
+				const cached = sessionStorage.getItem(HEALTH_CACHE_KEY);
+				if (cached) {
+					const { timestamp, healthy } = JSON.parse(cached);
+					if (Date.now() - timestamp < HEALTH_CACHE_TTL && healthy) return;
+				}
+			} catch { /* 忽略 */ }
+
+			// 快速域名连通性检测（3秒超时）
+			try {
+				const controller = new AbortController();
+				const timeoutId = setTimeout(() => controller.abort(), 3000);
+				const res = await fetch('/api/health', {
+					method: 'HEAD',
+					signal: controller.signal
+				});
+				clearTimeout(timeoutId);
+				// 域名可访问，缓存结果
+				sessionStorage.setItem('domain_health_cache', JSON.stringify({
+					timestamp: Date.now(),
+					healthy: true
+				}));
+			} catch {
+				// 域名不可访问 → 显示引导页（推荐PWA或备用域名）
+				sessionStorage.setItem('domain_health_cache', JSON.stringify({
+					timestamp: Date.now(),
+					healthy: false
+				}));
 				displayMode = 2;
 			}
 		};

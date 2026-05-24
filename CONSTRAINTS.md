@@ -58,6 +58,8 @@
 | API 响应 | 2 小时 | 10 分钟 | Stale-While-Revalidate |
 | 视频封面 | 无 | LRU 300 | 走外链 CDN |
 | JS/CSS | 1 年 | 永久 | 带 hash |
+| 视频流（m3u8） | 无 | 5 分钟 | Stale-While-Revalidate |
+| 视频片段（ts） | 无 | 10 分钟 | Cache-First, LRU 200 |
 
 ### 2.6 视频播放优化
 - **HLS.js 使用最小 lite 版本**（`import('hls.js/light')`）
@@ -169,9 +171,87 @@ grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap
 
 ---
 
-## 六、成本约束（10万DAU全免费）
+## 六、视频缓存约束
 
-### 6.1 目标指标
+### 6.1 视频流缓存策略
+- **m3u8 播放列表**：SW 缓存 5 分钟（TTL），Stale-While-Revalidate
+- **ts 视频片段**：SW 缓存 10 分钟（TTL），Cache-First
+- **缓存上限**：ts 片段最多缓存 200 个（LRU 淘汰）
+- **目的**：保证用户观看视频不卡，已播放的片段可回看
+
+### 6.2 缓存优先级
+1. 已缓存的 ts 片段 → 直接返回（0ms）
+2. 正在播放的 m3u8 → 网络优先，缓存兜底
+3. 未缓存的 ts 片段 → 网络请求，成功后缓存
+
+## 七、域名屏蔽检测约束
+
+### 7.1 检测范围
+- **国内 APP 内置浏览器**：微信、QQ、微博、抖音、今日头条、支付宝、百度APP → 直接跳转引导页
+- **国内手机浏览器**：小米、华为、vivo、OPPO、UC、百度、360、搜狗、猎豹 → 直接跳转引导页
+- **推荐浏览器**：Chrome、Edge、Safari、Firefox、Opera
+
+### 7.2 引导页逻辑
+- 检测到屏蔽浏览器 → 全屏引导页（UserGuide blocked=true）
+- 引导页优先推荐安装 PWA（永不失联）
+- 备选推荐使用 Chrome/Edge/Safari 浏览器
+- 提供"复制链接"功能，方便用户在外部浏览器打开
+
+### 7.3 检测方式
+- **UA 检测**：快速判断浏览器类型（2秒延迟执行，不阻塞首屏）
+- **连接检测**：尝试 fetch 当前域名，失败则触发域名防护（备用域名跳转）
+
+## 八、PWA 永不失联约束
+
+### 8.1 核心原则
+- **PWA 安装后，即使域名被拉黑、GFW、DNS 污染，仍可正常使用**
+- 通过 SW 缓存所有已访问页面和资源，实现离线可用
+
+### 8.2 缓存策略
+| 资源类型 | SW 缓存 | 说明 |
+|----------|---------|------|
+| 已访问 HTML 页面 | 永久（版本更新清理） | 离线可访问所有浏览过的页面 |
+| API 响应 | 10 分钟 | Stale-While-Revalidate |
+| 视频流（m3u8） | 5 分钟 | 正在播放的流 |
+| 视频片段（ts） | 10 分钟 | 已播放的片段可回看 |
+| 静态资源（JS/CSS） | 永久 | 带 hash 文件名 |
+| 图片（封面） | LRU 300 | 控制内存 |
+
+### 8.3 离线体验
+- 离线时返回缓存的页面（而非错误页）
+- API 请求失败返回缓存数据（503 → 缓存兜底）
+- SW 安装时预缓存核心资源：首页、manifest、图标
+
+### 8.4 PWA 原生体验
+- `display: standalone` 全屏模式
+- `display_override: [standalone, minimal-ui, browser]`
+- 主题色 `#ec4899`，背景色 `#f9fafb`
+- 支持快捷方式：搜索、排行榜、收藏
+- 支持 share_target（分享到搜索）
+- 支持 handle_links（链接跳转到已安装 PWA）
+
+## 九、首页极速缓存约束
+
+### 9.1 首页缓存策略
+- **SW 预缓存**：安装时缓存首页 `/`
+- **HTML 缓存 TTL**：2 小时（与边缘缓存一致）
+- **API 数据缓存**：10 分钟 SW + 2 小时边缘
+- **离线兜底**：网络失败返回 SW 缓存的首页
+
+### 9.2 首页加载流程
+1. SW 拦截请求 → 命中缓存直接返回（< 50ms）
+2. 缓存未命中 → 网络请求 → 成功后缓存
+3. 网络失败 → 返回预缓存的首页（离线可用）
+4. 首页内联脚本 fetch /api/home → SW 返回缓存数据
+
+### 9.3 性能目标
+- **二次打开**：< 100ms（SW 缓存命中）
+- **离线打开**：< 200ms（预缓存兜底）
+- **API 数据刷新**：后台静默更新，用户无感知
+
+## 十、成本约束（10万DAU全免费）
+
+### 10.1 目标指标
 | 指标 | 目标值 |
 |------|--------|
 | 日活跃用户 (DAU) | 100,000 |
@@ -179,7 +259,7 @@ grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap
 | 总日播放量 | 1,500,000 |
 | Cloudflare 费用 | **$0** |
 
-### 6.2 成本优化策略
+### 10.2 成本优化策略
 1. **首页纯静态**：不走 Workers
 2. **边缘缓存**：API 响应缓存 2 小时
 3. **SW 缓存**：客户端缓存 10 分钟
@@ -187,23 +267,23 @@ grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap
 
 ---
 
-## 七、资源约束
+## 十一、资源约束
 
-### 7.1 图片
+### 11.1 图片
 - **全站不允许任何 SVG 文件**
 - **全站不允许除视频封面外的任何图片**
 - Favicon 只允许 `favicon.png`
 
-### 7.2 字体与图标
+### 11.2 字体与图标
 - 使用系统字体栈：`-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif`
 - 不允许加载任何自定义字体文件
 - 图标使用纯文本/emoji
 
 ---
 
-## 八、代码规范
+## 十二、代码规范
 
-### 8.1 不允许做的事情
+### 12.1 不允许做的事情
 - ❌ 在 layout 中 `import('hls.js')`
 - ❌ 在首页 Svelte 模板中使用 `{@html <script>}`
 - ❌ 修改首页的 `csr`/`prerender` 配置
@@ -213,7 +293,7 @@ grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap
 - ❌ **在视频卡片中添加时长、分类、集数等元素**
 - ❌ **在代码中硬编码分类/标签/热搜词数据**
 
-### 8.2 必须做的事情
+### 12.2 必须做的事情
 - ✅ 首页内联脚本放在 `app.html` 的 `</body>` 前
 - ✅ 视频详情页的 HLS.js 使用 `import('hls.js/light')`
 - ✅ 所有 API 路由使用边缘缓存
@@ -223,7 +303,7 @@ grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap
 
 ---
 
-## 九、部署检查清单
+## 十三、部署检查清单
 
 每次部署前必须验证：
 
@@ -237,10 +317,14 @@ grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap
 8. [ ] **`git push` 到 GitHub**
 9. [ ] **没有硬编码的分类/标签数据**
 10. [ ] **Lighthouse 性能分数 > 90**
+11. [ ] SW 缓存视频流 m3u8/ts 片段
+12. [ ] 域名屏蔽检测正常（国产APP/浏览器→引导页）
+13. [ ] PWA 安装后离线可用
+14. [ ] 首页 SW 缓存命中（二次打开 < 100ms）
 
 ---
 
-## 十、架构概览
+## 十四、架构概览
 
 ```
 首页 (/)
