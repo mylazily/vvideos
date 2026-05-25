@@ -31,7 +31,7 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          projectName: vvideos
+          projectName: evideos
           directory: build
           gitHubToken: ${{ secrets.GITHUB_TOKEN }}
           # 确保SPA fallback正常工作
