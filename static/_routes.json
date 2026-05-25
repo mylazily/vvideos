@@ -3,32 +3,5 @@
   "include": [
     "/*"
   ],
-  "exclude": [
-    "/_app/*",
-    "/static/*",
-    "/favicon.png",
-    "/icon.svg",
-    "/icon-192.png",
-    "/icon-512.png",
-    "/manifest.json",
-    "/robots.txt",
-    "/sw.js",
-    "/blocked.html",
-    "/index.html",
-    "/200.html",
-    "/*.css",
-    "/*.js",
-    "/*.png",
-    "/*.jpg",
-    "/*.svg",
-    "/*.ico",
-    "/*.webp",
-    "/*.woff",
-    "/*.woff2",
-    "/*.ttf",
-    "/*.eot",
-    "/*.xml",
-    "/*.br",
-    "/*.gz"
-  ]
+  "exclude": []
 }

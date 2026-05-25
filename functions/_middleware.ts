@@ -1,70 +1,73 @@
-// SPA fallback middleware - 非API请求返回200.html
+// SPA fallback middleware - 所有请求首先经过这里
 import type { PagesFunction } from '@cloudflare/workers-types';
 
 export const onRequest: PagesFunction = async (context) => {
 	const url = new URL(context.request.url);
 	const path = url.pathname;
 
-	// API请求 - 交给其他Functions处理
+	// API请求 - 交给 api/ 目录的Functions处理
 	if (path.startsWith('/api/')) {
 		return context.next();
 	}
 
-	// 静态资源 - 使用 context.next() 让 Assets 处理
-	const staticExts = ['.js', '.css', '.png', '.jpg', '.svg', '.ico', '.webp', '.woff', '.woff2', '.ttf', '.eot', '.xml', '.json', '.br', '.gz'];
-	if (staticExts.some(ext => path.endsWith(ext))) {
+	// 静态资源 - 直接让Assets处理
+	if (path.startsWith('/_app/') ||
+		path.startsWith('/static/') ||
+		path.endsWith('.js') ||
+		path.endsWith('.css') ||
+		path.endsWith('.png') ||
+		path.endsWith('.jpg') ||
+		path.endsWith('.svg') ||
+		path.endsWith('.ico') ||
+		path.endsWith('.webp') ||
+		path.endsWith('.woff') ||
+		path.endsWith('.woff2') ||
+		path.endsWith('.ttf') ||
+		path.endsWith('.xml') ||
+		path.endsWith('.json') ||
+		path === '/favicon.png' ||
+		path === '/icon.svg' ||
+		path === '/icon-192.png' ||
+		path === '/icon-512.png' ||
+		path === '/manifest.json' ||
+		path === '/robots.txt' ||
+		path === '/sw.js' ||
+		path === '/blocked.html') {
 		return context.next();
 	}
 
-	const staticPaths = ['/_app', '/static', '/favicon.png', '/icon.svg', '/icon-192.png', '/icon-512.png', '/manifest.json', '/robots.txt', '/sw.js', '/blocked.html'];
-	if (staticPaths.some(p => path.startsWith(p))) {
+	// 已知页面文件 - 让Assets处理
+	if (path === '/' || path === '/index.html' || path === '/200.html') {
 		return context.next();
 	}
 
-	// 已知页面文件 (SvelteKit预渲染的) - 直接服务
-	const knownPages = ['/index.html', '/200.html'];
-	if (knownPages.some(p => path === p || path.endsWith('.html'))) {
-		return context.next();
-	}
-
-	// 尝试获取请求的文件
+	// 尝试获取请求的文件（让Assets处理）
 	try {
 		const response = await context.next();
-		// 如果文件存在(200)，直接返回
+		// 如果文件存在，直接返回
 		if (response.status === 200) {
 			return response;
 		}
 	} catch {
-		// context.next() 失败，继续fallback
+		// context.next() 抛出异常，继续fallback
 	}
 
-	// SPA fallback - 直接返回200.html的内容
-	// 不改变URL，让浏览器保持在当前路径
-	const fallbackRequest = new Request(url.origin + '/200.html', {
-		method: 'GET',
-		headers: {
-			'Accept': 'text/html'
+	// SPA fallback - 返回200.html让SvelteKit客户端路由处理
+	// 注意：不改变URL，保持浏览器在当前路径
+	const response = new Response(
+		await (
+			await context.env.ASSETS.fetch(
+				new Request(url.origin + '/200.html', { method: 'GET' })
+			)
+		).text(),
+		{
+			status: 200,
+			headers: {
+				'Content-Type': 'text/html;charset=UTF-8',
+				'Cache-Control': 'no-cache'
+			}
 		}
-	});
+	);
 
-	try {
-		const fallbackResponse = await context.env.ASSETS.fetch(fallbackRequest);
-		if (fallbackResponse.status === 200) {
-			// 返回200.html，但使用当前请求的URL
-			// 这样SvelteKit客户端路由会根据当前URL渲染对应页面
-			const response = new Response(fallbackResponse.body, {
-				status: 200,
-				headers: {
-					'Content-Type': 'text/html;charset=UTF-8',
-					'Cache-Control': 'no-cache, no-store, must-revalidate'
-				}
-			});
-			return response;
-		}
-	} catch {
-		// fallback失败
-	}
-
-	// 最终兜底
-	return new Response('Not Found', { status: 404 });
+	return response;
 };
