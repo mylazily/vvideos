@@ -10,6 +10,7 @@
     status: number;
     last_collect_at: number;
     total_videos: number;
+    domain_replacements: string;
     created_at: number;
   }
 
@@ -20,6 +21,7 @@
     action: string;
     details: string;
     new_count: number;
+    updated_count: number;
     error_msg: string;
     created_at: number;
   }
@@ -29,17 +31,6 @@
     sourceCount: number;
     todayCollectCount: number;
     todayNewVideos: number;
-  }
-
-  interface CollectProgress {
-    status: 'running' | 'completed' | 'error';
-    page: number;
-    totalPages: number;
-    new: number;
-    merged: number;
-    fail: number;
-    startedAt: number;
-    message?: string;
   }
 
   let isAuthenticated = $state(false);
@@ -55,20 +46,22 @@
   let newSourceName = $state('');
   let newSourceUrl = $state('');
 
-  // 采集进度相关状态
-  let collectingSourceId = $state<number | null>(null);
-  let collectProgress = $state<CollectProgress | null>(null);
-  let progressTimer = $state<ReturnType<typeof setInterval> | null>(null);
-
   // 采集参数
   let collectPages = $state(5);
   let collectCategories = $state('');
+
+  // 域名替换
+  let replaceSourceId = $state<number>(0);
+  let oldM3u8Domain = $state('');
+  let newM3u8Domain = $state('');
+  let oldImageDomain = $state('');
+  let newImageDomain = $state('');
+  let replacing = $state(false);
 
   // 热门搜索关键字
   let keywords = $state<string[]>([]);
   let newKeyword = $state('');
 
-  // 带认证的 fetch 封装
   function authFetch(url: string, options: RequestInit = {}): Promise<Response> {
     const token = sessionStorage.getItem(AUTH_KEY);
     return fetch(url, {
@@ -83,19 +76,7 @@
 
   onMount(() => {
     const token = sessionStorage.getItem(AUTH_KEY);
-    if (token) {
-      isAuthenticated = true;
-      loadData();
-    }
-  });
-
-  // 清理定时器
-  $effect(() => {
-    return () => {
-      if (progressTimer) {
-        clearInterval(progressTimer);
-      }
-    };
+    if (token) { isAuthenticated = true; loadData(); }
   });
 
   async function handleLogin() {
@@ -117,20 +98,15 @@
         authError = data.message || '密码错误';
         passwordInput = '';
       }
-    } catch {
-      authError = '网络错误';
-    } finally {
-      loginLoading = false;
-    }
+    } catch { authError = '网络错误'; }
+    finally { loginLoading = false; }
   }
 
   function handleLogout() {
     sessionStorage.removeItem(AUTH_KEY);
     isAuthenticated = false;
     passwordInput = '';
-    stats = null;
-    sources = [];
-    logs = [];
+    stats = null; sources = []; logs = [];
   }
 
   async function loadData() {
@@ -142,151 +118,29 @@
         authFetch('/api/aadmin/logs?limit=20'),
         authFetch('/api/keywords')
       ]);
-
-      // 检查是否认证失败
-      if (statsRes.status === 401 || sourcesRes.status === 401) {
-        handleLogout();
-        return;
-      }
-
+      if (statsRes.status === 401 || sourcesRes.status === 401) { handleLogout(); return; }
       const [statsData, sourcesData, logsData, keywordsData] = await Promise.all([
-        statsRes.json(),
-        sourcesRes.json(),
-        logsRes.json(),
-        keywordsRes.json()
+        statsRes.json(), sourcesRes.json(), logsRes.json(), keywordsRes.json()
       ]);
-
       if (statsData.success) stats = statsData.data;
       if (sourcesData.success) sources = sourcesData.data;
       if (logsData.success) logs = logsData.data;
       if (keywordsData.success) keywords = keywordsData.data;
-    } catch (e) {
-      console.error(e);
-    } finally {
-      loading = false;
-    }
-  }
-
-  let collectMode = $state<'single' | 'full'>('single');
-
-  // 停止进度轮询
-  function stopProgressPolling() {
-    if (progressTimer) {
-      clearInterval(progressTimer);
-      progressTimer = null;
-    }
-  }
-
-  // 轮询采集进度
-  function startProgressPolling(sourceId: number) {
-    stopProgressPolling();
-    collectingSourceId = sourceId;
-    collectProgress = null;
-
-    // 立即查询一次
-    pollProgress(sourceId);
-
-    // 每3秒轮询
-    progressTimer = setInterval(() => {
-      pollProgress(sourceId);
-    }, 3000);
-  }
-
-  async function pollProgress(sourceId: number) {
-    try {
-      const res = await authFetch(`/api/collect?source_id=${sourceId}`);
-      const data = await res.json();
-      if (data.code === 1 && data.data) {
-        collectProgress = data.data;
-
-        // 如果采集已完成或出错，停止轮询
-        if (data.data.status === 'completed' || data.data.status === 'error') {
-          stopProgressPolling();
-          collecting = false;
-          collectingSourceId = null;
-          message = data.data.message || (data.data.status === 'completed' ? '采集完成' : '采集出错');
-          setTimeout(loadData, 1000);
-        }
-      }
-    } catch {
-      // 轮询失败不影响主流程
-    }
-  }
-
-  // 取消采集
-  async function cancelCollect(sourceId: number) {
-    try {
-      const res = await authFetch(`/api/collect?source_id=${sourceId}`, { method: 'DELETE' });
-      const data = await res.json();
-      stopProgressPolling();
-      collecting = false;
-      collectingSourceId = null;
-      collectProgress = null;
-      message = data.msg || '已取消采集';
-    } catch {
-      message = '取消失败';
-    }
-  }
-
-  async function startCollect(sourceId: number, mode: 'single' | 'full' = 'single') {
-    collecting = true;
-    collectingSourceId = sourceId;
-    collectProgress = null;
-    message = mode === 'full' ? '正在全量采集...' : '正在采集...';
-
-    // 解析分类参数
-    const categories = collectCategories.trim()
-      ? collectCategories.split(/[,，]/).map(c => c.trim()).filter(Boolean)
-      : undefined;
-
-    try {
-      const res = await authFetch('/api/aadmin/collect', {
-        method: 'POST',
-        body: JSON.stringify({
-          source_id: sourceId,
-          mode,
-          pages: mode === 'single' ? collectPages : undefined,
-          categories
-        })
-      });
-      const data = await res.json();
-      if (data.success) {
-        // 启动进度轮询
-        startProgressPolling(sourceId);
-      } else {
-        message = data.message || '操作失败';
-        collecting = false;
-        collectingSourceId = null;
-      }
-    } catch {
-      message = '请求失败';
-      collecting = false;
-      collectingSourceId = null;
-    }
+    } catch (e) { console.error(e); }
+    finally { loading = false; }
   }
 
   async function addSource() {
-    if (!newSourceName.trim() || !newSourceUrl.trim()) {
-      message = '请填写名称和接口地址';
-      return;
-    }
+    if (!newSourceName.trim() || !newSourceUrl.trim()) { message = '请填写名称和接口地址'; return; }
     try {
       const res = await authFetch('/api/aadmin/sources', {
         method: 'POST',
         body: JSON.stringify({ name: newSourceName, api_url: newSourceUrl })
       });
       const data = await res.json();
-      if (data.success) {
-        newSourceName = '';
-        newSourceUrl = '';
-        await loadData();
-        message = '添加成功';
-      } else {
-        message = data.message || '添加失败';
-      }
-    } catch {
-      message = '请求失败';
-    }
+      if (data.success) { newSourceName = ''; newSourceUrl = ''; await loadData(); message = '✅ 添加成功'; }
+      else { message = '❌ ' + (data.message || '添加失败'); }
+    } catch { message = '❌ 请求失败'; }
   }
 
   async function deleteSource(id: number) {
@@ -294,73 +148,70 @@
     try {
       const res = await authFetch('/api/aadmin/sources?id=' + id, { method: 'DELETE' });
       const data = await res.json();
-      if (data.success) {
-        await loadData();
-        message = '删除成功';
-      }
-    } catch {
-      message = '删除失败';
-    }
+      if (data.success) { await loadData(); message = '✅ 删除成功'; }
+    } catch { message = '❌ 删除失败'; }
   }
 
-  async function runTimming() {
+  async function startCollect(sourceId: number, mode: string = 'single') {
     collecting = true;
-    message = '正在执行定时采集...';
+    const modeLabel = { single: '单页采集', full: '全量采集', today: '今日更新', week: '本周更新', month: '本月更新' }[mode] || mode;
+    message = `🔄 正在${modeLabel}...`;
+
+    const categories = collectCategories.trim() ? collectCategories.split(/[,，]/).map(c => c.trim()).filter(Boolean) : undefined;
+
     try {
-      const res = await authFetch('/api/timming?force=1');
+      const res = await authFetch('/api/aadmin/collect-async', {
+        method: 'POST',
+        body: JSON.stringify({ source_id: sourceId, mode, pages: mode === 'single' ? collectPages : undefined, categories })
+      });
       const data = await res.json();
-      message = data.msg;
-      if (data.success) {
-        setTimeout(loadData, 2000);
-      }
-    } catch {
-      message = '执行失败';
-    } finally {
-      collecting = false;
-    }
+      if (data.success) { message = `✅ ${modeLabel}已启动，后台执行中...`; }
+      else { message = '❌ ' + (data.message || '操作失败'); }
+    } catch { message = '❌ 请求失败'; }
+    finally { collecting = false; setTimeout(loadData, 5000); }
   }
 
-  function formatTime(ts: number): string {
-    if (!ts) return '-';
-    const d = new Date(ts * 1000);
-    return d.toLocaleString('zh-CN');
+  async function replaceDomain() {
+    if (!replaceSourceId) { message = '请选择采集源'; return; }
+    if (!oldM3u8Domain && !oldImageDomain) { message = '请至少填写一个替换规则'; return; }
+    replacing = true;
+    message = '🔄 正在替换域名...';
+    try {
+      const res = await authFetch('/api/aadmin/replace-domain', {
+        method: 'POST',
+        body: JSON.stringify({
+          source_id: replaceSourceId,
+          old_m3u8_domain: oldM3u8Domain || undefined,
+          new_m3u8_domain: newM3u8Domain || undefined,
+          old_image_domain: oldImageDomain || undefined,
+          new_image_domain: newImageDomain || undefined
+        })
+      });
+      const data = await res.json();
+      if (data.success) { message = `✅ ${data.message}`; oldM3u8Domain = ''; newM3u8Domain = ''; oldImageDomain = ''; newImageDomain = ''; }
+      else { message = '❌ ' + (data.message || '替换失败'); }
+    } catch { message = '❌ 请求失败'; }
+    finally { replacing = false; }
   }
 
-  // 热门搜索关键字管理
   async function addKeyword() {
     if (!newKeyword.trim()) return;
     try {
       const res = await authFetch('/api/keywords', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ keyword: newKeyword.trim() })
       });
       const data = await res.json();
       message = data.message;
-      if (data.success) {
-        newKeyword = '';
-        await loadKeywords();
-      }
-    } catch {
-      message = '添加失败';
-    }
+      if (data.success) { newKeyword = ''; await loadKeywords(); }
+    } catch { message = '❌ 添加失败'; }
   }
 
   async function deleteKeyword(keyword: string) {
-    if (!confirm(`确定删除关键字"${keyword}"吗？`)) return;
     try {
-      const res = await authFetch('/api/aadmin/keywords', {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ keyword })
-      });
-      const data = await res.json();
-      if (data.success) {
-        await loadKeywords();
-      }
-    } catch {
-      message = '删除失败';
-    }
+      await authFetch('/api/aadmin/keywords', { method: 'DELETE', body: JSON.stringify({ keyword }) });
+      await loadKeywords();
+    } catch {}
   }
 
   async function loadKeywords() {
@@ -368,28 +219,12 @@
       const res = await authFetch('/api/keywords');
       const data = await res.json();
       if (data.success) keywords = data.data;
-    } catch {
-      // ignore
-    }
+    } catch {}
   }
 
-  // 进度百分比
-  function progressPercent(): number {
-    if (!collectProgress || !collectProgress.totalPages) return 0;
-    return Math.round((collectProgress.page / collectProgress.totalPages) * 100);
-  }
-
-  // 进度条颜色
-  function progressColor(): string {
-    if (!collectProgress) return 'bg-blue-500';
-    if (collectProgress.status === 'error') return 'bg-red-500';
-    if (collectProgress.status === 'completed') return 'bg-green-500';
-    return 'bg-blue-500';
-  }
-
-  // 判断某个源是否正在采集中
-  function isSourceCollecting(sourceId: number): boolean {
-    return collectingSourceId === sourceId && collectProgress?.status === 'running';
+  function formatTime(ts: number): string {
+    if (!ts) return '-';
+    return new Date(ts * 1000).toLocaleString('zh-CN');
   }
 </script>
 
@@ -399,52 +234,30 @@
 </svelte:head>
 
 {#if !isAuthenticated}
-  <!-- 密码登录界面 -->
   <div class="min-h-screen bg-gray-100 flex items-center justify-center p-4">
     <div class="bg-white rounded-2xl shadow-lg p-8 w-full max-w-sm">
       <div class="text-center mb-6">
-        <div class="w-16 h-16 bg-pink-100 rounded-full flex items-center justify-center mx-auto mb-4 text-3xl">
-          🔒
-        </div>
+        <div class="w-16 h-16 bg-pink-100 rounded-full flex items-center justify-center mx-auto mb-4 text-3xl">🔒</div>
         <h1 class="text-xl font-bold text-gray-800">管理后台</h1>
         <p class="text-sm text-gray-500 mt-1">请输入密码访问</p>
       </div>
-
       <form onsubmit={(e) => { e.preventDefault(); handleLogin(); }}>
-        <input
-          bind:value={passwordInput}
-          type="password"
-          placeholder="请输入密码"
-          class="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent"
-          autocomplete="off"
-        />
-        {#if authError}
-          <p class="text-red-500 text-sm mt-2">{authError}</p>
-        {/if}
-        <button
-          type="submit"
-          disabled={loginLoading}
-          class="w-full mt-4 py-3 bg-pink-500 text-white rounded-xl font-medium hover:bg-pink-600 transition-colors disabled:bg-pink-300"
-        >
+        <input bind:value={passwordInput} type="password" placeholder="请输入密码" class="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-pink-500" autocomplete="off" />
+        {#if authError}<p class="text-red-500 text-sm mt-2">{authError}</p>{/if}
+        <button type="submit" disabled={loginLoading} class="w-full mt-4 py-3 bg-pink-500 text-white rounded-xl font-medium hover:bg-pink-600 disabled:bg-pink-300">
           {loginLoading ? '验证中...' : '进入后台'}
         </button>
       </form>
-
-      <a href="/" class="block text-center text-sm text-gray-500 mt-4 hover:text-pink-500">
-        ← 返回首页
-      </a>
+      <a href="/" class="block text-center text-sm text-gray-500 mt-4 hover:text-pink-500">← 返回首页</a>
     </div>
   </div>
 {:else}
-  <!-- 后台管理界面 -->
   <div class="min-h-screen bg-gray-50">
     <header class="sticky top-0 bg-white border-b border-gray-100 px-4 py-3 z-50">
       <div class="flex items-center justify-between">
         <h1 class="text-xl font-bold text-pink-500">管理后台</h1>
         <div class="flex items-center gap-4">
-          <button onclick={handleLogout} class="text-sm text-gray-500 hover:text-red-500">
-            退出登录
-          </button>
+          <button onclick={handleLogout} class="text-sm text-gray-500 hover:text-red-500">退出登录</button>
           <a href="/" class="text-gray-600">返回首页</a>
         </div>
       </div>
@@ -478,206 +291,121 @@
           </div>
         {/if}
 
-        <!-- 消息提示 -->
         {#if message}
-          <div class="bg-blue-50 text-blue-700 px-4 py-2 rounded-lg mb-4">{message}</div>
+          <div class="bg-blue-50 text-blue-700 px-4 py-2 rounded-lg mb-4 text-sm">{message}</div>
         {/if}
 
-        <!-- 采集进度展示 -->
-        {#if collectProgress}
-          <div class="bg-white rounded-lg p-4 mb-6">
-            <div class="flex items-center justify-between mb-2">
-              <h2 class="font-medium text-gray-800">
-                采集进度
-                {#if collectProgress.status === 'running'}
-                  <span class="inline-block w-2 h-2 bg-green-500 rounded-full ml-2 animate-pulse"></span>
-                {:else if collectProgress.status === 'completed'}
-                  <span class="text-green-600 text-sm ml-2">已完成</span>
-                {:else if collectProgress.status === 'error'}
-                  <span class="text-red-600 text-sm ml-2">出错</span>
-                {/if}
-              </h2>
-              <span class="text-sm text-gray-500">
-                {collectProgress.page}/{collectProgress.totalPages} 页
-                ({progressPercent()}%)
-              </span>
-            </div>
-            <!-- 进度条 -->
-            <div class="w-full bg-gray-200 rounded-full h-3 mb-3">
-              <div
-                class="{progressColor()} h-3 rounded-full transition-all duration-500"
-                style="width: {progressPercent()}%"
-              ></div>
-            </div>
-            <!-- 统计数字 -->
-            <div class="grid grid-cols-3 gap-4 text-center">
-              <div>
-                <div class="text-lg font-bold text-green-600">{collectProgress.new}</div>
-                <div class="text-xs text-gray-500">新增</div>
-              </div>
-              <div>
-                <div class="text-lg font-bold text-blue-600">{collectProgress.merged}</div>
-                <div class="text-xs text-gray-500">更新</div>
-              </div>
-              <div>
-                <div class="text-lg font-bold text-red-600">{collectProgress.fail}</div>
-                <div class="text-xs text-gray-500">失败</div>
-              </div>
-            </div>
-          </div>
-        {/if}
-
-        <!-- 定时采集按钮 -->
+        <!-- 一键替换域名 -->
         <div class="bg-white rounded-lg p-4 mb-6">
-          <div class="flex items-center justify-between">
+          <h2 class="font-medium text-gray-800 mb-3">🔧 一键替换域名</h2>
+          <p class="text-xs text-gray-400 mb-3">替换该资源站所有视频的m3u8播放域名和图片域名，规则会自动保存，后续采集也会自动替换</p>
+          <div class="space-y-3">
             <div>
-              <h2 class="font-medium text-gray-800">定时采集</h2>
-              <p class="text-sm text-gray-500">每小时自动执行一次</p>
+              <label class="block text-xs text-gray-500 mb-1">选择资源站</label>
+              <select bind:value={replaceSourceId} class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm">
+                <option value={0}>-- 请选择 --</option>
+                {#each sources as s}
+                  <option value={s.id}>{s.name}</option>
+                {/each}
+              </select>
             </div>
-            <button
-              onclick={runTimming}
-              disabled={collecting}
-              class="px-4 py-2 bg-green-500 text-white text-sm rounded-lg disabled:bg-gray-300"
-            >
-              {collecting ? '执行中...' : '立即执行'}
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <label class="block text-xs text-gray-500 mb-1">M3U8旧域名</label>
+                <input bind:value={oldM3u8Domain} type="text" placeholder="如：old-cdn.com" class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+              </div>
+              <div>
+                <label class="block text-xs text-gray-500 mb-1">M3U8新域名</label>
+                <input bind:value={newM3u8Domain} type="text" placeholder="如：new-cdn.com" class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+              </div>
+              <div>
+                <label class="block text-xs text-gray-500 mb-1">图片旧域名</label>
+                <input bind:value={oldImageDomain} type="text" placeholder="如：old-pic.com" class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+              </div>
+              <div>
+                <label class="block text-xs text-gray-500 mb-1">图片新域名</label>
+                <input bind:value={newImageDomain} type="text" placeholder="如：new-pic.com" class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+              </div>
+            </div>
+            <button onclick={replaceDomain} disabled={replacing} class="px-4 py-2 bg-orange-500 text-white text-sm rounded-lg hover:bg-orange-600 disabled:bg-gray-300">
+              {replacing ? '替换中...' : '立即替换'}
             </button>
           </div>
         </div>
 
-        <!-- 采集参数设置 -->
+        <!-- 采集参数 -->
         <div class="bg-white rounded-lg p-4 mb-6">
-          <h2 class="font-medium text-gray-800 mb-3">采集参数</h2>
+          <h2 class="font-medium text-gray-800 mb-3">⚙️ 采集参数</h2>
           <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
-              <label class="block text-sm text-gray-500 mb-1">采集页数（单页模式）</label>
-              <input
-                bind:value={collectPages}
-                type="number"
-                min="1"
-                max="999"
-                class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
-                placeholder="默认5页"
-              />
+              <label class="block text-xs text-gray-500 mb-1">单页采集页数</label>
+              <input bind:value={collectPages} type="number" min="1" max="999" class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" placeholder="默认5页" />
             </div>
             <div>
-              <label class="block text-sm text-gray-500 mb-1">分类过滤（可选，逗号分隔）</label>
-              <input
-                bind:value={collectCategories}
-                type="text"
-                class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
-                placeholder="如：动作片,喜剧片,爱情片"
-              />
+              <label class="block text-xs text-gray-500 mb-1">分类过滤（可选，逗号分隔）</label>
+              <input bind:value={collectCategories} type="text" class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" placeholder="如：动作片,喜剧片" />
             </div>
           </div>
         </div>
 
         <!-- 热门搜索关键字 -->
         <div class="bg-white rounded-lg p-4 mb-6">
-          <h2 class="font-medium text-gray-800 mb-3">热门搜索关键字</h2>
+          <h2 class="font-medium text-gray-800 mb-3">🔥 热门搜索关键字（发现页显示）</h2>
           <div class="flex gap-2 mb-3">
-            <input
-              bind:value={newKeyword}
-              type="text"
-              class="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm"
-              placeholder="输入搜索关键字"
-              onkeydown={(e) => e.key === 'Enter' && addKeyword()}
-            />
-            <button
-              onclick={addKeyword}
-              class="px-4 py-2 bg-pink-500 text-white text-sm rounded-lg hover:bg-pink-600"
-            >
-              添加
-            </button>
+            <input bind:value={newKeyword} type="text" class="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm" placeholder="输入关键字" onkeydown={(e) => e.key === 'Enter' && addKeyword()} />
+            <button onclick={addKeyword} class="px-4 py-2 bg-pink-500 text-white text-sm rounded-lg hover:bg-pink-600">添加</button>
           </div>
           {#if keywords.length > 0}
             <div class="flex flex-wrap gap-2">
               {#each keywords as kw}
                 <span class="inline-flex items-center gap-1 px-3 py-1.5 bg-pink-50 text-pink-600 text-sm rounded-full">
                   {kw}
-                  <button onclick={() => deleteKeyword(kw)} class="text-pink-400 hover:text-pink-700 ml-1" title="删除">×</button>
+                  <button onclick={() => deleteKeyword(kw)} class="text-pink-400 hover:text-pink-700 ml-1">×</button>
                 </span>
               {/each}
             </div>
           {:else}
-            <p class="text-sm text-gray-400">暂无关键字，添加后将在发现页展示</p>
+            <p class="text-sm text-gray-400">暂无关键字</p>
           {/if}
         </div>
 
         <!-- 添加采集源 -->
         <div class="bg-white rounded-lg p-4 mb-6">
-          <h2 class="font-medium text-gray-800 mb-3">添加采集源</h2>
+          <h2 class="font-medium text-gray-800 mb-3">➕ 添加采集源</h2>
           <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <input
-              bind:value={newSourceName}
-              type="text"
-              placeholder="采集源名称"
-              class="px-3 py-2 border border-gray-200 rounded-lg text-sm"
-            />
-            <input
-              bind:value={newSourceUrl}
-              type="text"
-              placeholder="接口地址，如：https://api.example.com/api.php/provide/vod/"
-              class="px-3 py-2 border border-gray-200 rounded-lg text-sm md:col-span-2"
-            />
+            <input bind:value={newSourceName} type="text" placeholder="采集源名称" class="px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+            <input bind:value={newSourceUrl} type="text" placeholder="接口地址" class="px-3 py-2 border border-gray-200 rounded-lg text-sm md:col-span-2" />
           </div>
-          <button
-            onclick={addSource}
-            class="mt-3 px-4 py-2 bg-blue-500 text-white text-sm rounded-lg"
-          >
-            添加
-          </button>
+          <button onclick={addSource} class="mt-3 px-4 py-2 bg-blue-500 text-white text-sm rounded-lg hover:bg-blue-600">添加</button>
         </div>
 
-        <!-- 采集源 -->
+        <!-- 采集源列表 -->
         <div class="bg-white rounded-lg mb-6">
           <div class="px-4 py-3 border-b border-gray-100">
-            <h2 class="font-medium text-gray-800">采集源</h2>
+            <h2 class="font-medium text-gray-800">📡 采集源</h2>
           </div>
           <div class="divide-y divide-gray-100">
             {#each sources as source}
-              <div class="px-4 py-3 flex items-center justify-between">
-                <div class="flex-1">
+              <div class="px-4 py-3">
+                <div class="flex items-center justify-between mb-2">
                   <div class="font-medium text-gray-800">{source.name}</div>
-                  <div class="text-xs text-gray-400 break-all">{source.api_url}</div>
-                  <div class="text-xs text-gray-400 mt-1">
-                    状态: {source.status === 1 ? '启用' : '禁用'} |
-                    视频: {source.total_videos} |
-                    最后采集: {formatTime(source.last_collect_at)}
-                  </div>
+                  <button onclick={() => deleteSource(source.id)} class="px-2 py-1 bg-red-500 text-white text-xs rounded">删除</button>
                 </div>
-                <div class="flex gap-2">
-                  {#if isSourceCollecting(source.id)}
-                    <button
-                      onclick={() => cancelCollect(source.id)}
-                      class="px-3 py-1.5 bg-red-500 text-white text-sm rounded animate-pulse"
-                    >
-                      取消
-                    </button>
-                  {:else}
-                    <button
-                      onclick={() => startCollect(source.id, 'single')}
-                      disabled={collecting || source.status !== 1}
-                      class="px-3 py-1.5 bg-pink-500 text-white text-sm rounded disabled:bg-gray-300"
-                    >
-                      采集
-                    </button>
-                  {/if}
-                  <button
-                    onclick={() => startCollect(source.id, 'full')}
-                    disabled={collecting || source.status !== 1}
-                    class="px-3 py-1.5 bg-purple-500 text-white text-sm rounded disabled:bg-gray-300"
-                    title="全量采集所有页面"
-                  >
-                    全量
-                  </button>
-                  <button
-                    onclick={() => deleteSource(source.id)}
-                    class="px-3 py-1.5 bg-red-500 text-white text-sm rounded"
-                  >
-                    删除
-                  </button>
+                <div class="text-xs text-gray-400 break-all mb-2">{source.api_url}</div>
+                <div class="text-xs text-gray-400 mb-2">
+                  视频: {source.total_videos} | 最后采集: {formatTime(source.last_collect_at)}
+                </div>
+                <!-- 采集按钮组 -->
+                <div class="flex flex-wrap gap-2">
+                  <button onclick={() => startCollect(source.id, 'today')} disabled={collecting} class="px-3 py-1.5 bg-green-500 text-white text-xs rounded hover:bg-green-600 disabled:bg-gray-300">今日</button>
+                  <button onclick={() => startCollect(source.id, 'week')} disabled={collecting} class="px-3 py-1.5 bg-teal-500 text-white text-xs rounded hover:bg-teal-600 disabled:bg-gray-300">本周</button>
+                  <button onclick={() => startCollect(source.id, 'month')} disabled={collecting} class="px-3 py-1.5 bg-indigo-500 text-white text-xs rounded hover:bg-indigo-600 disabled:bg-gray-300">本月</button>
+                  <button onclick={() => startCollect(source.id, 'single')} disabled={collecting} class="px-3 py-1.5 bg-pink-500 text-white text-xs rounded hover:bg-pink-600 disabled:bg-gray-300">单页({collectPages}页)</button>
+                  <button onclick={() => startCollect(source.id, 'full')} disabled={collecting} class="px-3 py-1.5 bg-purple-500 text-white text-xs rounded hover:bg-purple-600 disabled:bg-gray-300">全量</button>
                 </div>
               </div>
+            {:else}
+              <div class="px-4 py-8 text-center text-gray-400 text-sm">暂无采集源，请先添加</div>
             {/each}
           </div>
         </div>
@@ -685,16 +413,16 @@
         <!-- 采集日志 -->
         <div class="bg-white rounded-lg">
           <div class="px-4 py-3 border-b border-gray-100">
-            <h2 class="font-medium text-gray-800">采集日志</h2>
+            <h2 class="font-medium text-gray-800">📋 采集日志</h2>
           </div>
           <div class="divide-y divide-gray-100">
             {#each logs as log}
               <div class="px-4 py-3">
                 <div class="flex items-center justify-between">
-                  <span class="font-medium text-gray-800">{log.source_name || '未知源'}</span>
+                  <span class="font-medium text-gray-800 text-sm">{log.source_name || '未知源'}</span>
                   <span class="text-xs text-gray-400">{formatTime(log.created_at)}</span>
                 </div>
-                <div class="text-sm text-gray-600 mt-1">{log.details}</div>
+                <div class="text-xs text-gray-600 mt-1">{log.details}</div>
                 {#if log.new_count > 0}
                   <div class="text-xs text-green-600 mt-1">新增: {log.new_count}条</div>
                 {/if}
@@ -702,6 +430,8 @@
                   <div class="text-xs text-red-600 mt-1">错误: {log.error_msg}</div>
                 {/if}
               </div>
+            {:else}
+              <div class="px-4 py-8 text-center text-gray-400 text-sm">暂无日志</div>
             {/each}
           </div>
         </div>
