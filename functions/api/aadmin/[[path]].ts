@@ -297,5 +297,66 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 		return json({ success: true, message: '删除成功' });
 	}
 
+	// 10. 定时采集设置
+	if (path === '/api/aadmin/source-schedule' && request.method === 'POST') {
+		const body = await request.json<{
+			source_id?: number;
+			enabled?: boolean;
+			mode?: string;
+			cron?: string;
+		}>();
+
+		if (!body.source_id) return json({ success: false, message: '缺少采集源ID' }, 400);
+
+		const enabled = body.enabled ? 1 : 0;
+		const mode = body.mode || 'today';
+		const cron = body.cron || '0 */6 * * *';
+
+		try {
+			await env.DB_0.prepare(
+				'UPDATE sources SET auto_collect_enabled = ?, auto_collect_mode = ?, auto_collect_cron = ? WHERE id = ?'
+			).bind(enabled, mode, cron, body.source_id).run();
+
+			// 如果启用定时采集，将任务信息存入KV供调度器使用
+			if (enabled) {
+				await env.CACHE.put(`schedule:${body.source_id}`, JSON.stringify({
+					source_id: body.source_id,
+					mode: mode,
+					cron: cron,
+					enabled: true,
+					updated_at: Date.now()
+				}));
+			} else {
+				// 禁用定时采集时删除调度信息
+				await env.CACHE.delete(`schedule:${body.source_id}`);
+			}
+
+			return json({ success: true, message: '定时采集设置已保存' });
+		} catch (e: any) {
+			return json({ success: false, message: '保存失败: ' + (e.message || '未知错误') }, 500);
+		}
+	}
+
+	// 11. 获取定时采集设置
+	if (path === '/api/aadmin/source-schedule' && request.method === 'GET') {
+		const sourceId = url.searchParams.get('source_id');
+		if (!sourceId) return json({ success: false, message: '缺少source_id' }, 400);
+
+		const source = await env.DB_0.prepare(
+			'SELECT auto_collect_enabled, auto_collect_mode, auto_collect_cron FROM sources WHERE id = ?'
+		).bind(sourceId).first<any>();
+
+		if (!source) return json({ success: false, message: '采集源不存在' }, 404);
+
+		return json({
+			success: true,
+			data: {
+				enabled: source.auto_collect_enabled === 1,
+				mode: source.auto_collect_mode || 'today',
+				cron: source.auto_collect_cron || '0 */6 * * *'
+			}
+		});
+	}
+
 	return json({ success: false, message: 'API not found' }, 404);
 };
