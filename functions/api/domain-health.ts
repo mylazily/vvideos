@@ -66,7 +66,8 @@ async function extractM3u8Domains(env: any): Promise<string[]> {
     
     // 采样检测 - 从每个分片检查部分视频
     for (const db of shards) {
-      const rows = await db.prepare('SELECT play_url FROM videos WHERE status = 1 LIMIT 20').all<{ results: { play_url: string }[] }>();
+      const rowsResult = await db.prepare('SELECT play_url FROM videos WHERE status = 1 LIMIT 20').all();
+      const rows = rowsResult as { results: { play_url: string }[] };
       for (const row of rows.results || []) {
         if (row.play_url) {
           try {
