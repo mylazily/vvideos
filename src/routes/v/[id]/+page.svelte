@@ -54,6 +54,17 @@
   // ============ 派生状态 ============
   let videoId = $derived($page.params.id);
 
+  // ============ 代理 URL 转换函数 ============
+  function getProxyUrl(url: string): string {
+    if (!url) return url;
+    // 如果已经是代理 URL，直接返回
+    if (url.startsWith('/api/proxy-video')) return url;
+    // 如果是相对路径，直接返回
+    if (url.startsWith('/')) return url;
+    // 转换为代理 URL，解决 CORS 问题
+    return `/api/proxy-video?url=${encodeURIComponent(url)}`;
+  }
+
   // ============ 生命周期 ============
   onMount(() => {
     loadVideo();
@@ -193,7 +204,7 @@
       if (url.includes('$') && url.includes('#')) {
         const episodes = url.split('#');
         episodes.forEach((ep, epIdx) => {
-          const match = ep.match(/(.+?)\$(.+)/);
+          const match = ep.match(/(.+?)\\$(.+)/);
           if (match && match[2]) {
             result.push({
               id: `ep${epIdx}`,
@@ -206,7 +217,7 @@
       }
       // 格式2: 单集格式 name$url
       else if (url.includes('$')) {
-        const match = url.match(/(.+?)\$(.+)/);
+        const match = url.match(/(.+?)\\$(.+)/);
         if (match && match[2]) {
           result.push({
             id: `source-${i}`,
@@ -242,10 +253,13 @@
     // 绑定播放进度保存
     bindProgressTracker();
 
+    // 使用代理 URL 解决 CORS 问题
+    const proxyUrl = getProxyUrl(url);
+
     if (url.includes('.m3u8')) {
-      playHls(videoEl, url);
+      playHls(videoEl, proxyUrl);
     } else {
-      playNative(videoEl, url);
+      playNative(videoEl, proxyUrl);
     }
   }
 
@@ -317,10 +331,13 @@
     playerLoading = true;
     errorMsg = ''; // 清除之前的错误
 
+    // 使用代理 URL
+    const proxyUrl = getProxyUrl(source.url);
+
     if (source.url.includes('.m3u8')) {
-      await playHls(videoEl, source.url);
+      await playHls(videoEl, proxyUrl);
     } else {
-      playNative(videoEl, source.url);
+      playNative(videoEl, proxyUrl);
     }
   }
 
@@ -381,6 +398,18 @@
           enableMP2TSDTS: false,
           enableEPG: false,
           enableMSE: true,
+
+          // ===== CORS 代理配置 =====
+          // 通过 loader 配置让 HLS.js 使用代理加载片段
+          loader: class CustomLoader extends Hls.DefaultConfig.loader {
+            load(context: any, config: any, callbacks: any) {
+              // 转换片段 URL 为代理 URL
+              if (context.url && !context.url.startsWith('/api/proxy-video')) {
+                context.url = getProxyUrl(context.url);
+              }
+              super.load(context, config, callbacks);
+            }
+          }
         });
 
         hlsPlayer.on(Hls.Events.MANIFEST_PARSED, () => {
@@ -503,7 +532,8 @@
 
     <!-- 播放器：始终在DOM中，不被loading状态隐藏 -->
     <div class="aspect-video bg-black relative">
-      <video bind:this={videoEl} controls playsinline preload="metadata" class="w-full h-full" poster={video?.cover}>
+      <!-- preload="auto" 自动加载视频，加快播放启动速度 -->
+      <video bind:this={videoEl} controls playsinline preload="auto" class="w-full h-full" poster={video?.cover}>
         您的浏览器不支持视频播放
       </video>
       {#if playerLoading}
@@ -519,76 +549,52 @@
     {#if video}
       <!-- 视频信息 -->
       <article class="p-3 bg-white">
-        <h1 class="text-lg font-bold mb-2">{video.title}</h1>
-        <div class="flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-500 mb-2">
-          {#if video.category}<span>{video.category}</span>{/if}
-          {#if video.vod_year}<span>{video.vod_year}</span>{/if}
-          {#if video.vod_area}<span>{video.vod_area}</span>{/if}
-          {#if video.vod_lang}<span>{video.vod_lang}</span>{/if}
+        <h1 class="text-lg font-bold text-gray-900 mb-1">{video.title}</h1>
+        <p class="text-sm text-gray-500 mb-2">{video.category} · {video.vod_year} · {video.vod_area}</p>
+        
+        <!-- 播放源选择 -->
+        {#if playSources.length > 0}
+          <div class="mt-3">
+            <p class="text-xs text-gray-400 mb-2">播放线路</p>
+            <div class="flex flex-wrap gap-2">
+              {#each playSources as source, idx}
+                <button
+                  onclick={() => playSource(idx)}
+                  class="px-3 py-1.5 text-xs rounded-full border transition-colors {idx === currentSourceIndex ? 'bg-pink-500 text-white border-pink-500' : 'bg-white text-gray-600 border-gray-200 hover:border-pink-300'}"
+                >
+                  {source.name}
+                </button>
+              {/each}
+            </div>
+          </div>
+        {/if}
+        
+        <!-- 操作按钮 -->
+        <div class="flex gap-3 mt-4">
+          <button
+            onclick={() => {
+              if (favorited) {
+                removeFavorite(video.vod_id);
+                favorited = false;
+              } else {
+                addFavorite({ vod_id: video.vod_id, title: video.title, cover: video.cover, category: video.category });
+                favorited = true;
+              }
+            }}
+            class="flex items-center gap-1 px-4 py-2 rounded-full text-sm font-medium transition-colors {favorited ? 'bg-pink-100 text-pink-600' : 'bg-gray-100 text-gray-600'}"
+          >
+            {favorited ? '已收藏' : '收藏'}
+          </button>
         </div>
-        {#if video.vod_actor}
-          <div class="text-sm text-gray-600 mb-2">
-            <span class="text-gray-400">演员：</span>{video.vod_actor}
-          </div>
-        {/if}
-        {#if video.vod_director}
-          <div class="text-sm text-gray-600 mb-2">
-            <span class="text-gray-400">导演：</span>{video.vod_director}
-          </div>
-        {/if}
-        {#if video.vod_remarks}
-          <div class="text-sm text-pink-500 mb-2">{video.vod_remarks}</div>
-        {/if}
       </article>
 
-      <!-- 播放源选择 -->
-      {#if playSources.length > 0}
-        <section class="p-3 bg-white mt-2">
-          <h2 class="text-sm font-medium text-gray-700 mb-2">播放线路</h2>
-          <div class="flex flex-wrap gap-2">
-            {#each playSources as source, i}
-              <button
-                onclick={() => playSource(i)}
-                class="px-3 py-1.5 text-sm rounded-lg border transition-colors {i === currentSourceIndex ? 'bg-pink-500 text-white border-pink-500' : 'bg-gray-50 text-gray-600 border-gray-200 hover:border-pink-300'}"
-              >
-                {source.name}
-                {#if source.duration > 0}
-                  <span class="text-xs opacity-70 ml-1">{formatDuration(source.duration)}</span>
-                {/if}
-              </button>
-            {/each}
-          </div>
-        </section>
-      {/if}
-
-      <!-- 操作按钮 -->
-      <section class="p-3 bg-white mt-2 flex gap-3">
-        <button
-          onclick={() => {
-            if (favorited) {
-              removeFavorite(video.vod_id);
-              favorited = false;
-            } else {
-              addFavorite({ vod_id: video.vod_id, title: video.title, cover: video.cover, category: video.category, vod_year: video.vod_year, vod_area: video.vod_area });
-              favorited = true;
-            }
-          }}
-          class="flex-1 py-2 text-sm rounded-lg border {favorited ? 'bg-pink-50 text-pink-500 border-pink-200' : 'bg-gray-50 text-gray-600 border-gray-200'}"
-        >
-          {favorited ? '♡ 已收藏' : '♡ 收藏'}
-        </button>
-        <a href="/history" class="flex-1 py-2 text-sm text-center rounded-lg border bg-gray-50 text-gray-600 border-gray-200">
-          🕐 历史
-        </a>
-      </section>
-
-      <!-- 相关推荐 -->
+      <!-- 相关视频 -->
       {#if relatedVideos.length > 0}
-        <section class="p-3 bg-white mt-2">
-          <h2 class="text-sm font-medium text-gray-700 mb-2">相关推荐</h2>
-          <div class="grid grid-cols-3 gap-2">
-            {#each relatedVideos.slice(0, 6) as rv}
-              <VideoCard {rv} />
+        <section class="mt-4 bg-white p-3">
+          <h2 class="text-sm font-bold text-gray-900 mb-3">相关推荐</h2>
+          <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2">
+            {#each relatedVideos as related}
+              <VideoCard video={related} />
             {/each}
           </div>
         </section>
@@ -596,5 +602,6 @@
     {/if}
   </main>
 
+  <!-- 底部导航 -->
   <NavBar />
 </div>
