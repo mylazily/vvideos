@@ -2,61 +2,53 @@ name = "evideos"
 compatibility_date = "2024-01-01"
 pages_build_output_dir = "build"
 
-# D1 数据库绑定 - 已更新为新创建的数据库
+# D1 数据库绑定 - 10个分片数据库
 [[d1_databases]]
 binding = "DB_0"
 database_name = "video-db-0"
-database_id = "a2aa47a2-015b-4e35-a2c5-85ca442592b6"
+database_id = "e8deff72-eee4-484a-9f02-e4d24fe0ebf2"
 
 [[d1_databases]]
 binding = "DB_1"
 database_name = "video-db-1"
-database_id = "c8a6bc99-8226-4d00-91ea-0d49eadf090e"
+database_id = "59496b81-df16-49f9-b558-4ae3274bbab2"
 
 [[d1_databases]]
 binding = "DB_2"
 database_name = "video-db-2"
-database_id = "4d610c94-a6be-49ac-8834-8bd3e5d1ba95"
+database_id = "0a47a6ba-9a98-427d-9e66-d5413305a2eb"
 
 [[d1_databases]]
 binding = "DB_3"
 database_name = "video-db-3"
-database_id = "1d3d5be5-174b-4d88-a9c9-2922f820f85b"
+database_id = "5a56a268-5471-4449-8cd5-c97c7f9d4d47"
 
 [[d1_databases]]
 binding = "DB_4"
 database_name = "video-db-4"
-database_id = "f7d805a2-2c8e-4a2e-bb02-50b9c55d3b0f"
+database_id = "05255fc7-e9ab-4550-8ee0-39be4215e305"
 
 [[d1_databases]]
 binding = "DB_5"
 database_name = "video-db-5"
-database_id = "1138e097-a4af-47a1-bddb-d37e5d0657d6"
+database_id = "67d3f912-81a0-49b5-aa22-a6c05d31b2cf"
 
 [[d1_databases]]
 binding = "DB_6"
 database_name = "video-db-6"
-database_id = "41bfdcc6-ee7d-417a-b979-73b5f7015e00"
+database_id = "c046a912-941c-4b1c-b8a9-25e030ab9176"
 
 [[d1_databases]]
 binding = "DB_7"
 database_name = "video-db-7"
-database_id = "fa8347a4-749d-4d4d-b5ec-7e8cbd8bbc4b"
+database_id = "43ffa342-235b-4206-8748-0c5a6f03b4ce"
 
 [[d1_databases]]
 binding = "DB_8"
 database_name = "video-db-8"
-database_id = "da883ecc-5ad3-404e-bae4-682a92ef4914"
+database_id = "be7666f4-987a-42cc-ba8d-6202b7b4b243"
 
 [[d1_databases]]
 binding = "DB_9"
 database_name = "video-db-9"
-database_id = "ea27aa91-61c3-4316-a28f-f5e88ba14cbb"
-
-# KV 命名空间 (如需重新绑定)
-# [[kv_namespaces]]
-# binding = "CACHE"
-# id = "26ce82d53e0f48f18a237f94416f47fb"
-
-# 环境变量请在 Cloudflare Dashboard 中设置:
-# ADMIN_PASSWORD = "yao123"
+database_id = "85ce1736-3d67-42e5-bb89-81f1a14a7cda"
