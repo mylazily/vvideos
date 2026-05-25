@@ -227,21 +227,27 @@
         hlsPlayer = new Hls({
           enableWorker: true,
           lowLatencyMode: false,
-          maxBufferLength: 5,
+          // 首帧极速配置
+          maxBufferLength: 3,
           maxMaxBufferLength: 30,
           maxBufferSize: 50 * 1000 * 1000,
           maxBufferHole: 0.5,
-          startLevel: -1,
+          // 从最低画质开始，首帧最快
+          startLevel: 0,
           startFragPrefetch: true,
-          fragLoadingTimeOut: 8000,
-          manifestLoadingTimeOut: 4000,
-          levelLoadingTimeOut: 4000,
-          fragLoadingMaxRetry: 3,
-          manifestLoadingMaxRetry: 2,
-          levelLoadingMaxRetry: 2,
-          fragLoadingRetryDelay: 100,
-          manifestLoadingRetryDelay: 100,
-          levelLoadingRetryDelay: 100,
+          progressive: true,
+          // 超时配置
+          fragLoadingTimeOut: 6000,
+          manifestLoadingTimeOut: 3000,
+          levelLoadingTimeOut: 3000,
+          // 重试配置
+          fragLoadingMaxRetry: 2,
+          manifestLoadingMaxRetry: 1,
+          levelLoadingMaxRetry: 1,
+          fragLoadingRetryDelay: 50,
+          manifestLoadingRetryDelay: 50,
+          levelLoadingRetryDelay: 50,
+          // 禁用非核心功能
           enableCEA708Captions: false,
           enableWebVTT: false,
           enableIMSC1: false,
@@ -370,7 +376,7 @@
 
     <!-- 播放器：始终在DOM中，不被loading状态隐藏 -->
     <div class="aspect-video bg-black relative">
-      <video bind:this={videoEl} controls playsinline preload="none" class="w-full h-full" poster={video?.cover}>
+      <video bind:this={videoEl} controls playsinline preload="metadata" class="w-full h-full" poster={video?.cover}>
         您的浏览器不支持视频播放
       </video>
       {#if playerLoading}

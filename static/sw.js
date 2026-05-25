@@ -1,16 +1,14 @@
-// Service Worker v16 - 网络优先 + 不拦截第三方 + 不缓存HTML
-const STATIC_CACHE = 'evideos-static-v16';
-const IMAGE_CACHE = 'evideos-images-v16';
-const API_CACHE = 'evideos-api-v16';
-const VIDEO_CACHE = 'evideos-video-v16';
-const CACHE_VERSION = 'v16';
+// Service Worker v17 - 全站缓存统一10分钟 + 首帧极速
+const STATIC_CACHE = 'evideos-static-v17';
+const IMAGE_CACHE = 'evideos-images-v17';
+const API_CACHE = 'evideos-api-v17';
+const VIDEO_CACHE = 'evideos-video-v17';
+const CACHE_VERSION = 'v17';
 
-// 缓存TTL（毫秒）
-const API_TTL = 5 * 60 * 1000;         // API缓存5分钟
-const M3U8_TTL = 5 * 60 * 1000;        // m3u8播放列表缓存5分钟
-const TS_TTL = 10 * 60 * 1000;         // ts视频片段缓存10分钟
-const IMAGE_MAX = 300;
-const TS_MAX = 200;
+// 缓存TTL（毫秒）- 全部统一10分钟
+const CACHE_TTL = 10 * 60 * 1000;
+const IMAGE_MAX = 200;
+const TS_MAX = 150;
 
 // 核心资源（安装时预缓存）
 const CORE_ASSETS = [
@@ -78,7 +76,7 @@ async function lruEvict(cacheName, maxItems) {
 
 // ======== 缓存策略 ========
 
-// 1. JS/CSS：网络优先（确保总是加载最新版本）
+// 1. JS/CSS：网络优先（确保总是最新版本）
 async function staticStrategy(request) {
   try {
     const response = await fetch(request);
@@ -94,41 +92,45 @@ async function staticStrategy(request) {
   }
 }
 
-// 2. 图片：缓存优先（LRU 300张）
+// 2. 图片：缓存优先（LRU，10分钟TTL）
 async function imageStrategy(request) {
-  const cached = await cacheGet(IMAGE_CACHE, request, 0);
+  const cached = await cacheGet(IMAGE_CACHE, request, CACHE_TTL);
   if (cached) return cached;
   try {
     const response = await fetch(request);
     if (response.ok) {
       await lruEvict(IMAGE_CACHE, IMAGE_MAX);
-      cacheSet(IMAGE_CACHE, request, response, 0);
+      cacheSet(IMAGE_CACHE, request, response, CACHE_TTL);
     }
     return response;
   } catch {
-    return cached || new Response('', { status: 404 });
+    // 离线时返回过期缓存
+    const anyCached = await cacheGet(IMAGE_CACHE, request, 0);
+    return anyCached || new Response('', { status: 404 });
   }
 }
 
-// 3. API：Stale-While-Revalidate
+// 3. API：Stale-While-Revalidate（10分钟TTL）
 async function apiStrategy(request) {
   const cache = await caches.open(API_CACHE);
   const cached = await cache.match(request);
 
+  // 有缓存且未过期 → 立即返回，后台更新
   if (cached) {
     const dateHeader = cached.headers.get('sw-cache-time');
-    if (dateHeader && (Date.now() - parseInt(dateHeader)) < API_TTL) {
+    if (dateHeader && (Date.now() - parseInt(dateHeader)) < CACHE_TTL) {
       fetch(request).then(response => {
-        if (response.ok) cacheSet(API_CACHE, request, response, API_TTL);
+        if (response.ok) cacheSet(API_CACHE, request, response, CACHE_TTL);
       }).catch(() => {});
       return cached;
     }
   }
 
+  // 无缓存或过期 → 网络请求
   try {
     const response = await fetch(request);
     if (response.ok) {
-      cacheSet(API_CACHE, request, response, API_TTL);
+      cacheSet(API_CACHE, request, response, CACHE_TTL);
       return response;
     }
     return cached || response;
@@ -139,13 +141,13 @@ async function apiStrategy(request) {
   }
 }
 
-// 4. m3u8：网络优先，缓存兜底
+// 4. m3u8：网络优先，缓存兜底（10分钟）
 async function m3u8Strategy(request) {
-  const cached = await cacheGet(VIDEO_CACHE, request, M3U8_TTL);
+  const cached = await cacheGet(VIDEO_CACHE, request, CACHE_TTL);
   try {
     const response = await fetch(request);
     if (response.ok) {
-      cacheSet(VIDEO_CACHE, request, response, M3U8_TTL);
+      cacheSet(VIDEO_CACHE, request, response, CACHE_TTL);
       return response;
     }
     return cached || response;
@@ -154,19 +156,19 @@ async function m3u8Strategy(request) {
   }
 }
 
-// 5. ts片段：缓存优先
+// 5. ts片段：缓存优先（10分钟，LRU 150）
 async function tsStrategy(request) {
-  const cached = await cacheGet(VIDEO_CACHE, request, TS_TTL);
+  const cached = await cacheGet(VIDEO_CACHE, request, CACHE_TTL);
   if (cached) return cached;
   try {
     const response = await fetch(request);
     if (response.ok) {
       await lruEvict(VIDEO_CACHE, TS_MAX);
-      cacheSet(VIDEO_CACHE, request, response, TS_TTL);
+      cacheSet(VIDEO_CACHE, request, response, CACHE_TTL);
     }
     return response;
   } catch {
-    return cached || new Response('', { status: 503 });
+    return cached || new Response('', { status: 504 });
   }
 }
 
@@ -176,7 +178,7 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(request.url);
   if (request.method !== 'GET') return;
 
-  // 不拦截第三方请求（CDN、API等）
+  // 不拦截第三方请求
   if (url.hostname !== location.host) return;
 
   // API
@@ -209,15 +211,12 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // HTML：不缓存，始终走网络（确保SPA路由正确）
-  // 只在离线时返回缓存的首页作为兜底
+  // HTML：不缓存，始终走网络
   event.respondWith(
     (async () => {
       try {
-        const response = await fetch(request);
-        return response;
+        return await fetch(request);
       } catch {
-        // 离线兜底：返回首页或200.html
         return caches.match('/') || caches.match('/200.html') || new Response(
           '<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>必爱必爱</title></head><body><p>网络连接中...</p></body></html>',
           { headers: { 'Content-Type': 'text/html; charset=utf-8' } }

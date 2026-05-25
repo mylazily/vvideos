@@ -13,17 +13,17 @@ import { getBlockedDomains } from './domain-health';
 const CACHE_VERSION = 'v5';
 const SHARD_COUNT = 10;
 
-// 缓存时间配置（秒）- 优化为更长缓存减少数据库压力
+// 缓存时间配置（秒）- 统一10分钟，保证数据新鲜度
 const CACHE_TTL = {
-	home: 7200,
-	video: 7200,
-	related: 7200,
-	list: 7200,
-	search: 7200,
-	rank: 7200,
-	categories: 7200,
-	filters: 7200,
-	keywords: 7200,
+	home: 600,
+	video: 600,
+	related: 600,
+	list: 600,
+	search: 600,
+	rank: 600,
+	categories: 600,
+	filters: 600,
+	keywords: 600,
 };
 
 // 屏蔽域名缓存
@@ -270,16 +270,16 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 
 	// ===== API路由处理 =====
 	
-	// 1. 首页数据 - 每2小时轮换分片，边缘缓存2小时
+	// 1. 首页数据 - 每10分钟轮换分片，边缘缓存10分钟
 	if (path === '/api/home') {
-		const cacheKey = `home-${Math.floor(Date.now() / 7200000)}`; // 每2小时一个key
+		const cacheKey = `home-${Math.floor(Date.now() / 600000)}`; // 每10分钟一个key
 		return dedupeRequest(cacheKey, async () => {
 			const cached = await getEdgeCache(request);
 			if (cached) return json(cached, 200, CACHE_TTL.home);
 			
 			const shards = getAllShards(env);
-			// 每2小时从10个分片中轮换选1个，取24条最新视频
-			const shardIndex = Math.floor(Date.now() / 7200000) % shards.length;
+			// 每10分钟从10个分片中轮换选1个，取24条最新视频
+			const shardIndex = Math.floor(Date.now() / 600000) % shards.length;
 			const db = shards[shardIndex];
 			
 			const results = await db.prepare(
