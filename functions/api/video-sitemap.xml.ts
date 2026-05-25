@@ -42,7 +42,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
     const shards = getAllShards(env);
     const results = await Promise.all(shards.map(db =>
       db.prepare(
-        `SELECT vod_id, title, category, cover, play_url_1, vod_year, vod_area, vod_actor, vod_director, updated_at 
+        `SELECT vod_id, title, category, cover, play_url, vod_year, vod_area, vod_actor, vod_director, updated_at 
          FROM videos WHERE status = 1 ORDER BY updated_at DESC LIMIT 2000`
       ).all()
     ));
@@ -63,8 +63,8 @@ export const onRequest: PagesFunction<Env> = async (context) => {
       const pageUrl = `${SITE_URL}/v/${v.vod_id}`;
       const lastmod = new Date(v.updated_at * 1000).toISOString().split('T')[0];
       
-      // 从 play_url_1 提取第一个视频地址作为缩略图/预览
-      const firstPlayUrl = v.play_url_1 ? v.play_url_1.split('#')[0].split('$').pop() : '';
+      // 从 play_url 提取第一个视频地址作为缩略图/预览
+      const firstPlayUrl = v.play_url ? v.play_url.split('#')[0].split('$').pop() : '';
       
       xml += '  <url>\n';
       xml += `    <loc>${pageUrl}</loc>\n`;

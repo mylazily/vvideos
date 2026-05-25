@@ -459,23 +459,18 @@ async function saveVideo(video: VideoData, sourceId: number, env: Env): Promise<
 	try {
 		const { fingerprintId, mainVodId } = await findOrCreateFingerprint(video, env);
 		const shard = getShard(mainVodId, env);
-		const existing = await shard.prepare('SELECT id, play_url_1, play_url_2, play_url_3, play_url_4, play_url_5, duration_1, duration_2, duration_3, duration_4, duration_5 FROM videos WHERE vod_id = ?').bind(mainVodId).first<any>();
+		const existing = await shard.prepare('SELECT id, play_url, duration FROM videos WHERE vod_id = ? AND source_id = ?').bind(mainVodId, sourceId).first<any>();
 		const now = Math.floor(Date.now() / 1000);
 		if (existing) {
-			const urls = [existing.play_url_1, existing.play_url_2, existing.play_url_3, existing.play_url_4, existing.play_url_5];
-			const durations = [existing.duration_1, existing.duration_2, existing.duration_3, existing.duration_4, existing.duration_5];
-			let slotIndex = urls.findIndex(u => !u || u === video.vod_play_url);
-			if (slotIndex === -1) slotIndex = 0;
-			const urlCol = `play_url_${slotIndex + 1}`;
-			const durCol = `duration_${slotIndex + 1}`;
-			durations[slotIndex] = video.duration || 0;
-			const adSegments = detectAdSegments(durations);
-			await shard.prepare(`UPDATE videos SET ${urlCol} = ?, ${durCol} = ?, ad_segments = ?, updated_at = ? WHERE vod_id = ?`).bind(video.vod_play_url, video.duration || 0, adSegments, now, mainVodId).run();
+			// 更新现有视频
+			const adSegments = detectAdSegments([video.duration || 0]);
+			await shard.prepare('UPDATE videos SET play_url = ?, duration = ?, ad_segments = ?, updated_at = ? WHERE vod_id = ? AND source_id = ?').bind(video.vod_play_url, video.duration || 0, adSegments, now, mainVodId, sourceId).run();
 			return { success: true, isNew: false };
 		} else {
+			// 插入新视频
 			const adSegments = detectAdSegments([video.duration || 0]);
 			const normalizedCat = normalizeCategory(video.type_name);
-			await shard.prepare('INSERT INTO videos (vod_id, fingerprint_id, title, title_normalized, category, cover, play_url_1, duration_1, ad_segments, vod_year, vod_area, vod_actor, vod_director, vod_remarks, vod_lang, status, views, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?, ?)').bind(mainVodId, fingerprintId, video.vod_name, normalizeTitle(video.vod_name), normalizedCat, video.vod_pic, video.vod_play_url, video.duration || 0, adSegments, video.vod_year || '', video.vod_area || '', video.vod_actor || '', video.vod_director || '', video.vod_remarks || '', video.vod_lang || '', now, now).run();
+			await shard.prepare('INSERT INTO videos (vod_id, source_id, title, category, cover, play_url, duration, ad_segments, vod_year, vod_area, vod_actor, vod_director, vod_remarks, vod_lang, status, views, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?, ?)').bind(mainVodId, sourceId, video.vod_name, normalizedCat, video.vod_pic, video.vod_play_url, video.duration || 0, adSegments, video.vod_year || '', video.vod_area || '', video.vod_actor || '', video.vod_director || '', video.vod_remarks || '', video.vod_lang || '', now, now).run();
 			return { success: true, isNew: true };
 		}
 	} catch (e) {
