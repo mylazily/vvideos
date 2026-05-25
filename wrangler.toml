@@ -1,0 +1,63 @@
+name = "evideos"
+compatibility_date = "2024-01-01"
+pages_build_output_dir = "build"
+
+# D1 数据库绑定
+[[d1_databases]]
+binding = "DB_0"
+database_name = "video-db-0"
+database_id = "d795a6cf-869b-4cc8-955c-551259ac1625"
+
+[[d1_databases]]
+binding = "DB_1"
+database_name = "video-db-1"
+database_id = "acc09c5f-0d93-419e-b4f7-7eca50179d43"
+
+[[d1_databases]]
+binding = "DB_2"
+database_name = "video-db-2"
+database_id = "dc400100-b77f-41ce-aea6-6fb75a01b140"
+
+[[d1_databases]]
+binding = "DB_3"
+database_name = "video-db-3"
+database_id = "575674c0-c0fb-4376-b932-ddf6021278d9"
+
+[[d1_databases]]
+binding = "DB_4"
+database_name = "video-db-4"
+database_id = "c5ba6c06-d0a4-4860-8742-17700cba6ff7"
+
+[[d1_databases]]
+binding = "DB_5"
+database_name = "video-db-5"
+database_id = "9b78adaa-ff3e-4b19-b44f-241bac4e71ee"
+
+[[d1_databases]]
+binding = "DB_6"
+database_name = "video-db-6"
+database_id = "af42ed2f-aba9-4680-ab78-192c317757af"
+
+[[d1_databases]]
+binding = "DB_7"
+database_name = "video-db-7"
+database_id = "880bd0ba-ae71-4a89-a57d-e859f2db8481"
+
+[[d1_databases]]
+binding = "DB_8"
+database_name = "video-db-8"
+database_id = "e05e44b6-a646-4f16-b193-ef54bcf555b6"
+
+[[d1_databases]]
+binding = "DB_9"
+database_name = "video-db-9"
+database_id = "150794d4-251c-443b-aed1-694e111af7fe"
+
+# KV 命名空间
+[[kv_namespaces]]
+binding = "CACHE"
+id = ""  # 需要在 Cloudflare Dashboard 创建并填入
+
+# 环境变量
+[vars]
+ADMIN_PASSWORD = "yao123"
