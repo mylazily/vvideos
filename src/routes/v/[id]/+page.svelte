@@ -135,7 +135,6 @@
   declare const _VPD: any;
 
   async function loadVideo() {
-    loading = true;
     errorMsg = '';
     playSources = [];
     currentSourceIndex = 0;
@@ -143,7 +142,6 @@
 
     try {
       // 优先使用 app.html 预取的数据（零延迟）
-      // 但必须先验证预取数据的视频ID与当前页面ID是否匹配
       // @ts-ignore
       const preloadedVideo = typeof _VPD !== 'undefined' && _VPD.video && _VPD.video.vod_id === videoId ? _VPD.video : null;
       // @ts-ignore
@@ -152,16 +150,17 @@
       let videoData = preloadedVideo;
       let relatedData = preloadedRelated;
 
-      // 如果预取数据不可用或ID不匹配，走 API 请求
+      // 如果预取数据不可用，走 API 请求
       if (!videoData) {
-        // 优先加载视频详情，相关视频延迟加载
+        loading = true;
         const videoRes = await fetch(`/api/video/${videoId}`, { signal: AbortSignal.timeout(10000) });
-        if (!videoRes.ok) { errorMsg = `请求失败 (${videoRes.status})`; return; }
+        if (!videoRes.ok) { errorMsg = `请求失败 (${videoRes.status}`; loading = false; return; }
         const data = await videoRes.json();
-        if (!data.success || !data.data) { errorMsg = data.message || '视频不存在'; return; }
+        if (!data.success || !data.data) { errorMsg = data.message || '视频不存在'; loading = false; return; }
         videoData = data.data;
+        loading = false;
         
-        // 相关视频延迟加载（不阻塞页面渲染）
+        // 相关视频延迟加载
         fetch(`/api/video/${videoId}/related`, { signal: AbortSignal.timeout(5000) })
           .then(r => r.ok ? r.json() : null)
           .then(d => { if (d?.data) relatedVideos = d.data; })
@@ -186,17 +185,15 @@
       // 检查播放源
       if (playSources.length === 0) {
         errorMsg = '暂无可用播放源';
-        loading = false;
         return;
       }
 
-      // 立即播放
+      // 立即播放（关键：不等待其他操作）
       const url = playSources[0].url;
       prefetchStreamDomain(url);
       startPlayback(url);
     } catch (e: any) {
       errorMsg = e.name === 'TimeoutError' ? '请求超时，请重试' : '网络错误，请稍后重试';
-    } finally {
       loading = false;
     }
   }

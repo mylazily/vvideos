@@ -23,13 +23,13 @@
     <link rel="preconnect" href="https://xinlangtupian.com" crossorigin />
     <link rel="dns-prefetch" href="https://xinlangtupian.com" />
     
-    <!-- 预连接：加速常用流媒体CDN（仅保留最常用的2个，其余由视频页动态预连接） -->
+    <!-- 预连接：加速常用流媒体CDN -->
     <link rel="preconnect" href="https://bfzyapi.com" crossorigin />
     <link rel="dns-prefetch" href="https://bfzyapi.com" />
     <link rel="preconnect" href="https://lzyapi.com" crossorigin />
     <link rel="dns-prefetch" href="https://lzyapi.com" />
     
-    <!-- HLS.js lite 预加载（关键优化：preload 比 async script 更快） -->
+    <!-- HLS.js 预加载（关键优化） -->
     <link rel="preload" href="https://cdn.jsdelivr.net/npm/hls.js@1/dist/hls.light.min.js" as="script" crossorigin="anonymous" />
     
     <style>
@@ -42,61 +42,63 @@
   <body>
     <div style="display: contents">%sveltekit.body%</div>
     <script>
-    // ===== HLS.js lite版本加载（preload已预下载，这里只需执行） =====
+    // ===== HLS.js 同步加载（确保在页面渲染前可用） =====
     (function(){
-      // 检查是否已加载（避免重复）
       if (typeof Hls !== 'undefined') return;
       var s = document.createElement('script');
       s.src = 'https://cdn.jsdelivr.net/npm/hls.js@1/dist/hls.light.min.js';
-      s.async = true;
+      s.async = false;  // 改为同步加载，确保 HLS.js 立即可用
       s.crossOrigin = 'anonymous';
       document.head.appendChild(s);
     })();
 
-    // ===== 视频页极速预取 =====
+    // ===== 视频页极速预取（并行加载） =====
     var _VPD = {};
     (function(){
       var m = location.pathname.match(/^\/v\/([^\/]+)/);
       if (!m) return;
       var vid = m[1];
-      fetch('/api/video/' + vid, { signal: AbortSignal.timeout(8000) })
-        .then(function(r) { return r.json(); })
-        .then(function(d) {
-          if (d && d.success && d.data) {
-            _VPD.video = d.data;
-            // 解析播放源URL（支持 $ 和 $# 分隔符）
-            var sources = d.data.play_sources || [];
-            if (sources.length > 0) {
-              try {
-                var rawUrl = sources[0].url || '';
-                // 提取实际播放URL（去掉名称前缀）
-                var playUrl = rawUrl;
-                if (rawUrl.indexOf('$') > -1) {
-                  var parts = rawUrl.split('#');
-                  var firstEp = parts[0];
-                  var dollarIdx = firstEp.indexOf('$');
-                  if (dollarIdx > -1) playUrl = firstEp.substring(dollarIdx + 1);
-                }
-                var host = new URL(playUrl).host;
-                if (host && host !== location.host) {
-                  // 立即预连接流媒体域名（节省 DNS+TCP+TLS 时间）
-                  var link = document.createElement('link');
-                  link.rel = 'preconnect';
-                  link.href = 'https://' + host;
-                  link.crossOrigin = '';
-                  document.head.appendChild(link);
-                  // 同时预取 m3u8 文件（浏览器缓存）
-                  fetch(playUrl, { method: 'HEAD', mode: 'no-cors' }).catch(function() {});
-                }
-              } catch(e) {}
-            }
+      
+      // 并行加载视频数据和 HLS.js（HLS.js 已经在上面同步加载）
+      Promise.all([
+        // 加载视频详情
+        fetch('/api/video/' + vid, { signal: AbortSignal.timeout(8000) })
+          .then(function(r) { return r.json(); }),
+        // 加载相关视频
+        fetch('/api/video/' + vid + '/related', { signal: AbortSignal.timeout(5000) })
+          .then(function(r) { return r.json(); }).catch(function() { return { data: [] }; })
+      ]).then(function(results) {
+        var videoData = results[0];
+        var relatedData = results[1];
+        
+        if (videoData && videoData.success && videoData.data) {
+          _VPD.video = videoData.data;
+          _VPD.related = relatedData.data || [];
+          
+          // 预连接流媒体域名
+          var sources = videoData.data.play_sources || [];
+          if (sources.length > 0) {
+            try {
+              var rawUrl = sources[0].url || '';
+              var playUrl = rawUrl;
+              if (rawUrl.indexOf('$') > -1) {
+                var parts = rawUrl.split('#');
+                var firstEp = parts[0];
+                var dollarIdx = firstEp.indexOf('$');
+                if (dollarIdx > -1) playUrl = firstEp.substring(dollarIdx + 1);
+              }
+              var host = new URL(playUrl).host;
+              if (host && host !== location.host) {
+                var link = document.createElement('link');
+                link.rel = 'preconnect';
+                link.href = 'https://' + host;
+                link.crossOrigin = '';
+                document.head.appendChild(link);
+              }
+            } catch(e) {}
           }
-        }).catch(function() {});
-      fetch('/api/video/' + vid + '/related', { signal: AbortSignal.timeout(5000) })
-        .then(function(r) { return r.json(); })
-        .then(function(d) {
-          if (d && d.data) _VPD.related = d.data;
-        }).catch(function() {});
+        }
+      }).catch(function() {});
     })();
 
     // ===== 首页专用：纯原生JS动态加载视频列表 =====
