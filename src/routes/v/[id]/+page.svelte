@@ -333,13 +333,13 @@
     playerLoading = true;
     errorMsg = ''; // 清除之前的错误
 
-    // 使用代理 URL
-    const proxyUrl = getProxyUrl(source.url);
+    // 视频源支持 CORS，直接使用原始 URL
+    const videoUrl = getVideoUrl(source.url);
 
     if (source.url.includes('.m3u8')) {
-      await playHls(videoEl, proxyUrl);
+      await playHls(videoEl, videoUrl);
     } else {
-      playNative(videoEl, proxyUrl);
+      playNative(videoEl, videoUrl);
     }
   }
 
@@ -354,64 +354,55 @@
 
       if (typeof Hls !== 'undefined' && Hls.isSupported()) {
         hlsPlayer = new Hls({
-          // ===== 核心性能配置（参考官方demo最佳实践） =====
+          // ===== 核心性能配置（参考官方demo） =====
           enableWorker: true,              // Web Worker 解析（不阻塞主线程）
           lowLatencyMode: false,           // 禁用低延迟模式，允许更长的预缓存
+          progressive: true,               // 渐进式加载
           
-          // ===== 首帧极速配置 =====
-          maxBufferLength: 1.5,            // 首帧只需1.5秒即可播放（从3秒降低）
-          maxMaxBufferLength: 600,         // 最大预缓存600秒（10分钟，保证不卡）
-          maxBufferSize: 200 * 1000 * 1000,// 最大缓冲200MB
-          maxBufferHole: 0.5,
-          backBufferLength: 90,            // 保留90秒回放缓冲（seek不重新加载）
+          // ===== 首帧极速配置（参考官方demo） =====
+          maxBufferLength: 30,             // 初始缓冲30秒（保证流畅）
+          maxMaxBufferLength: 600,         // 最大预缓存600秒（10分钟）
+          maxBufferSize: 0,                // 不限制缓冲大小（0=无限制）
+          maxBufferHole: 0.5,              // 允许0.5秒的缓冲空洞
+          backBufferLength: 90,            // 保留90秒回放缓冲
           
           // ===== ABR自动画质（参考官方demo） =====
           startLevel: -1,                  // 自动选择起始画质
-          abrEwmaDefaultEstimate: 1000000, // 初始带宽估算1Mbps（从500kbps提高，更快选择高质量）
+          abrEwmaDefaultEstimate: 5000000, // 初始带宽估算5Mbps（快速选择高质量）
           abrBandWidthFactor: 0.95,        // 带宽安全系数
           abrMaxWithRealBitrate: true,     // 使用真实码率估算
-          startFragPrefetch: true,         // 预取第一个片段
-          progressive: true,               // 渐进式加载
+          abrEwmaSlowVoD: 9.0,             // 慢速带宽估计（VOD）
+          abrEwmaFastVoD: 5.0,             // 快速带宽估计（VOD）
           
           // ===== 自动恢复（参考官方demo） =====
           autoRecoverError: true,
           stopOnStall: false,
           
-          // ===== 超时配置（更激进，快速失败重试） =====
-          fragLoadingTimeOut: 15000,       // 片段加载超时15秒
-          manifestLoadingTimeOut: 5000,    // 清单加载超时5秒（从10秒降低）
-          levelLoadingTimeOut: 5000,       // 画质列表加载超时5秒
+          // ===== 超时配置（参考官方demo） =====
+          fragLoadingTimeOut: 20000,       // 片段加载超时20秒
+          manifestLoadingTimeOut: 10000,   // 清单加载超时10秒
+          levelLoadingTimeOut: 10000,      // 画质列表加载超时10秒
           
-          // ===== 重试配置 =====
-          fragLoadingMaxRetry: 3,
-          manifestLoadingMaxRetry: 2,
-          levelLoadingMaxRetry: 2,
-          fragLoadingRetryDelay: 300,
-          manifestLoadingRetryDelay: 300,
-          levelLoadingRetryDelay: 300,
+          // ===== 重试配置（参考官方demo） =====
+          fragLoadingMaxRetry: 6,
+          manifestLoadingMaxRetry: 3,
+          levelLoadingMaxRetry: 3,
+          fragLoadingRetryDelay: 1000,
+          manifestLoadingRetryDelay: 1000,
+          levelLoadingRetryDelay: 1000,
           
           // ===== 禁用非核心功能（减少开销） =====
           enableCEA708Captions: false,
           enableWebVTT: false,
           enableIMSC1: false,
           enableID3Metadata: false,
-          enableAES128KeyLoad: false,
-          enableSoftwareAES: false,
-          enableMP2TSDTS: false,
           enableEPG: false,
-          enableMSE: true,
+          
+          // ===== 调试（开发时开启） =====
+          debug: false,
 
-          // ===== CORS 代理配置 =====
-          // 通过 loader 配置让 HLS.js 使用代理加载片段
-          loader: class CustomLoader extends Hls.DefaultConfig.loader {
-            load(context: any, config: any, callbacks: any) {
-              // 转换片段 URL 为代理 URL
-              if (context.url && !context.url.startsWith('/api/proxy-video')) {
-                context.url = getProxyUrl(context.url);
-              }
-              super.load(context, config, callbacks);
-            }
-          }
+          // ===== 直接加载（视频源支持 CORS） =====
+          // 如需代理，可在此添加 CustomLoader
         });
 
         hlsPlayer.on(Hls.Events.MANIFEST_PARSED, () => {
