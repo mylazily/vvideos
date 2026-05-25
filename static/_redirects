@@ -1,0 +1,13 @@
+# SPA fallback - 所有非API请求回退到200.html
+/admin/* /200.html 200
+/v/* /200.html 200
+/category/* /200.html 200
+/discover /200.html 200
+/rank /200.html 200
+/search/* /200.html 200
+/settings /200.html 200
+/favorite /200.html 200
+/history /200.html 200
+/profile /200.html 200
+/tag/* /200.html 200
+/cross/* /200.html 200
