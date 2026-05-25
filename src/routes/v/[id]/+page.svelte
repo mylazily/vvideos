@@ -94,7 +94,7 @@
     const parts: string[] = [];
     parts.push(`《${v.title}》`);
     if (v.category) parts.push(`是一部${v.category}作品`);
-    if (v.vod_year) parts.push(`，${v.vod_year}年${v.v_area || ''}出品`);
+    if (v.vod_year) parts.push(`，${v.vod_year}年${v.vod_area || ''}出品`);
     if (v.vod_director) parts.push(`，由${v.vod_director}执导`);
     if (v.vod_actor) {
       const actors = v.vod_actor.split(/[,，]/).slice(0, 4).join('、');
@@ -124,32 +124,8 @@
 
       video = data.data;
 
-      // 解析播放源
-      playSources = [];
-      (video.play_sources || []).forEach((s, i) => {
-        const url = s.url;
-        if (url.includes('$') && url.includes('#')) {
-          const episodes = url.split('#');
-          episodes.forEach((ep, epIdx) => {
-            const match = ep.match(/(.+?)\$(.+)/);
-            if (match) {
-              playSources.push({
-                id: `ep${epIdx}`,
-                name: episodes.length > 1 ? match[1] : `线路${i + 1}`,
-                url: match[2],
-                duration: s.duration || 0,
-              });
-            }
-          });
-        } else {
-          playSources.push({
-            id: `source-${i}`,
-            name: `线路${i + 1}`,
-            url: url,
-            duration: s.duration || 0,
-          });
-        }
-      });
+      // 解析播放源（改进：处理更多格式）
+      playSources = parsePlaySources(video.play_sources || []);
 
       addToHistory({
         vod_id: video.vod_id, title: video.title, cover: video.cover,
@@ -161,14 +137,17 @@
         try { relatedVideos = (await relatedRes.json()).data || []; } catch {}
       }
 
-      // 立即播放：不等 loading 状态切换，直接操作 video 元素
-      if (playSources.length > 0) {
-        const url = playSources[0].url;
-        // 先预连接（不阻塞播放启动）
-        prefetchStreamDomain(url);
-        // 直接播放（video 元素始终在 DOM 中，无需 tick 等待）
-        startPlayback(url);
+      // 检查播放源
+      if (playSources.length === 0) {
+        errorMsg = '暂无可用播放源';
+        loading = false;
+        return;
       }
+
+      // 立即播放
+      const url = playSources[0].url;
+      prefetchStreamDomain(url);
+      startPlayback(url);
     } catch (e: any) {
       errorMsg = e.name === 'TimeoutError' ? '请求超时，请重试' : '网络错误，请稍后重试';
     } finally {
@@ -176,19 +155,110 @@
     }
   }
 
-  // 直接启动播放（不经过 playSource 的 tick 等待）
+  // 解析播放源（支持多种格式）
+  function parsePlaySources(sources: Array<{ url: string; duration: number }>): PlaySource[] {
+    const result: PlaySource[] = [];
+    
+    sources.forEach((s, i) => {
+      const url = s.url?.trim();
+      if (!url) return;
+
+      // 格式1: 多集格式 name$url#name$url#
+      if (url.includes('$') && url.includes('#')) {
+        const episodes = url.split('#');
+        episodes.forEach((ep, epIdx) => {
+          const match = ep.match(/(.+?)\$(.+)/);
+          if (match && match[2]) {
+            result.push({
+              id: `ep${epIdx}`,
+              name: match[1] || `第${epIdx + 1}集`,
+              url: match[2].trim(),
+              duration: s.duration || 0,
+            });
+          }
+        });
+      }
+      // 格式2: 单集格式 name$url
+      else if (url.includes('$')) {
+        const match = url.match(/(.+?)\$(.+)/);
+        if (match && match[2]) {
+          result.push({
+            id: `source-${i}`,
+            name: match[1] || `线路${i + 1}`,
+            url: match[2].trim(),
+            duration: s.duration || 0,
+          });
+        }
+      }
+      // 格式3: 纯URL
+      else {
+        result.push({
+          id: `source-${i}`,
+          name: `线路${i + 1}`,
+          url: url,
+          duration: s.duration || 0,
+        });
+      }
+    });
+
+    return result;
+  }
+
+  // 直接启动播放（带错误处理）
   function startPlayback(url: string) {
     if (!videoEl) return;
     destroyPlayer();
     playerLoading = true;
 
+    // 绑定错误处理（只绑定一次）
+    bindVideoErrorHandler();
+
     if (url.includes('.m3u8')) {
       playHls(videoEl, url);
     } else {
-      videoEl.src = url;
-      videoEl.play().catch(() => {});
-      playerLoading = false;
+      playNative(videoEl, url);
     }
+  }
+
+  // 原生视频播放（非m3u8）
+  function playNative(videoEl: HTMLVideoElement, url: string) {
+    videoEl.src = url;
+    
+    // 监听加载成功
+    const onCanPlay = () => {
+      playerLoading = false;
+      videoEl.play().catch(() => {});
+      cleanup();
+    };
+
+    // 监听错误
+    const onError = () => {
+      playerLoading = false;
+      const nextIdx = currentSourceIndex + 1;
+      if (nextIdx < playSources.length) {
+        // 自动切换下一条线路
+        playSource(nextIdx);
+      } else {
+        errorMsg = '当前线路无法播放，请稍后重试';
+      }
+      cleanup();
+    };
+
+    const cleanup = () => {
+      videoEl.removeEventListener('canplay', onCanPlay);
+      videoEl.removeEventListener('error', onError);
+    };
+
+    videoEl.addEventListener('canplay', onCanPlay, { once: true });
+    videoEl.addEventListener('error', onError, { once: true });
+    videoEl.load();
+  }
+
+  // 绑定视频错误处理器（全局）
+  function bindVideoErrorHandler() {
+    if (!videoEl) return;
+    // 清除之前的错误处理器，避免重复
+    videoEl.onerror = null;
   }
 
   async function playSource(index: number) {
@@ -196,18 +266,16 @@
     const source = playSources[index];
     if (!source) return;
 
-    // video 元素始终在 DOM 中，直接使用引用
     if (!videoEl) return;
 
     destroyPlayer();
     playerLoading = true;
+    errorMsg = ''; // 清除之前的错误
 
     if (source.url.includes('.m3u8')) {
       await playHls(videoEl, source.url);
     } else {
-      videoEl.src = source.url;
-      videoEl.play().catch(() => {});
-      playerLoading = false;
+      playNative(videoEl, source.url);
     }
   }
 
@@ -216,10 +284,7 @@
       const canNative = videoEl.canPlayType('application/vnd.apple.mpegurl');
       if (canNative) {
         // Safari原生HLS
-        playerLoading = false;
-        videoEl.src = url;
-        videoEl.load();
-        videoEl.play().catch(() => {});
+        playNative(videoEl, url);
         return;
       }
 
@@ -274,7 +339,7 @@
           } else {
             const nextIdx = currentSourceIndex + 1;
             if (nextIdx < playSources.length) playSource(nextIdx);
-            else errorMsg = '播放失败，请重试';
+            else errorMsg = '所有线路均无法播放，请稍后重试';
           }
         });
 
@@ -282,7 +347,7 @@
         hlsPlayer.loadSource(url);
       } else {
         playerLoading = false;
-        errorMsg = '播放器加载中，请稍后刷新重试';
+        errorMsg = '浏览器不支持播放，请尝试其他浏览器';
       }
     } catch {
       playerLoading = false;
@@ -293,6 +358,11 @@
   function destroyPlayer() {
     flushProgress();
     if (hlsPlayer) { hlsPlayer.destroy(); hlsPlayer = null; }
+    if (videoEl) {
+      videoEl.pause();
+      videoEl.removeAttribute('src');
+      videoEl.load();
+    }
   }
 
   function retryLoad() { loadVideo(); }
@@ -421,7 +491,7 @@
       </div>
 
       <!-- 线路选择 -->
-      {#if playSources.length > 1}
+      {#if playSources.length > 0}
         <section class="mt-2 bg-white p-3">
           <h3 class="font-medium mb-2">播放线路</h3>
           <div class="flex gap-2 flex-wrap">
