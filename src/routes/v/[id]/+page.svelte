@@ -54,15 +54,17 @@
   // ============ 派生状态 ============
   let videoId = $derived($page.params.id);
 
-  // ============ 代理 URL 转换函数 ============
-  function getProxyUrl(url: string): string {
+  // ============ 视频 URL 处理 ============
+  // 视频源已支持 CORS，直接使用原始 URL
+  // 如需代理，可在此添加转换逻辑
+  function getVideoUrl(url: string): string {
     if (!url) return url;
     // 如果已经是代理 URL，直接返回
     if (url.startsWith('/api/proxy-video')) return url;
     // 如果是相对路径，直接返回
     if (url.startsWith('/')) return url;
-    // 转换为代理 URL，解决 CORS 问题
-    return `/api/proxy-video?url=${encodeURIComponent(url)}`;
+    // 视频源支持 CORS，直接使用原始 URL
+    return url;
   }
 
   // ============ 生命周期 ============
@@ -253,13 +255,13 @@
     // 绑定播放进度保存
     bindProgressTracker();
 
-    // 使用代理 URL 解决 CORS 问题
-    const proxyUrl = getProxyUrl(url);
+    // 视频源支持 CORS，直接使用原始 URL
+    const videoUrl = getVideoUrl(url);
 
     if (url.includes('.m3u8')) {
-      playHls(videoEl, proxyUrl);
+      playHls(videoEl, videoUrl);
     } else {
-      playNative(videoEl, proxyUrl);
+      playNative(videoEl, videoUrl);
     }
   }
 
