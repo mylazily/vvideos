@@ -183,7 +183,7 @@
     loginLoading = true;
     authError = '';
     try {
-      const res = await fetch('/api/aadmin/auth', {
+      const res = await fetch('/api/admin/auth', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ password: passwordInput })
@@ -214,9 +214,9 @@
     loading = true;
     try {
       const [statsRes, sourcesRes, logsRes, keywordsRes] = await Promise.all([
-        authFetch('/api/aadmin/stats'),
-        authFetch('/api/aadmin/sources'),
-        authFetch('/api/aadmin/logs?limit=30'),
+        authFetch('/api/admin/stats'),
+        authFetch('/api/admin/sources'),
+        authFetch('/api/admin/logs?limit=30'),
         authFetch('/api/keywords')
       ]);
       if (statsRes.status === 401 || sourcesRes.status === 401) { handleLogout(); return; }
@@ -247,7 +247,7 @@
 
   async function loadLogs() {
     try {
-      const res = await authFetch('/api/aadmin/logs?limit=30');
+      const res = await authFetch('/api/admin/logs?limit=30');
       const data = await res.json();
       if (data.success) logs = data.data;
     } catch {}
@@ -260,7 +260,7 @@
     }
     addingSource = true;
     try {
-      const res = await authFetch('/api/aadmin/sources', {
+      const res = await authFetch('/api/admin/sources', {
         method: 'POST',
         body: JSON.stringify({
           name: newSourceName,
@@ -283,7 +283,7 @@
   async function updateSource() {
     if (!editingSource) return;
     try {
-      const res = await authFetch('/api/aadmin/sources', {
+      const res = await authFetch('/api/admin/sources', {
         method: 'PUT',
         body: JSON.stringify({
           id: editingSource.id,
@@ -306,7 +306,7 @@
   async function deleteSource(id: number) {
     if (!confirm('确定删除这个采集源吗？\n\n⚠️ 该资源站的所有视频也会被删除！')) return;
     try {
-      const res = await authFetch('/api/aadmin/sources?id=' + id, { method: 'DELETE' });
+      const res = await authFetch('/api/admin/sources?id=' + id, { method: 'DELETE' });
       const data = await res.json();
       if (data.success) {
         await loadData();
@@ -332,7 +332,7 @@
     showMessage(`${getSourceName(sourceId)} ${getModeLabel(mode)} 已启动...`, 'info');
 
     try {
-      const res = await authFetch('/api/aadmin/collect-async', {
+      const res = await authFetch('/api/admin/collect-async', {
         method: 'POST',
         body: JSON.stringify({
           source_id: sourceId,
@@ -355,7 +355,7 @@
   async function saveAutoCollect(sourceId: number) {
     const settings = sourceSettings[sourceId];
     try {
-      const res = await authFetch('/api/aadmin/source-schedule', {
+      const res = await authFetch('/api/admin/source-schedule', {
         method: 'POST',
         body: JSON.stringify({
           source_id: sourceId,
@@ -386,7 +386,7 @@
     replacing = true;
     showMessage('正在替换域名...', 'info');
     try {
-      const res = await authFetch('/api/aadmin/replace-domain', {
+      const res = await authFetch('/api/admin/replace-domain', {
         method: 'POST',
         body: JSON.stringify({
           source_id: replaceSourceId,
@@ -425,7 +425,7 @@
 
   async function deleteKeyword(keyword: string) {
     try {
-      await authFetch('/api/aadmin/keywords', {
+      await authFetch('/api/admin/keywords', {
         method: 'DELETE',
         body: JSON.stringify({ keyword })
       });

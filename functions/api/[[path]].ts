@@ -184,7 +184,7 @@ async function incrementView(env: Env, vodId: string) {
 	if (!viewsFlushTimer) {
 		viewsFlushTimer = setTimeout(() => {
 			viewsFlushTimer = null;
-			flushViews(env);
+			flushViews(env).catch(e => console.error('[incrementView] 定时刷新失败:', e));
 		}, 30000); // 30秒批量写入
 	}
 	
@@ -194,15 +194,15 @@ async function incrementView(env: Env, vodId: string) {
 			clearTimeout(viewsFlushTimer);
 			viewsFlushTimer = null;
 		}
-		flushViews(env);
+		flushViews(env).catch(e => console.error('[incrementView] 立即刷新失败:', e));
 	}
 }
 
 async function flushViews(env: Env) {
 	if (pendingViews.size === 0) return;
 	
+	// 先复制数据，成功后再清空
 	const updates = Array.from(pendingViews.entries());
-	pendingViews.clear();
 	
 	// 按分片分组
 	const byShard: Map<number, Array<[string, number]>> = new Map();
@@ -213,19 +213,29 @@ async function flushViews(env: Env) {
 	}
 	
 	// 并行写入各分片
-	await Promise.all(
-		Array.from(byShard.entries()).map(async ([shardIdx, items]) => {
-			const db = getShard(env, shardIdx);
-			// 批量更新，减少查询次数
-			for (const [vodId, count] of items) {
-				try {
-					await db.prepare('UPDATE videos SET views = views + ? WHERE vod_id = ?')
-						.bind(count, vodId)
-						.run();
-				} catch {}
-			}
-		})
-	);
+	try {
+		await Promise.all(
+			Array.from(byShard.entries()).map(async ([shardIdx, items]) => {
+				const db = getShard(env, shardIdx);
+				// 批量更新，减少查询次数
+				for (const [vodId, count] of items) {
+					try {
+						await db.prepare('UPDATE videos SET views = views + ? WHERE vod_id = ?')
+							.bind(count, vodId)
+							.run();
+					} catch (e) {
+						console.error(`[flushViews] 更新失败: ${vodId}`, e);
+					}
+				}
+			})
+		);
+		// 写入成功后才清空
+		for (const [vodId] of updates) {
+			pendingViews.delete(vodId);
+		}
+	} catch (e) {
+		console.error('[flushViews] 批量写入失败:', e);
+	}
 }
 
 // ============ 请求去重系统 ============

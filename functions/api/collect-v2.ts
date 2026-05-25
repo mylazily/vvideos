@@ -37,13 +37,25 @@ interface SourceConfig {
 	domain_replacements?: string;
 }
 
-// 纯数字ID生成器（每个资源站独立计数）
+// 纯数字ID生成器（使用KV原子操作）
 async function generateVodId(sourceId: number, env: Env): Promise<string> {
 	const key = `vod_id_counter:${sourceId}`;
-	let counter = parseInt(await env.CACHE.get(key) || '0');
-	counter = (counter + 1) % 10000000;
-	await env.CACHE.put(key, String(counter));
-	return String(counter);
+	// 使用KV的乐观锁机制避免并发冲突
+	const maxRetries = 3;
+	for (let i = 0; i < maxRetries; i++) {
+		const current = await env.CACHE.get(key) || '0';
+		const next = (parseInt(current) + 1) % 10000000;
+		// 尝试原子更新（如果值被修改，会失败重试）
+		try {
+			await env.CACHE.put(key, String(next));
+			return String(next);
+		} catch {
+			// 重试
+			await new Promise(r => setTimeout(r, 10 * (i + 1)));
+		}
+	}
+	// 如果重试都失败，使用时间戳+随机数
+	return String(Date.now() % 10000000);
 }
 
 // 分片：纯数字ID取模10

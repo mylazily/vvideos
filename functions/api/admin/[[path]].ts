@@ -61,7 +61,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 	}
 
 	// 1. 管理员登录
-	if (path === '/api/aadmin/auth' && request.method === 'POST') {
+	if (path === '/api/admin/auth' && request.method === 'POST') {
 		const body = await request.json<{ password?: string }>();
 		if (!body.password) return json({ success: false, message: '请输入密码' }, 400);
 		if (!env.ADMIN_PASSWORD) return json({ success: false, message: '管理员密码未配置' }, 500);
@@ -77,7 +77,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 	if (!isAdmin) return json({ success: false, message: '未授权访问' }, 401);
 
 	// 2. 统计数据
-	if (path === '/api/aadmin/stats' && request.method === 'GET') {
+	if (path === '/api/admin/stats' && request.method === 'GET') {
 		const shards = getAllShards(env);
 		const videoCounts = await Promise.all(
 			shards.map(db => db.prepare('SELECT COUNT(*) as count FROM videos WHERE status = 1').first().then(r => (r as any)?.count || 0))
@@ -93,7 +93,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 	}
 
 	// 3. 采集源管理
-	if (path === '/api/aadmin/sources') {
+	if (path === '/api/admin/sources') {
 		if (request.method === 'GET') {
 			const sourcesResult = await env.DB_0.prepare('SELECT * FROM sources ORDER BY created_at DESC').all();
 			const sources = (sourcesResult.results as any[]) || [];
@@ -157,7 +157,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 	}
 
 	// 4. 采集日志
-	if (path === '/api/aadmin/logs' && request.method === 'GET') {
+	if (path === '/api/admin/logs' && request.method === 'GET') {
 		const limit = parseInt(url.searchParams.get('limit') || '20');
 		const logsResult = await env.DB_0.prepare(
 			`SELECT l.*, s.name as source_name FROM collect_logs l LEFT JOIN sources s ON l.source_id = s.id ORDER BY l.created_at DESC LIMIT ?`
@@ -167,7 +167,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 	}
 
 	// 5. 触发采集（同步）
-	if (path === '/api/aadmin/collect' && request.method === 'POST') {
+	if (path === '/api/admin/collect' && request.method === 'POST') {
 		const body = await request.json<{ source_id?: number; mode?: string; pages?: number; categories?: string[] }>();
 		if (!body.source_id) return json({ success: false, message: '缺少采集源ID' }, 400);
 
@@ -190,7 +190,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 	}
 
 	// 5.1 后台静默采集（异步）
-	if (path === '/api/aadmin/collect-async' && request.method === 'POST') {
+	if (path === '/api/admin/collect-async' && request.method === 'POST') {
 		const body = await request.json<{ source_id?: number; mode?: string; pages?: number; categories?: string[] }>();
 		if (!body.source_id) return json({ success: false, message: '缺少采集源ID' }, 400);
 
@@ -216,7 +216,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 	}
 
 	// 6. 一键替换域名（m3u8 + 图片）
-	if (path === '/api/aadmin/replace-domain' && request.method === 'POST') {
+	if (path === '/api/admin/replace-domain' && request.method === 'POST') {
 		const body = await request.json<{
 			source_id?: number;
 			old_m3u8_domain?: string;
@@ -297,7 +297,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 	}
 
 	// 7. 获取域名替换规则
-	if (path === '/api/aadmin/domain-rules' && request.method === 'GET') {
+	if (path === '/api/admin/domain-rules' && request.method === 'GET') {
 		const sourceId = url.searchParams.get('source_id');
 		if (!sourceId) return json({ success: false, message: '缺少source_id' }, 400);
 
@@ -311,7 +311,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 	}
 
 	// 8. 热搜词设置
-	if (path === '/api/aadmin/hot-keywords') {
+	if (path === '/api/admin/hot-keywords') {
 		if (request.method === 'GET') {
 			const hotKeywordsStr = await env.CACHE.get('hot_keywords') || '';
 			return json({ success: true, data: hotKeywordsStr });
@@ -329,7 +329,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 	}
 
 	// 9. 关键词管理
-	if (path === '/api/aadmin/keywords' && request.method === 'DELETE') {
+	if (path === '/api/admin/keywords' && request.method === 'DELETE') {
 		const body = await request.json<{ keyword?: string }>();
 		if (!body.keyword) return json({ success: false, message: '缺少关键词' }, 400);
 		await env.CACHE.delete(`keyword:${body.keyword}`);
@@ -337,7 +337,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 	}
 
 	// 10. 定时采集设置
-	if (path === '/api/aadmin/source-schedule' && request.method === 'POST') {
+	if (path === '/api/admin/source-schedule' && request.method === 'POST') {
 		const body = await request.json<{
 			source_id?: number;
 			enabled?: boolean;
@@ -377,7 +377,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 	}
 
 	// 11. 获取定时采集设置
-	if (path === '/api/aadmin/source-schedule' && request.method === 'GET') {
+	if (path === '/api/admin/source-schedule' && request.method === 'GET') {
 		const sourceId = url.searchParams.get('source_id');
 		if (!sourceId) return json({ success: false, message: '缺少source_id' }, 400);
 
