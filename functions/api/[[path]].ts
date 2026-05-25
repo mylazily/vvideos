@@ -79,7 +79,6 @@ interface VideoRow {
 	vod_lang: string;
 	play_url: string;
 	duration: number;
-	ad_segments: string;
 }
 
 // ============ 响应工具 ============
@@ -167,10 +166,7 @@ async function formatVideo(row: VideoRow, env: Env, needSources = false) {
 		} catch { return true; }
 	});
 
-	let adSegments = [];
-	try { if (row.ad_segments) adSegments = JSON.parse(row.ad_segments); } catch {}
-
-	const result = { ...base, play_sources: filtered.length > 0 ? filtered : sources, ad_segments: adSegments };
+	const result = { ...base, play_sources: filtered.length > 0 ? filtered : sources };
 	
 	if (videoFormatCache.size < VIDEO_FORMAT_CACHE_SIZE) {
 		videoFormatCache.set(cacheKey, result);
@@ -323,7 +319,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 			const shardIdx = getShardIndex(vodId);
 			const db = getShard(env, shardIdx);
 			const row = await db.prepare(
-				'SELECT id, vod_id, source_id, title, cover, category, views, created_at, vod_year, vod_area, vod_director, vod_actor, vod_remarks, vod_lang, play_url, duration, ad_segments FROM videos WHERE vod_id = ? AND status = 1'
+				'SELECT id, vod_id, source_id, title, cover, category, views, created_at, vod_year, vod_area, vod_director, vod_actor, vod_remarks, vod_lang, play_url, duration FROM videos WHERE vod_id = ? AND status = 1'
 			).bind(vodId).first<VideoRow>();
 			
 			if (!row) return json({ success: false, message: '视频不存在' }, 404);
