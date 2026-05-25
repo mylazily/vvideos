@@ -56,8 +56,7 @@ database_id = "150794d4-251c-443b-aed1-694e111af7fe"
 # KV 命名空间
 [[kv_namespaces]]
 binding = "CACHE"
-id = ""  # 需要在 Cloudflare Dashboard 创建并填入
+id = "26ce82d53e0f48f18a237f94416f47fb"
 
-# 环境变量
-[vars]
-ADMIN_PASSWORD = "yao123"
+# 环境变量请在 Cloudflare Dashboard 中设置:
+# ADMIN_PASSWORD = "yao123"
