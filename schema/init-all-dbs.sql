@@ -13,11 +13,13 @@ CREATE TABLE IF NOT EXISTS videos (
   title_normalized TEXT DEFAULT '',
   category TEXT DEFAULT '其他',
   cover TEXT DEFAULT '',
-  play_url_1 TEXT DEFAULT '',
+  play_url TEXT DEFAULT '',           -- 主播放链接（兼容代码查询）
+  play_url_1 TEXT DEFAULT '',         -- 第一集
   play_url_2 TEXT DEFAULT '',
   play_url_3 TEXT DEFAULT '',
   play_url_4 TEXT DEFAULT '',
   play_url_5 TEXT DEFAULT '',
+  duration INTEGER DEFAULT 0,          -- 主时长（兼容代码查询）
   duration_1 INTEGER DEFAULT 0,
   duration_2 INTEGER DEFAULT 0,
   duration_3 INTEGER DEFAULT 0,
@@ -30,6 +32,7 @@ CREATE TABLE IF NOT EXISTS videos (
   vod_director TEXT DEFAULT '',
   vod_remarks TEXT DEFAULT '',
   vod_lang TEXT DEFAULT '',
+  source_id INTEGER DEFAULT 0,         -- 采集源ID（兼容代码查询）
   status INTEGER DEFAULT 1,
   views INTEGER DEFAULT 0,
   created_at INTEGER NOT NULL,
@@ -64,6 +67,7 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE TABLE IF NOT EXISTS sources (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
+  alias TEXT DEFAULT '',
   api_url TEXT NOT NULL,
   status INTEGER DEFAULT 1,
   last_collect_at INTEGER DEFAULT 0,
@@ -91,6 +95,7 @@ CREATE INDEX IF NOT EXISTS idx_videos_views ON videos(views);
 CREATE INDEX IF NOT EXISTS idx_videos_year ON videos(vod_year);
 CREATE INDEX IF NOT EXISTS idx_videos_area ON videos(vod_area);
 CREATE INDEX IF NOT EXISTS idx_videos_actor ON videos(vod_actor);
+CREATE INDEX IF NOT EXISTS idx_videos_source_id ON videos(source_id);
 CREATE INDEX IF NOT EXISTS idx_fingerprints_fingerprint ON video_fingerprints(fingerprint);
 CREATE INDEX IF NOT EXISTS idx_sources_status ON sources(status);
 CREATE INDEX IF NOT EXISTS idx_logs_source_id ON collect_logs(source_id);
