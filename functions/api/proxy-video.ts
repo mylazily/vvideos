@@ -21,6 +21,7 @@ export const onRequest: PagesFunction = async (context) => {
   const allowedHosts = [
     'guangsuapi.com',  // 光速资源站
     'gsuus.com',       // 光速视频域名
+    'gszyi.com',       // 光速 CDN 域名
     'jisuzyv.com',
     'jisuts.com',
     'jisuimage.com',
@@ -49,8 +50,9 @@ export const onRequest: PagesFunction = async (context) => {
       headers: {
         'Accept': context.request.headers.get('Accept') || '*/*',
         'Accept-Language': context.request.headers.get('Accept-Language') || 'zh-CN,zh;q=0.9',
-        'User-Agent': context.request.headers.get('User-Agent') || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'Referer': targetOrigin + '/',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Referer': 'https://v.gsuus.com/',
+        'Origin': 'https://v.gsuus.com',
       },
       redirect: 'follow',
     });
