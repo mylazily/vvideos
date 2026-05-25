@@ -141,25 +141,14 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 		}
 	}
 
-	let sources;
+	let sourcesResult;
 	if (filterSourceId && !isNaN(filterSourceId)) {
 		// 单源采集：只查询指定源
-		sources = await env.DB_0.prepare('SELECT * FROM sources WHERE status = 1 AND id = ?').bind(filterSourceId).all<{
-			id: number;
-			name: string;
-			api_url: string;
-			last_collect_at: number;
-			total_videos: number;
-		}>();
+		sourcesResult = await env.DB_0.prepare('SELECT * FROM sources WHERE status = 1 AND id = ?').bind(filterSourceId).all();
 	} else {
-		sources = await env.DB_0.prepare('SELECT * FROM sources WHERE status = 1').all<{
-			id: number;
-			name: string;
-			api_url: string;
-			last_collect_at: number;
-			total_videos: number;
-		}>();
+		sourcesResult = await env.DB_0.prepare('SELECT * FROM sources WHERE status = 1').all();
 	}
+	const sources = sourcesResult as { results: { id: number; name: string; api_url: string; last_collect_at: number; total_videos: number }[] };
 
 	if (!sources.results || sources.results.length === 0) {
 		return jsonResponse({ success: true, message: '没有启用的采集源' });

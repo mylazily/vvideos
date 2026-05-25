@@ -80,14 +80,14 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 	if (path === '/api/aadmin/stats' && request.method === 'GET') {
 		const shards = getAllShards(env);
 		const videoCounts = await Promise.all(
-			shards.map(db => db.prepare('SELECT COUNT(*) as count FROM videos WHERE status = 1').first<{ count: number }>().then(r => r?.count || 0))
+			shards.map(db => db.prepare('SELECT COUNT(*) as count FROM videos WHERE status = 1').first().then(r => (r as any)?.count || 0))
 		);
 		const totalVideos = videoCounts.reduce((a, b) => a + b, 0);
-		const sourceCount = await env.DB_0.prepare('SELECT COUNT(*) as count FROM sources').first<{ count: number }>().then(r => r?.count || 0);
+		const sourceCount = await env.DB_0.prepare('SELECT COUNT(*) as count FROM sources').first().then(r => (r as any)?.count || 0);
 		const today = Math.floor(Date.now() / 1000) - 86400;
-		const todayLogs = await env.DB_0.prepare('SELECT SUM(new_count) as total FROM collect_logs WHERE created_at > ?').bind(today).first<{ total: number }>();
-		const todayNewVideos = todayLogs?.total || 0;
-		const todayCollectCount = await env.DB_0.prepare('SELECT COUNT(*) as count FROM collect_logs WHERE created_at > ?').bind(today).first<{ count: number }>().then(r => r?.count || 0);
+		const todayLogs = await env.DB_0.prepare('SELECT SUM(new_count) as total FROM collect_logs WHERE created_at > ?').bind(today).first();
+		const todayNewVideos = (todayLogs as any)?.total || 0;
+		const todayCollectCount = await env.DB_0.prepare('SELECT COUNT(*) as count FROM collect_logs WHERE created_at > ?').bind(today).first().then(r => (r as any)?.count || 0);
 
 		return json({ success: true, data: { totalVideos, sourceCount, todayCollectCount, todayNewVideos } });
 	}
@@ -95,7 +95,8 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 	// 3. 采集源管理
 	if (path === '/api/aadmin/sources') {
 		if (request.method === 'GET') {
-			const sources = await env.DB_0.prepare('SELECT * FROM sources ORDER BY created_at DESC').all<{ results: any[] }>().then(r => r.results);
+			const sourcesResult = await env.DB_0.prepare('SELECT * FROM sources ORDER BY created_at DESC').all();
+			const sources = (sourcesResult.results as any[]) || [];
 			return json({ success: true, data: sources });
 		}
 
@@ -158,9 +159,10 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 	// 4. 采集日志
 	if (path === '/api/aadmin/logs' && request.method === 'GET') {
 		const limit = parseInt(url.searchParams.get('limit') || '20');
-		const logs = await env.DB_0.prepare(
+		const logsResult = await env.DB_0.prepare(
 			`SELECT l.*, s.name as source_name FROM collect_logs l LEFT JOIN sources s ON l.source_id = s.id ORDER BY l.created_at DESC LIMIT ?`
-		).bind(limit).all<{ results: any[] }>().then(r => r.results);
+		).bind(limit).all();
+		const logs = (logsResult.results as any[]) || [];
 		return json({ success: true, data: logs });
 	}
 
@@ -169,7 +171,8 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 		const body = await request.json<{ source_id?: number; mode?: string; pages?: number; categories?: string[] }>();
 		if (!body.source_id) return json({ success: false, message: '缺少采集源ID' }, 400);
 
-		const source = await env.DB_0.prepare('SELECT * FROM sources WHERE id = ?').bind(body.source_id).first<any>();
+		const sourceResult = await env.DB_0.prepare('SELECT * FROM sources WHERE id = ?').bind(body.source_id).first();
+		const source = sourceResult as any;
 		if (!source) return json({ success: false, message: '采集源不存在' }, 404);
 
 		const collectRes = await fetch(`${url.origin}/api/collect`, {
@@ -191,7 +194,8 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 		const body = await request.json<{ source_id?: number; mode?: string; pages?: number; categories?: string[] }>();
 		if (!body.source_id) return json({ success: false, message: '缺少采集源ID' }, 400);
 
-		const source = await env.DB_0.prepare('SELECT * FROM sources WHERE id = ?').bind(body.source_id).first<any>();
+		const sourceResult = await env.DB_0.prepare('SELECT * FROM sources WHERE id = ?').bind(body.source_id).first();
+		const source = sourceResult as any;
 		if (!source) return json({ success: false, message: '采集源不存在' }, 404);
 
 		context.waitUntil(
