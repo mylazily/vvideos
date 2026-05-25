@@ -6,6 +6,7 @@
   interface Source {
     id: number;
     name: string;
+    alias: string;
     api_url: string;
     status: number;
     auto_collect_enabled: number;
@@ -60,8 +61,10 @@
 
   // 添加资源源
   let newSourceName = $state('');
+  let newSourceAlias = $state('');
   let newSourceUrl = $state('');
   let addingSource = $state(false);
+  let editingSource = $state<Source | null>(null);
 
   // 采集任务状态
   let activeTasks = $state<CollectTask[]>([]);
@@ -259,11 +262,15 @@
     try {
       const res = await authFetch('/api/aadmin/sources', {
         method: 'POST',
-        body: JSON.stringify({ name: newSourceName, api_url: newSourceUrl })
+        body: JSON.stringify({
+          name: newSourceName,
+          alias: newSourceAlias || newSourceName,
+          api_url: newSourceUrl
+        })
       });
       const data = await res.json();
       if (data.success) {
-        newSourceName = ''; newSourceUrl = '';
+        newSourceName = ''; newSourceAlias = ''; newSourceUrl = '';
         await loadData();
         showMessage('添加成功', 'success');
       } else {
@@ -271,6 +278,29 @@
       }
     } catch { showMessage('请求失败', 'error'); }
     finally { addingSource = false; }
+  }
+
+  async function updateSource() {
+    if (!editingSource) return;
+    try {
+      const res = await authFetch('/api/aadmin/sources', {
+        method: 'PUT',
+        body: JSON.stringify({
+          id: editingSource.id,
+          name: editingSource.name,
+          alias: editingSource.alias,
+          api_url: editingSource.api_url
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        editingSource = null;
+        await loadData();
+        showMessage('更新成功', 'success');
+      } else {
+        showMessage(data.message || '更新失败', 'error');
+      }
+    } catch { showMessage('请求失败', 'error'); }
   }
 
   async function deleteSource(id: number) {
@@ -495,6 +525,61 @@
           </div>
         {/if}
 
+        <!-- 编辑资源站弹窗 -->
+        {#if editingSource}
+          <div class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+            <div class="bg-white rounded-xl shadow-xl w-full max-w-lg">
+              <div class="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+                <h3 class="font-semibold text-gray-800">编辑资源站</h3>
+                <button onclick={() => editingSource = null} class="text-gray-400 hover:text-gray-600">
+                  <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                </button>
+              </div>
+              <div class="p-4 space-y-4">
+                <div>
+                  <label class="block text-xs text-gray-500 mb-1">资源站名称（后台管理用）</label>
+                  <input
+                    bind:value={editingSource.name}
+                    type="text"
+                    class="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm"
+                  />
+                </div>
+                <div>
+                  <label class="block text-xs text-gray-500 mb-1">别名（前端显示用）</label>
+                  <input
+                    bind:value={editingSource.alias}
+                    type="text"
+                    placeholder="留空则使用名称"
+                    class="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm"
+                  />
+                </div>
+                <div>
+                  <label class="block text-xs text-gray-500 mb-1">API接口地址</label>
+                  <input
+                    bind:value={editingSource.api_url}
+                    type="text"
+                    class="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm"
+                  />
+                </div>
+              </div>
+              <div class="px-4 py-3 border-t border-gray-100 flex justify-end gap-2">
+                <button
+                  onclick={() => editingSource = null}
+                  class="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                >
+                  取消
+                </button>
+                <button
+                  onclick={updateSource}
+                  class="px-4 py-2 bg-gradient-to-r from-blue-500 to-blue-600 text-white text-sm font-medium rounded-lg hover:from-blue-600 hover:to-blue-700 transition-all"
+                >
+                  保存
+                </button>
+              </div>
+            </div>
+          </div>
+        {/if}
+
         <!-- 统计卡片 -->
         {#if stats}
           <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
@@ -561,14 +646,20 @@
               <input
                 bind:value={newSourceName}
                 type="text"
-                placeholder="资源站名称"
+                placeholder="资源站名称（后台管理用）"
+                class="md:col-span-3 px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent"
+              />
+              <input
+                bind:value={newSourceAlias}
+                type="text"
+                placeholder="别名（前端显示用，留空则使用名称）"
                 class="md:col-span-3 px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent"
               />
               <input
                 bind:value={newSourceUrl}
                 type="text"
                 placeholder="API接口地址，如：https://api.example.com/provide/vod"
-                class="md:col-span-7 px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent"
+                class="md:col-span-4 px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent"
               />
               <button
                 onclick={addSource}
@@ -594,6 +685,9 @@
                   <div class="flex-1 min-w-0">
                     <div class="flex items-center gap-2 mb-1">
                       <h3 class="font-semibold text-gray-800">{source.name}</h3>
+                      {#if source.alias && source.alias !== source.name}
+                        <span class="px-1.5 py-0.5 bg-blue-100 text-blue-600 text-xs rounded" title="前端显示名称">别名:{source.alias}</span>
+                      {/if}
                       {#if source.auto_collect_enabled}
                         <span class="px-1.5 py-0.5 bg-green-100 text-green-600 text-xs rounded">自动</span>
                       {/if}
@@ -611,6 +705,13 @@
                     </div>
                   </div>
                   <div class="flex items-center gap-2 ml-4">
+                    <button
+                      onclick={() => editingSource = { ...source }}
+                      class="p-2 text-gray-400 hover:text-blue-500 hover:bg-blue-50 rounded-lg transition-colors"
+                      title="编辑"
+                    >
+                      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                    </button>
                     <button
                       onclick={() => expandedSource = expandedSource === source.id ? null : source.id}
                       class="p-2 text-gray-400 hover:text-pink-500 hover:bg-pink-50 rounded-lg transition-colors"

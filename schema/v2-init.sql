@@ -12,7 +12,8 @@ DROP TABLE IF EXISTS users;
 -- 资源站表（增强版）
 CREATE TABLE sources (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  name TEXT NOT NULL,                    -- 资源站名称
+  name TEXT NOT NULL,                    -- 资源站名称（后台管理用）
+  alias TEXT DEFAULT '',                 -- 资源站别名（前端显示用）
   api_url TEXT NOT NULL,                 -- 采集接口地址
   status INTEGER DEFAULT 1,              -- 状态：1启用 0禁用
   

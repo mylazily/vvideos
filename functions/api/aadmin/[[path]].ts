@@ -100,17 +100,50 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 		}
 
 		if (request.method === 'POST') {
-			const body = await request.json<{ name?: string; api_url?: string }>();
+			const body = await request.json<{ name?: string; alias?: string; api_url?: string }>();
 			if (!body.name || !body.api_url) return json({ success: false, message: '请填写名称和接口地址' }, 400);
 
 			const now = Math.floor(Date.now() / 1000);
+			const alias = body.alias || body.name; // 如果没有别名，默认使用名称
 			try {
 				await env.DB_0.prepare(
-					'INSERT INTO sources (name, api_url, status, last_collect_at, total_videos, created_at) VALUES (?, ?, 1, 0, 0, ?)'
-				).bind(body.name, body.api_url, now).run();
+					'INSERT INTO sources (name, alias, api_url, status, last_collect_at, total_videos, created_at) VALUES (?, ?, ?, 1, 0, 0, ?)'
+				).bind(body.name, alias, body.api_url, now).run();
 				return json({ success: true, message: '添加成功' });
 			} catch (e: any) {
 				return json({ success: false, message: '添加失败: ' + (e.message || '未知错误') }, 500);
+			}
+		}
+
+		if (request.method === 'PUT') {
+			// 更新资源站信息（包括别名）
+			const body = await request.json<{ id?: number; name?: string; alias?: string; api_url?: string }>();
+			if (!body.id) return json({ success: false, message: '缺少ID' }, 400);
+
+			const updates: string[] = [];
+			const values: any[] = [];
+
+			if (body.name !== undefined) {
+				updates.push('name = ?');
+				values.push(body.name);
+			}
+			if (body.alias !== undefined) {
+				updates.push('alias = ?');
+				values.push(body.alias);
+			}
+			if (body.api_url !== undefined) {
+				updates.push('api_url = ?');
+				values.push(body.api_url);
+			}
+
+			if (updates.length === 0) return json({ success: false, message: '没有要更新的字段' }, 400);
+
+			values.push(body.id);
+			try {
+				await env.DB_0.prepare(`UPDATE sources SET ${updates.join(', ')} WHERE id = ?`).bind(...values).run();
+				return json({ success: true, message: '更新成功' });
+			} catch (e: any) {
+				return json({ success: false, message: '更新失败: ' + (e.message || '未知错误') }, 500);
 			}
 		}
 
