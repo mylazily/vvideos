@@ -2,61 +2,61 @@ name = "evideos"
 compatibility_date = "2024-01-01"
 pages_build_output_dir = "build"
 
-# D1 数据库绑定
+# D1 数据库绑定 - 已更新为新创建的数据库
 [[d1_databases]]
 binding = "DB_0"
 database_name = "video-db-0"
-database_id = "d795a6cf-869b-4cc8-955c-551259ac1625"
+database_id = "a2aa47a2-015b-4e35-a2c5-85ca442592b6"
 
 [[d1_databases]]
 binding = "DB_1"
 database_name = "video-db-1"
-database_id = "acc09c5f-0d93-419e-b4f7-7eca50179d43"
+database_id = "c8a6bc99-8226-4d00-91ea-0d49eadf090e"
 
 [[d1_databases]]
 binding = "DB_2"
 database_name = "video-db-2"
-database_id = "dc400100-b77f-41ce-aea6-6fb75a01b140"
+database_id = "4d610c94-a6be-49ac-8834-8bd3e5d1ba95"
 
 [[d1_databases]]
 binding = "DB_3"
 database_name = "video-db-3"
-database_id = "575674c0-c0fb-4376-b932-ddf6021278d9"
+database_id = "1d3d5be5-174b-4d88-a9c9-2922f820f85b"
 
 [[d1_databases]]
 binding = "DB_4"
 database_name = "video-db-4"
-database_id = "c5ba6c06-d0a4-4860-8742-17700cba6ff7"
+database_id = "f7d805a2-2c8e-4a2e-bb02-50b9c55d3b0f"
 
 [[d1_databases]]
 binding = "DB_5"
 database_name = "video-db-5"
-database_id = "9b78adaa-ff3e-4b19-b44f-241bac4e71ee"
+database_id = "1138e097-a4af-47a1-bddb-d37e5d0657d6"
 
 [[d1_databases]]
 binding = "DB_6"
 database_name = "video-db-6"
-database_id = "af42ed2f-aba9-4680-ab78-192c317757af"
+database_id = "41bfdcc6-ee7d-417a-b979-73b5f7015e00"
 
 [[d1_databases]]
 binding = "DB_7"
 database_name = "video-db-7"
-database_id = "880bd0ba-ae71-4a89-a57d-e859f2db8481"
+database_id = "fa8347a4-749d-4d4d-b5ec-7e8cbd8bbc4b"
 
 [[d1_databases]]
 binding = "DB_8"
 database_name = "video-db-8"
-database_id = "e05e44b6-a646-4f16-b193-ef54bcf555b6"
+database_id = "da883ecc-5ad3-404e-bae4-682a92ef4914"
 
 [[d1_databases]]
 binding = "DB_9"
 database_name = "video-db-9"
-database_id = "150794d4-251c-443b-aed1-694e111af7fe"
+database_id = "ea27aa91-61c3-4316-a28f-f5e88ba14cbb"
 
-# KV 命名空间
-[[kv_namespaces]]
-binding = "CACHE"
-id = "26ce82d53e0f48f18a237f94416f47fb"
+# KV 命名空间 (如需重新绑定)
+# [[kv_namespaces]]
+# binding = "CACHE"
+# id = "26ce82d53e0f48f18a237f94416f47fb"
 
 # 环境变量请在 Cloudflare Dashboard 中设置:
 # ADMIN_PASSWORD = "yao123"
