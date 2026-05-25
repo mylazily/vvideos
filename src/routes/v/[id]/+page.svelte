@@ -73,6 +73,14 @@
     return () => destroyPlayer();
   });
 
+  // 监听 videoId 变化，切换视频时重新加载
+  $effect(() => {
+    const currentId = videoId;
+    if (currentId && video && video.vod_id !== currentId) {
+      loadVideo();
+    }
+  });
+
   // 预连接 m3u8 域名（节省 DNS + TCP + TLS 时间）
   function prefetchStreamDomain(url: string) {
     try {
