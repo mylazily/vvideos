@@ -149,6 +149,62 @@ grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap
 关键字 → 视频标题、简介分词（可选）
 ```
 
+### 4.4 数据库分片约束（强制）
+- **所有视频按 vod_id 尾号数字分片到 10 个数据库（DB_0 - DB_9）**
+- 分片规则：ID 末尾数字 → 对应数据库编号
+  - 例：`mpg9fqw7zqoz5` → 尾号 `5` → **DB_5**
+  - 例：`mpfui87t6pgq8` → 尾号 `8` → **DB_8**
+- 无数字尾号的 ID 回退到 FNV-1a 哈希分片
+- ❌ **禁止修改分片规则**
+
+### 4.5 数据库表结构约束（强制）
+**videos 表禁止包含 description 列**：
+```sql
+-- 正确的表结构（无 description 列）
+CREATE TABLE videos (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  vod_id TEXT UNIQUE NOT NULL,
+  fingerprint_id INTEGER DEFAULT 0,
+  title TEXT NOT NULL,
+  title_normalized TEXT DEFAULT '',
+  category TEXT DEFAULT '其他',
+  cover TEXT DEFAULT '',
+  play_url_1 TEXT DEFAULT '',
+  play_url_2 TEXT DEFAULT '',
+  play_url_3 TEXT DEFAULT '',
+  play_url_4 TEXT DEFAULT '',
+  play_url_5 TEXT DEFAULT '',
+  duration_1 INTEGER DEFAULT 0,
+  duration_2 INTEGER DEFAULT 0,
+  duration_3 INTEGER DEFAULT 0,
+  duration_4 INTEGER DEFAULT 0,
+  duration_5 INTEGER DEFAULT 0,
+  ad_segments TEXT DEFAULT '',
+  vod_year TEXT DEFAULT '',
+  vod_area TEXT DEFAULT '',
+  vod_actor TEXT DEFAULT '',
+  vod_director TEXT DEFAULT '',
+  vod_remarks TEXT DEFAULT '',
+  vod_lang TEXT DEFAULT '',
+  status INTEGER DEFAULT 1,
+  views INTEGER DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+  -- ❌ 禁止添加 description 列
+);
+```
+
+### 4.6 发现页数据来源约束（强制）
+**发现页内容必须从以下数据源聚合**：
+- ✅ **演员名字** (`vod_actor`) → 演员标签云
+- ✅ **年份** (`vod_year`) → 年份筛选
+- ✅ **地区** (`vod_area`) → 地区筛选
+- ✅ **分类** (`category`) → 分类标签
+- ✅ **关键词** → 从标题分词生成
+- ✅ **标签** (`vod_tags` 如果采集站提供)
+
+**禁止**：发现页数据不得硬编码，必须来自数据库聚合统计。
+
 ---
 
 ## 五、SEO 约束

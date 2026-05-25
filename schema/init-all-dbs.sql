@@ -1,12 +1,10 @@
 -- ============================================
 -- 10个D1数据库初始化脚本
 -- 按视频ID尾号数字分片：0-9
+-- 约束：禁止description列
 -- ============================================
 
--- 每个数据库都需要创建的表
--- DB_0 到 DB_9 都执行相同的表结构
-
--- 视频表（核心表）
+-- 视频表（核心表）- 无description列
 CREATE TABLE IF NOT EXISTS videos (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   vod_id TEXT UNIQUE NOT NULL,
@@ -36,6 +34,7 @@ CREATE TABLE IF NOT EXISTS videos (
   views INTEGER DEFAULT 0,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
+  -- 约束：禁止添加description列
 );
 
 -- 视频指纹表（用于去重）- 只在 DB_0
@@ -91,6 +90,7 @@ CREATE INDEX IF NOT EXISTS idx_videos_created_at ON videos(created_at);
 CREATE INDEX IF NOT EXISTS idx_videos_views ON videos(views);
 CREATE INDEX IF NOT EXISTS idx_videos_year ON videos(vod_year);
 CREATE INDEX IF NOT EXISTS idx_videos_area ON videos(vod_area);
+CREATE INDEX IF NOT EXISTS idx_videos_actor ON videos(vod_actor);
 CREATE INDEX IF NOT EXISTS idx_fingerprints_fingerprint ON video_fingerprints(fingerprint);
 CREATE INDEX IF NOT EXISTS idx_sources_status ON sources(status);
 CREATE INDEX IF NOT EXISTS idx_logs_source_id ON collect_logs(source_id);

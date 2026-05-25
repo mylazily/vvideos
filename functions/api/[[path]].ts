@@ -278,7 +278,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 
 	// ===== API路由处理 =====
 	
-	// 1. 首页数据 - 每2小时轮换分片，边缘缓存2小时
+	// 1. 首页数据 - 从所有分片聚合，边缘缓存2小时
 	if (path === '/api/home') {
 		const cacheKey = `home-${Math.floor(Date.now() / 7200000)}`; // 每2小时一个key
 		return dedupeRequest(cacheKey, async () => {
@@ -286,16 +286,32 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 			if (cached) return json(cached, 200, CACHE_TTL.home);
 			
 			const shards = getAllShards(env);
-			// 每2小时从10个分片中轮换选1个，取24条最新视频
-			const shardIndex = Math.floor(Date.now() / 7200000) % shards.length;
-			const db = shards[shardIndex];
+			// 从所有10个分片中各取部分数据，然后合并
+			const shardResults = await Promise.all(
+				shards.map(db =>
+					db.prepare(
+						'SELECT id, vod_id, title, cover, category, views, vod_year, vod_remarks FROM videos WHERE status = 1 ORDER BY created_at DESC LIMIT 10'
+					).all<{ results: any[] }>().then(r => r.results || [])
+				)
+			);
 			
-			const results = await db.prepare(
-				'SELECT id, vod_id, title, cover, category, views, vod_year, vod_remarks FROM videos WHERE status = 1 ORDER BY created_at DESC LIMIT 24'
-			).all<{ results: any[] }>().then(r => r.results);
+			// 合并所有分片数据并去重
+			const seen = new Set<string>();
+			const allVideos = shardResults.flat().filter(v => {
+				if (seen.has(v.vod_id)) return false;
+				seen.add(v.vod_id);
+				return true;
+			});
 			
-			const latest = results.slice(0, 24);
-			const hot = results.sort((a, b) => b.views - a.views).slice(0, 12);
+			// 按时间排序取最新24个
+			const latest = allVideos
+				.sort((a, b) => b.created_at - a.created_at)
+				.slice(0, 24);
+			
+			// 按播放量排序取最热12个
+			const hot = allVideos
+				.sort((a, b) => b.views - a.views)
+				.slice(0, 12);
 			
 			const data = { success: true, data: { latest, hot } };
 			await setEdgeCache(request, data, CACHE_TTL.home);
@@ -482,15 +498,51 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 			const cached = await getEdgeCache(request);
 			if (cached) return json(cached, 200, CACHE_TTL.filters);
 			
-			// 只查1个分片
-			const [years, areas] = await Promise.all([
-				env.DB_0.prepare('SELECT DISTINCT vod_year FROM videos WHERE status = 1 AND vod_year != "" ORDER BY vod_year DESC LIMIT 30')
-					.all<{ results: { vod_year: string }[] }>().then(r => r.results.map(r => r.vod_year)),
-				env.DB_0.prepare('SELECT DISTINCT vod_area FROM videos WHERE status = 1 AND vod_area != "" ORDER BY vod_area LIMIT 50')
-					.all<{ results: { vod_area: string }[] }>().then(r => r.results.map(r => r.vod_area))
-			]);
+			// 从所有分片聚合数据
+			const shards = getAllShards(env);
 			
-			const data = { success: true, data: { years, areas } };
+			// 获取年份（从所有分片）
+			const yearResults = await Promise.all(
+				shards.map(db =>
+					db.prepare('SELECT DISTINCT vod_year FROM videos WHERE status = 1 AND vod_year != "" ORDER BY vod_year DESC LIMIT 10')
+						.all<{ results: { vod_year: string }[] }>().then(r => r.results.map(r => r.vod_year))
+				)
+			);
+			const years = [...new Set(yearResults.flat())].sort((a, b) => parseInt(b) - parseInt(a)).slice(0, 30);
+			
+			// 获取地区（从所有分片）
+			const areaResults = await Promise.all(
+				shards.map(db =>
+					db.prepare('SELECT DISTINCT vod_area FROM videos WHERE status = 1 AND vod_area != "" ORDER BY vod_area LIMIT 10')
+						.all<{ results: { vod_area: string }[] }>().then(r => r.results.map(r => r.vod_area))
+				)
+			);
+			const areas = [...new Set(areaResults.flat())].slice(0, 50);
+			
+			// 获取演员（从所有分片聚合，取高频演员）
+			const actorResults = await Promise.all(
+				shards.map(db =>
+					db.prepare('SELECT vod_actor FROM videos WHERE status = 1 AND vod_actor != "" LIMIT 100')
+						.all<{ results: { vod_actor: string }[] }>().then(r => r.results.map(r => r.vod_actor))
+				)
+			);
+			// 解析演员名字并统计频次
+			const actorCount = new Map<string, number>();
+			actorResults.flat().forEach(actorStr => {
+				if (!actorStr) return;
+				// 按逗号、空格分隔演员名
+				const actors = actorStr.split(/[,，、/\s]+/).filter(a => a && a.length >= 2 && a.length <= 8);
+				actors.forEach(actor => {
+					actorCount.set(actor, (actorCount.get(actor) || 0) + 1);
+				});
+			});
+			// 取出现频次最高的演员
+			const actors = [...actorCount.entries()]
+				.sort((a, b) => b[1] - a[1])
+				.slice(0, 30)
+				.map(([name]) => name);
+			
+			const data = { success: true, data: { years, areas, actors } };
 			await setEdgeCache(request, data, CACHE_TTL.filters);
 			return json(data, 200, CACHE_TTL.filters);
 		});

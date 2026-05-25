@@ -5,6 +5,8 @@
 
   let categories = $state<string[]>([]);
   let areas = $state<string[]>([]);
+  let years = $state<string[]>([]);
+  let actors = $state<string[]>([]);
   let keywords = $state<string[]>([]);
   let tagsLoading = $state(true);
 
@@ -12,16 +14,20 @@
 
   onMount(async () => {
     try {
-      const [filtersRes, keywordsRes] = await Promise.all([
+      const [filtersRes, keywordsRes, categoriesRes] = await Promise.all([
         fetch('/api/filters'),
-        fetch('/api/keywords')
+        fetch('/api/keywords'),
+        fetch('/api/categories')
       ]);
-      const [filtersData, keywordsData] = await Promise.all([
+      const [filtersData, keywordsData, categoriesData] = await Promise.all([
         filtersRes.json(),
-        keywordsRes.json()
+        keywordsRes.json(),
+        categoriesRes.json()
       ]);
-      categories = filtersData.data?.categories || [];
+      categories = categoriesData.data || [];
       areas = filtersData.data?.areas || [];
+      years = filtersData.data?.years || [];
+      actors = filtersData.data?.actors || [];
       keywords = keywordsData.data || [];
     } catch (e) {
       console.error(e);
@@ -96,6 +102,25 @@
         </section>
       {/if}
 
+      <!-- 年份 -->
+      {#if years.length > 0}
+        <section class="bg-white mt-2">
+          <div class="px-3 py-2 border-b border-gray-100">
+            <h2 class="text-sm font-medium text-gray-800">年份</h2>
+          </div>
+          <div class="flex flex-wrap gap-2 p-3">
+            {#each years as year}
+              <a
+                href="/cross/year_{encodeURIComponent(year)}/1"
+                class="px-3 py-1.5 text-sm bg-gray-100 text-gray-700 rounded-full hover:bg-pink-50 hover:text-pink-500 transition-colors"
+              >
+                {year}
+              </a>
+            {/each}
+          </div>
+        </section>
+      {/if}
+
       <!-- 地区 -->
       {#if areas.length > 0}
         <section class="bg-white mt-2">
@@ -103,12 +128,31 @@
             <h2 class="text-sm font-medium text-gray-800">地区</h2>
           </div>
           <div class="flex flex-wrap gap-2 p-3">
-            {#each areas as tag}
+            {#each areas as area}
               <a
-                href="/tag/{encodeURIComponent(tag)}/1"
+                href="/cross/area_{encodeURIComponent(area)}/1"
                 class="px-3 py-1.5 text-sm bg-gray-100 text-gray-700 rounded-full hover:bg-pink-50 hover:text-pink-500 transition-colors"
               >
-                {tag}
+                {area}
+              </a>
+            {/each}
+          </div>
+        </section>
+      {/if}
+
+      <!-- 演员 -->
+      {#if actors.length > 0}
+        <section class="bg-white mt-2">
+          <div class="px-3 py-2 border-b border-gray-100">
+            <h2 class="text-sm font-medium text-gray-800">热门演员</h2>
+          </div>
+          <div class="flex flex-wrap gap-2 p-3">
+            {#each actors as actor}
+              <a
+                href="/cross/actor_{encodeURIComponent(actor)}/1"
+                class="px-3 py-1.5 text-sm bg-purple-50 text-purple-600 rounded-full hover:bg-purple-100 hover:text-purple-700 transition-colors"
+              >
+                {actor}
               </a>
             {/each}
           </div>
