@@ -35,6 +35,20 @@ export interface VideoRecord {
 	updated_at: number;
 }
 
+/** VideoRecord 别名，用于 D1 查询结果类型 */
+export type VideoRow = VideoRecord;
+
+export interface CollectLogRecord {
+	id?: number;
+	source_id: number;
+	action: string;
+	details: string;
+	new_count: number;
+	updated_count: number;
+	error_msg: string;
+	created_at: number;
+}
+
 export interface SourceRecord {
 	id: number;
 	name: string;

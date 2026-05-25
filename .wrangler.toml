@@ -2,54 +2,54 @@ name = "evideos"
 compatibility_date = "2024-01-01"
 pages_build_output_dir = "build"
 
-# D1 数据库绑定 - 10 个分片数据库
-# 分片规则: vod_id 最后一位数字 % 10
+# D1 数据库绑定 - 10个分片数据库
+# 注意：实际数据库名为 video-db-X (Cloudflare不支持重命名)
 [[d1_databases]]
 binding = "DB_0"
 database_name = "video-db-0"
-database_id = "2997ecde-c419-4fff-a936-5c06d98d7ce3"
+database_id = "e8deff72-eee4-484a-9f02-e4d24fe0ebf2"
 
 [[d1_databases]]
 binding = "DB_1"
 database_name = "video-db-1"
-database_id = "df3b939b-1729-4e5a-8590-bec3a0408e9a"
+database_id = "59496b81-df16-49f9-b558-4ae3274bbab2"
 
 [[d1_databases]]
 binding = "DB_2"
 database_name = "video-db-2"
-database_id = "11b744a3-15f4-498b-b795-4a08c745bd9e"
+database_id = "0a47a6ba-9a98-427d-9e66-d5413305a2eb"
 
 [[d1_databases]]
 binding = "DB_3"
 database_name = "video-db-3"
-database_id = "2823197d-d6bc-4121-9bf3-990947b7f927"
+database_id = "5a56a268-5471-4449-8cd5-c97c7f9d4d47"
 
 [[d1_databases]]
 binding = "DB_4"
 database_name = "video-db-4"
-database_id = "e1b08021-7ca7-4895-8c72-ef875319e030"
+database_id = "05255fc7-e9ab-4550-8ee0-39be4215e305"
 
 [[d1_databases]]
 binding = "DB_5"
 database_name = "video-db-5"
-database_id = "9a92e9dd-4591-48bf-b1d5-8b1a3f83213f"
+database_id = "67d3f912-81a0-49b5-aa22-a6c05d31b2cf"
 
 [[d1_databases]]
 binding = "DB_6"
 database_name = "video-db-6"
-database_id = "85a6c79d-fd5d-4665-bb37-a8271cc72610"
+database_id = "c046a912-941c-4b1c-b8a9-25e030ab9176"
 
 [[d1_databases]]
 binding = "DB_7"
 database_name = "video-db-7"
-database_id = "ff0cce0c-bb74-4172-a769-5fc3b6b95c50"
+database_id = "43ffa342-235b-4206-8748-0c5a6f03b4ce"
 
 [[d1_databases]]
 binding = "DB_8"
 database_name = "video-db-8"
-database_id = "ceaeb3dc-5a4a-4d00-9651-16960bceb9e7"
+database_id = "be7666f4-987a-42cc-ba8d-6202b7b4b243"
 
 [[d1_databases]]
 binding = "DB_9"
 database_name = "video-db-9"
-database_id = "c4c33242-3d8f-498d-b4fd-a06bcebf0e48"
+database_id = "85ce1736-3d67-42e5-bb89-81f1a14a7cda"

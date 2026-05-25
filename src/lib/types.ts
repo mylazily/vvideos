@@ -2,7 +2,6 @@ export interface Video {
   id?: number;
   vod_id: string;
   title: string;
-  name?: string;
   cover: string;
   category?: string;
   duration?: number | string;
@@ -10,7 +9,6 @@ export interface Video {
   created_at?: number;
   updated_at?: number;
   status?: number;
-  description?: string;
   play_url?: string;
   vod_year?: string;
   vod_area?: string;
