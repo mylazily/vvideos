@@ -247,16 +247,38 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 
 			if (!row) return json({ success: false, message: '视频不存在' }, 404);
 
-			let sourceInfo = null;
+			// 简化视频数据，直接构造响应（跳过 formatVideo 的域名检查）
+			const video = {
+				id: row.id,
+				vod_id: row.vod_id,
+				title: row.title,
+				cover: row.cover,
+				category: row.category,
+				views: row.views,
+				created_at: row.created_at,
+				vod_year: row.vod_year || '',
+				vod_area: row.vod_area || '',
+				vod_director: row.vod_director || '',
+				vod_actor: row.vod_actor || '',
+				vod_remarks: row.vod_remarks || '',
+				vod_lang: row.vod_lang || '',
+				play_sources: row.play_url ? [{ url: row.play_url, duration: row.duration || 0 }] : [],
+				source: null as { id: number; name: string; alias: string; display_name: string } | null,
+			};
+
+			// 可选：查询采集源信息（非关键，可缓存）
 			if (row.source_id) {
-				const sourceResult = await env.DB_0.prepare(
-					'SELECT id, name, alias, COALESCE(alias, name) as display_name FROM sources WHERE id = ?'
-				).bind(row.source_id).first();
-				sourceInfo = sourceResult as { id: number; name: string; alias: string; display_name: string } | null;
+				try {
+					const sourceResult = await env.DB_0.prepare(
+						'SELECT id, name, alias, COALESCE(alias, name) as display_name FROM sources WHERE id = ?'
+					).bind(row.source_id).first();
+					video.source = sourceResult as typeof video.source;
+				} catch {
+					// 忽略采集源查询失败
+				}
 			}
 
-			const video = await formatVideo(row, env, true);
-			const data = { success: true, data: { ...video, source: sourceInfo } };
+			const data = { success: true, data: video };
 			await setApiCache(request, data, CACHE_TTL.video);
 
 			context.waitUntil(incrementView(env, vodId));

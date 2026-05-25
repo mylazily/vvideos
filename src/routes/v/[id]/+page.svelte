@@ -146,19 +146,18 @@
 
       // 如果预取数据不可用或ID不匹配，走 API 请求
       if (!videoData) {
-        const [videoRes, relatedRes] = await Promise.all([
-          fetch(`/api/video/${videoId}`, { signal: AbortSignal.timeout(10000) }),
-          fetch(`/api/video/${videoId}/related`, { signal: AbortSignal.timeout(5000) }).catch(() => null)
-        ]);
-
+        // 优先加载视频详情，相关视频延迟加载
+        const videoRes = await fetch(`/api/video/${videoId}`, { signal: AbortSignal.timeout(10000) });
         if (!videoRes.ok) { errorMsg = `请求失败 (${videoRes.status})`; return; }
         const data = await videoRes.json();
         if (!data.success || !data.data) { errorMsg = data.message || '视频不存在'; return; }
         videoData = data.data;
-
-        if (relatedRes && relatedRes.ok) {
-          try { relatedData = (await relatedRes.json()).data || []; } catch {}
-        }
+        
+        // 相关视频延迟加载（不阻塞页面渲染）
+        fetch(`/api/video/${videoId}/related`, { signal: AbortSignal.timeout(5000) })
+          .then(r => r.ok ? r.json() : null)
+          .then(d => { if (d?.data) relatedVideos = d.data; })
+          .catch(() => {});
       }
 
       video = videoData;
@@ -354,55 +353,50 @@
 
       if (typeof Hls !== 'undefined' && Hls.isSupported()) {
         hlsPlayer = new Hls({
-          // ===== 核心性能配置（参考官方demo） =====
+          // ===== 核心性能配置 =====
           enableWorker: true,              // Web Worker 解析（不阻塞主线程）
-          lowLatencyMode: false,           // 禁用低延迟模式，允许更长的预缓存
+          lowLatencyMode: false,           // 禁用低延迟模式
           progressive: true,               // 渐进式加载
           
-          // ===== 首帧极速配置（参考官方demo） =====
-          maxBufferLength: 30,             // 初始缓冲30秒（保证流畅）
-          maxMaxBufferLength: 600,         // 最大预缓存600秒（10分钟）
-          maxBufferSize: 0,                // 不限制缓冲大小（0=无限制）
+          // ===== 首帧极速配置（关键优化） =====
+          maxBufferLength: 10,             // 初始缓冲10秒即可播放
+          maxMaxBufferLength: 60,          // 最大预缓存60秒
+          maxBufferSize: 0,                // 不限制缓冲大小
           maxBufferHole: 0.5,              // 允许0.5秒的缓冲空洞
-          backBufferLength: 90,            // 保留90秒回放缓冲
+          backBufferLength: 30,            // 保留30秒回放缓冲
           
-          // ===== ABR自动画质（参考官方demo） =====
-          startLevel: -1,                  // 自动选择起始画质
-          abrEwmaDefaultEstimate: 5000000, // 初始带宽估算5Mbps（快速选择高质量）
-          abrBandWidthFactor: 0.95,        // 带宽安全系数
+          // ===== ABR自动画质（快速启动） =====
+          startLevel: 0,                   // 从最低画质开始（最快加载）
+          abrEwmaDefaultEstimate: 10000000, // 初始带宽估算10Mbps
+          abrBandWidthFactor: 0.8,         // 带宽安全系数
           abrMaxWithRealBitrate: true,     // 使用真实码率估算
-          abrEwmaSlowVoD: 9.0,             // 慢速带宽估计（VOD）
-          abrEwmaFastVoD: 5.0,             // 快速带宽估计（VOD）
           
-          // ===== 自动恢复（参考官方demo） =====
+          // ===== 自动恢复 =====
           autoRecoverError: true,
           stopOnStall: false,
           
-          // ===== 超时配置（参考官方demo） =====
-          fragLoadingTimeOut: 20000,       // 片段加载超时20秒
-          manifestLoadingTimeOut: 10000,   // 清单加载超时10秒
-          levelLoadingTimeOut: 10000,      // 画质列表加载超时10秒
+          // ===== 超时配置 =====
+          fragLoadingTimeOut: 15000,       // 片段加载超时15秒
+          manifestLoadingTimeOut: 8000,    // 清单加载超时8秒
+          levelLoadingTimeOut: 8000,       // 画质列表加载超时8秒
           
-          // ===== 重试配置（参考官方demo） =====
-          fragLoadingMaxRetry: 6,
-          manifestLoadingMaxRetry: 3,
-          levelLoadingMaxRetry: 3,
-          fragLoadingRetryDelay: 1000,
-          manifestLoadingRetryDelay: 1000,
-          levelLoadingRetryDelay: 1000,
+          // ===== 重试配置 =====
+          fragLoadingMaxRetry: 3,
+          manifestLoadingMaxRetry: 2,
+          levelLoadingMaxRetry: 2,
+          fragLoadingRetryDelay: 500,
+          manifestLoadingRetryDelay: 500,
+          levelLoadingRetryDelay: 500,
           
-          // ===== 禁用非核心功能（减少开销） =====
+          // ===== 禁用非核心功能 =====
           enableCEA708Captions: false,
           enableWebVTT: false,
           enableIMSC1: false,
           enableID3Metadata: false,
           enableEPG: false,
           
-          // ===== 调试（开发时开启） =====
+          // ===== 调试 =====
           debug: false,
-
-          // ===== 直接加载（视频源支持 CORS） =====
-          // 如需代理，可在此添加 CustomLoader
         });
 
         hlsPlayer.on(Hls.Events.MANIFEST_PARSED, () => {
