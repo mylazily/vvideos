@@ -231,7 +231,8 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 		}
 
 		// 保存域名替换规则到sources表
-		const source = await env.DB_0.prepare('SELECT domain_replacements FROM sources WHERE id = ?').bind(body.source_id).first<{ domain_replacements: string }>();
+		const sourceResult = await env.DB_0.prepare('SELECT domain_replacements FROM sources WHERE id = ?').bind(body.source_id).first();
+		const source = sourceResult as { domain_replacements: string } | null;
 		let replacements: Record<string, string> = {};
 		if (source?.domain_replacements) {
 			try { replacements = JSON.parse(source.domain_replacements); } catch {}
@@ -300,7 +301,8 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 		const sourceId = url.searchParams.get('source_id');
 		if (!sourceId) return json({ success: false, message: '缺少source_id' }, 400);
 
-		const source = await env.DB_0.prepare('SELECT domain_replacements FROM sources WHERE id = ?').bind(sourceId).first<{ domain_replacements: string }>();
+		const sourceResult = await env.DB_0.prepare('SELECT domain_replacements FROM sources WHERE id = ?').bind(sourceId).first();
+		const source = sourceResult as { domain_replacements: string } | null;
 		let rules: Record<string, string> = {};
 		if (source?.domain_replacements) {
 			try { rules = JSON.parse(source.domain_replacements); } catch {}
