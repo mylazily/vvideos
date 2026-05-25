@@ -37,7 +37,7 @@ export const onRequest: PagesFunction = async (context) => {
 	}
 
 	// 已知页面文件 - 让Assets处理
-	if (path === '/' || path === '/index.html' || path === '/200.html') {
+	if (path === '/' || path === '/index.html') {
 		return context.next();
 	}
 
@@ -52,12 +52,13 @@ export const onRequest: PagesFunction = async (context) => {
 		// context.next() 抛出异常，继续fallback
 	}
 
-	// SPA fallback - 返回200.html让SvelteKit客户端路由处理
-	// 注意：不改变URL，保持浏览器在当前路径
+	// SPA fallback - 返回index.html让SvelteKit客户端路由处理
+	// index.html包含完整的SvelteKit客户端启动代码（csr=true）
+	// 客户端路由会根据当前URL自动渲染对应的页面组件
 	const response = new Response(
 		await (
 			await context.env.ASSETS.fetch(
-				new Request(url.origin + '/200.html', { method: 'GET' })
+				new Request(url.origin + '/index.html', { method: 'GET' })
 			)
 		).text(),
 		{
