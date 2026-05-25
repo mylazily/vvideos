@@ -25,7 +25,7 @@ async function getAllVideoUrls(env: Env): Promise<{ loc: string; lastmod: string
   const results = await Promise.all(shards.map(db =>
     db.prepare(
       'SELECT vod_id, updated_at FROM videos WHERE status = 1 ORDER BY updated_at DESC LIMIT 5000'
-    ).all<{ vod_id: string; updated_at: number }>()
+    ).all()
   ));
 
   const urls: { loc: string; lastmod: string; priority: string }[] = [];
@@ -53,7 +53,7 @@ async function getCategoryUrls(env: Env): Promise<{ loc: string; lastmod: string
     const results = await Promise.all(shards.map(db =>
       db.prepare(
         'SELECT DISTINCT category FROM videos WHERE status = 1'
-      ).all<{ category: string }>()
+      ).all()
     ));
 
     const categorySet = new Set<string>();
@@ -90,7 +90,7 @@ async function getTagUrls(env: Env): Promise<SitemapUrl[]> {
     const results = await Promise.all(shards.map(db =>
       db.prepare(
         'SELECT DISTINCT vod_area FROM videos WHERE status = 1 AND vod_area IS NOT NULL AND vod_area != ""'
-      ).all<{ vod_area: string }>()
+      ).all()
     ));
 
     const tagSet = new Set<string>();

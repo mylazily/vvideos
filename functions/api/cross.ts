@@ -98,7 +98,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 			const shards = getShards(env);
 			const results = await Promise.all(shards.map(db => db.prepare(
 				`SELECT category, vod_area, vod_year, vod_actor FROM videos WHERE status = 1 LIMIT 1000`
-			).all<{ category: string; vod_area: string; vod_year: string; vod_actor: string }>()));
+			).all()));
 
 			const categories = new Set<string>();
 			const areas = new Set<string>();
@@ -163,7 +163,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 			const where = conditions.join(' AND ');
 			const sql = `SELECT ${VIDEO_COLS} FROM videos WHERE ${where} ORDER BY created_at DESC LIMIT 200`;
 
-			const results = await Promise.all(shards.map(db => db.prepare(sql).bind(...bindings).all<any>()));
+			const results = await Promise.all(shards.map(db => db.prepare(sql).bind(...bindings).all()));
 			const allVideos: any[] = [];
 			for (const r of results) if (r.results) allVideos.push(...r.results);
 
@@ -194,7 +194,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 			const shards = getShards(env);
 			const results = await Promise.all(shards.map(db => db.prepare(
 				'SELECT category, vod_area, vod_year FROM videos WHERE status = 1 LIMIT 1000'
-			).all<{ category: string; vod_area: string; vod_year: string }>()));
+			).all()));
 
 			const catArea = new Set<string>();
 			const catYear = new Set<string>();
