@@ -271,7 +271,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 				shards.map(db =>
 					db.prepare(
 						'SELECT id, vod_id, title, cover, category, views, vod_year, vod_remarks FROM videos WHERE status = 1 ORDER BY created_at DESC LIMIT 10'
-					).all<{ results: any[] }>().then(r => r.results || [])
+					).all().then(r => (r.results as any[]) || [])
 				)
 			);
 			
@@ -316,18 +316,20 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 			// 定向查询：只查1个分片
 			const shardIdx = getShardIndex(vodId);
 			const db = getShard(env, shardIdx);
-			const row = await db.prepare(
+			const rowResult = await db.prepare(
 				'SELECT id, vod_id, source_id, title, cover, category, views, created_at, vod_year, vod_area, vod_director, vod_actor, vod_remarks, vod_lang, play_url, duration FROM videos WHERE vod_id = ? AND status = 1'
-			).bind(vodId).first<VideoRow>();
+			).bind(vodId).first();
+			const row = rowResult as VideoRow | null;
 			
 			if (!row) return json({ success: false, message: '视频不存在' }, 404);
 			
 			// 获取资源站信息
 			let sourceInfo = null;
 			if (row.source_id) {
-				sourceInfo = await env.DB_0.prepare(
+				const sourceResult = await env.DB_0.prepare(
 					'SELECT id, name, alias, COALESCE(alias, name) as display_name FROM sources WHERE id = ?'
-				).bind(row.source_id).first<{ id: number; name: string; alias: string; display_name: string }>();
+				).bind(row.source_id).first();
+				sourceInfo = sourceResult as { id: number; name: string; alias: string; display_name: string } | null;
 			}
 			
 			const video = await formatVideo(row, env, true);
@@ -359,15 +361,16 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 			// 先查目标视频获取分类
 			const shardIdx = getShardIndex(vodId);
 			const db = getShard(env, shardIdx);
-			const video = await db.prepare('SELECT category, vod_area FROM videos WHERE vod_id = ?')
-				.bind(vodId).first<{ category: string; vod_area: string }>();
+			const videoResult = await db.prepare('SELECT category, vod_area FROM videos WHERE vod_id = ?')
+				.bind(vodId).first();
+			const video = videoResult as { category: string; vod_area: string } | null;
 			
 			if (!video) return json({ success: true, data: [] }, 200, CACHE_TTL.related);
 			
 			// 同分类随机视频（只查1个分片）
 			const results = await db.prepare(
 				'SELECT id, vod_id, title, cover, category, views, vod_year FROM videos WHERE category = ? AND vod_id != ? AND status = 1 ORDER BY RANDOM() LIMIT 6'
-			).bind(video.category, vodId).all<{ results: any[] }>().then(r => r.results);
+			).bind(video.category, vodId).all().then(r => (r.results as any[]) || []);
 			
 			const data = { success: true, data: results };
 			await setEdgeCache(request, data, CACHE_TTL.related);
@@ -410,8 +413,8 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 					const countQuery = `SELECT COUNT(*) as count FROM videos ${where}`;
 
 					return Promise.all([
-						db.prepare(listQuery).bind(...queryParams).all<{ results: any[] }>().then(r => r.results || []),
-						db.prepare(countQuery).bind(...queryParams).first<{ count: number }>().then(r => r?.count || 0)
+						db.prepare(listQuery).bind(...queryParams).all().then(r => (r.results as any[]) || []),
+						db.prepare(countQuery).bind(...queryParams).first().then(r => (r as any)?.count || 0)
 					]);
 				})
 			);
@@ -465,7 +468,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 			const results = await Promise.all(
 				searchShards.map(db => 
 					db.prepare('SELECT id, vod_id, title, cover, category, views, vod_year FROM videos WHERE title LIKE ? AND status = 1 LIMIT 60')
-						.bind(pattern).all<{ results: any[] }>().then(r => r.results)
+						.bind(pattern).all().then(r => (r.results as any[]) || [])
 				)
 			);
 			
@@ -490,7 +493,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 			
 			const results = await db.prepare(
 				'SELECT id, vod_id, title, cover, category, views, vod_year FROM videos WHERE status = 1 ORDER BY views DESC LIMIT 50'
-			).all<{ results: any[] }>().then(r => r.results);
+			).all().then(r => (r.results as any[]) || []);
 			
 			const data = { success: true, data: { videos: results } };
 			await setEdgeCache(request, data, CACHE_TTL.rank);
@@ -505,9 +508,10 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 			if (cached) return json(cached, 200, CACHE_TTL.categories);
 
 			// 获取所有启用的资源站及其别名
-			const sources = await env.DB_0.prepare(
+			const sourcesResult = await env.DB_0.prepare(
 				'SELECT id, name, alias, COALESCE(alias, name) as display_name FROM sources WHERE status = 1 ORDER BY name'
-			).all<{ results: { id: number; name: string; alias: string; display_name: string }[] }>().then(r => r.results);
+			).all();
+			const sources = (sourcesResult.results as { id: number; name: string; alias: string; display_name: string }[]) || [];
 
 			// 为每个资源站获取其分类
 			const sourceCategories = await Promise.all(
@@ -518,8 +522,8 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 						shards.map(db =>
 							db.prepare('SELECT DISTINCT category FROM videos WHERE source_id = ? AND status = 1 AND category != ""')
 								.bind(source.id)
-								.all<{ results: { category: string }[] }>()
-								.then(r => r.results.map(r => r.category))
+								.all()
+								.then(r => ((r.results as { category: string }[]) || []).map(row => row.category))
 						)
 					);
 					const categories = [...new Set(categoryResults.flat())].sort();
@@ -556,7 +560,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 			const yearResults = await Promise.all(
 				shards.map(db =>
 					db.prepare('SELECT DISTINCT vod_year FROM videos WHERE status = 1 AND vod_year != "" ORDER BY vod_year DESC LIMIT 10')
-						.all<{ results: { vod_year: string }[] }>().then(r => r.results.map(r => r.vod_year))
+						.all().then(r => ((r.results as { vod_year: string }[]) || []).map(row => row.vod_year))
 				)
 			);
 			const years = [...new Set(yearResults.flat())].sort((a, b) => parseInt(b) - parseInt(a)).slice(0, 30);
@@ -565,7 +569,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 			const areaResults = await Promise.all(
 				shards.map(db =>
 					db.prepare('SELECT DISTINCT vod_area FROM videos WHERE status = 1 AND vod_area != "" ORDER BY vod_area LIMIT 10')
-						.all<{ results: { vod_area: string }[] }>().then(r => r.results.map(r => r.vod_area))
+						.all().then(r => ((r.results as { vod_area: string }[]) || []).map(row => row.vod_area))
 				)
 			);
 			const areas = [...new Set(areaResults.flat())].slice(0, 50);
@@ -574,7 +578,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 			const actorResults = await Promise.all(
 				shards.map(db =>
 					db.prepare('SELECT vod_actor FROM videos WHERE status = 1 AND vod_actor != "" LIMIT 100')
-						.all<{ results: { vod_actor: string }[] }>().then(r => r.results.map(r => r.vod_actor))
+						.all().then(r => ((r.results as { vod_actor: string }[]) || []).map(row => row.vod_actor))
 				)
 			);
 			// 解析演员名字并统计频次
@@ -617,8 +621,8 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 			}
 			
 			// 回退：从数据库随机采样
-			const keywords = await env.DB_0.prepare('SELECT DISTINCT title FROM videos WHERE status = 1 AND views > 1000 ORDER BY RANDOM() LIMIT 20')
-				.all<{ results: { title: string }[] }>().then(r => r.results.map(r => r.title.slice(0, 6)));
+			const keywordsResult = await env.DB_0.prepare('SELECT DISTINCT title FROM videos WHERE status = 1 AND views > 1000 ORDER BY RANDOM() LIMIT 20').all();
+			const keywords = ((keywordsResult.results as { title: string }[]) || []).map(r => r.title.slice(0, 6));
 			
 			const data = { success: true, data: keywords };
 			await setEdgeCache(request, data, CACHE_TTL.keywords);
