@@ -778,7 +778,7 @@
                             <input
                               bind:value={sourceSettings[source.id].categories}
                               type="text"
-                              placeholder="如：动作片,喜剧片,科幻片"
+                              placeholder="从资源站获取的分类，如：电影,电视剧,综艺"
                               class="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm"
                             />
                           </div>

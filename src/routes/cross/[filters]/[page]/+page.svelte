@@ -24,9 +24,10 @@
   let totalCount = $state(0);
   let initialized = $state(false);
 
-  // 动态分类和地区数据（从资源站获取）
+  // 动态分类、地区、年份数据（从API获取，禁止硬编码）
   let dynamicCategories = $state<string[]>([]);
   let dynamicAreas = $state<string[]>([]);
+  let dynamicYears = $state<string[]>([]);
 
   // 解析 filters: "电影_美国_2024" 等
   let filtersRaw = $derived(decodeURIComponent($page.params.filters || ''));
@@ -78,6 +79,7 @@
         const data = await res.json();
         dynamicCategories = data.data?.categories || [];
         dynamicAreas = data.data?.areas || [];
+        dynamicYears = data.data?.years || [];
       }
     } catch (e) {
       console.error('加载筛选条件失败:', e);
@@ -123,9 +125,9 @@
     const f = filters();
     const links: { label: string; url: string }[] = [];
     
-    // 使用从资源站获取的动态数据
+    // 使用从资源站获取的动态数据（禁止硬编码）
     const areas = dynamicAreas.length > 0 ? dynamicAreas : [];
-    const years = ['2026', '2025', '2024', '2023', '2022'];
+    const years = dynamicYears.length > 0 ? dynamicYears : [];
     const cats = dynamicCategories.length > 0 ? dynamicCategories : [];
 
     // 地区×分类 交叉

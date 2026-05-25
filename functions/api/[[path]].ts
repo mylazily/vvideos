@@ -499,6 +499,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 
 			const shards = getAllShards(env);
 
+			// 从所有分片获取年份
 			const yearResults = await Promise.all(
 				shards.map(db =>
 					db.prepare('SELECT DISTINCT vod_year FROM videos WHERE status = 1 AND vod_year != "" ORDER BY vod_year DESC LIMIT 10')
@@ -507,6 +508,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 			);
 			const years = [...new Set(yearResults.flat())].sort((a, b) => parseInt(b) - parseInt(a)).slice(0, 30);
 
+			// 从所有分片获取地区
 			const areaResults = await Promise.all(
 				shards.map(db =>
 					db.prepare('SELECT DISTINCT vod_area FROM videos WHERE status = 1 AND vod_area != "" ORDER BY vod_area LIMIT 10')
@@ -515,6 +517,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 			);
 			const areas = [...new Set(areaResults.flat())].slice(0, 50);
 
+			// 从所有分片获取演员
 			const actorResults = await Promise.all(
 				shards.map(db =>
 					db.prepare('SELECT vod_actor FROM videos WHERE status = 1 AND vod_actor != "" LIMIT 100')
@@ -534,7 +537,16 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 				.slice(0, 30)
 				.map(([name]) => name);
 
-			const data = { success: true, data: { years, areas, actors } };
+			// 从所有分片获取分类（禁止硬编码）
+			const categoryResults = await Promise.all(
+				shards.map(db =>
+					db.prepare('SELECT DISTINCT category FROM videos WHERE status = 1 AND category != "" ORDER BY category LIMIT 20')
+						.all().then(r => ((r.results as { category: string }[]) || []).map(row => row.category))
+				)
+			);
+			const categories = [...new Set(categoryResults.flat())].slice(0, 50);
+
+			const data = { success: true, data: { years, areas, actors, categories } };
 			await setApiCache(request, data, CACHE_TTL.filters);
 			return json(data, 200, CACHE_TTL.filters);
 		});
