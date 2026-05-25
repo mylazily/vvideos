@@ -18,6 +18,7 @@ export const onRequest: PagesFunction = async (context) => {
 
   // 允许的域名白名单（视频流域名）
   const allowedHosts = [
+    'guangsuapi.com',  // 光速资源站
     'jisuzyv.com',
     'jisuts.com',
     'jisuimage.com',
