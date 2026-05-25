@@ -1,8 +1,8 @@
 import type { PageLoad } from './$types';
 
-// 首页：纯静态预渲染，零客户端 JS
+// 首页：预渲染 + 启用客户端路由（csr必须为true，否则SPA导航失效）
 export const prerender = true;
-export const csr = false;
+export const csr = true;
 
 export const load: PageLoad = async ({ fetch }) => {
 	try {
@@ -23,7 +23,7 @@ export const load: PageLoad = async ({ fetch }) => {
 			return { videos: videos.slice(0, 24) };
 		}
 	} catch {
-		// 构建时 API 不可用，返回空数据（客户端内联脚本会动态加载）
+		// 构建时 API 不可用，返回空数据（客户端会动态加载）
 	}
 	return { videos: [] };
 };
