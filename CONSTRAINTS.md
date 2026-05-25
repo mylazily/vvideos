@@ -405,7 +405,7 @@ CREATE TABLE videos (
 
 底部导航（全站统一）
 ├── 首页 → /
-├── 分类 → /category/全部/1
+├── 分类 → /category
 ├── 发现 → /discover
 └── 我 → /profile
 ```
