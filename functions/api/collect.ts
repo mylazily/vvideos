@@ -163,23 +163,25 @@ function extractDuration(url: string): number {
 }
 
 function getShard(vodId: string, env: Env): D1Database {
-	// 按视频ID数字编号分片 0-9
-	// 例如: "mpg9fr6gpafsu" -> 提取数字 "96" -> 96 % 10 = 6 -> 放入 DB_6
-	const digits = vodId.match(/\d/g);
-	let shardIndex: number;
-	if (digits && digits.length > 0) {
-		shardIndex = parseInt(digits.join(''), 10) % 10;
-	} else {
-		shardIndex = parseInt(fnv1aHash(vodId).slice(0, 8), 16) % 10;
-	}
+	// 纯数字ID分片：直接取模10
+	// 例如: "12345" -> 12345 % 10 = 5 -> 放入 DB_5
+	const num = parseInt(vodId, 10);
+	const shardIndex = isNaN(num) ? 0 : (num % 10);
 	const shards = [env.DB_0, env.DB_1, env.DB_2, env.DB_3, env.DB_4, env.DB_5, env.DB_6, env.DB_7, env.DB_8, env.DB_9];
 	return shards[shardIndex];
 }
 
-function generateVodId(): string {
-	const timestamp = Date.now().toString(36);
-	const random = Math.random().toString(36).substring(2, 7);
-	return `${timestamp}${random}`;
+// 纯数字ID生成器（0-9999999）
+// 使用KV存储计数器，确保ID唯一
+async function generateVodId(env: Env): Promise<string> {
+	// 从KV获取当前计数器值
+	let counter = parseInt(await env.CACHE.get('vod_id_counter') || '0');
+	// 递增计数器
+	counter = (counter + 1) % 10000000; // 循环0-9999999
+	// 保存回KV
+	await env.CACHE.put('vod_id_counter', String(counter));
+	// 返回纯数字ID
+	return String(counter);
 }
 
 function jsonResponse(data: any, status = 200) {
@@ -436,7 +438,7 @@ async function findOrCreateFingerprint(video: VideoData, env: Env): Promise<{ fi
 	}
 
 	// 都没匹配到，创建新记录
-	const vodId = generateVodId();
+	const vodId = await generateVodId(env);
 	const result = await env.DB_0.prepare('INSERT INTO video_fingerprints (fingerprint, title_normalized, vod_year, category, vod_director, main_vod_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)').bind(fingerprint, titleNormalized, video.vod_year || '', normalizedCat, director, vodId, Math.floor(Date.now() / 1000)).run();
 	return { fingerprintId: result.meta.last_row_id, mainVodId: vodId, isNew: true };
 }

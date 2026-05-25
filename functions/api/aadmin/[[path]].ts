@@ -33,21 +33,12 @@ async function verifyAdminToken(request: Request, env: Env): Promise<boolean> {
 	return !!tokenData;
 }
 
-// 获取分片索引（按视频ID数字编号）
+// 获取分片索引（纯数字ID分片）
 function getShardIndex(vodId: string): number {
-	// 提取ID中的所有数字，拼接后取模10
-	// 例如: "mpg9fr6gpafsu" -> 提取数字 "96" -> 96 % 10 = 6
-	const digits = vodId.match(/\d/g);
-	if (digits && digits.length > 0) {
-		return parseInt(digits.join(''), 10) % 10;
-	}
-	// 回退到哈希
-	let hash = 2166136261;
-	for (let i = 0; i < vodId.length; i++) {
-		hash ^= vodId.charCodeAt(i);
-		hash += (hash << 1) + (hash << 4) + (hash << 7) + (hash << 8) + (hash << 24);
-	}
-	return parseInt((hash >>> 0).toString(16).padStart(8, '0').slice(0, 8), 16) % 10;
+	// 纯数字ID直接取模10
+	// 例如: "12345" -> 12345 % 10 = 5
+	const num = parseInt(vodId, 10);
+	return isNaN(num) ? 0 : (num % 10);
 }
 
 function getShard(env: Env, index: number): D1Database {

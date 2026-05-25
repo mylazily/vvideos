@@ -45,24 +45,12 @@ async function getBlockedDomainsCached(env: Env): Promise<string[]> {
 	return blockedDomainsCache;
 }
 
-// ============ 定向分片算法（按视频ID数字编号分片 0-9） ============
+// ============ 定向分片算法（纯数字ID分片 0-9） ============
 function getShardIndex(vodId: string): number {
-	// 提取ID中的所有数字，拼接后取模10
-	// 例如: "mpg9fr6gpafsu" -> 提取数字 "96" -> 96 % 10 = 6 -> 放入 DB_6
-	// 例如: "mpg9fqw7zqoz5" -> 提取数字 "975" -> 975 % 10 = 5 -> 放入 DB_5
-	const digits = vodId.match(/\d/g);
-	if (digits && digits.length > 0) {
-		const num = parseInt(digits.join(''), 10);
-		return num % SHARD_COUNT;
-	}
-	// 如果没有数字，回退到FNV-1a哈希
-	let hash = 2166136261;
-	for (let i = 0; i < vodId.length; i++) {
-		hash ^= vodId.charCodeAt(i);
-		hash += (hash << 1) + (hash << 4) + (hash << 7) + (hash << 8) + (hash << 24);
-	}
-	const hashNum = parseInt((hash >>> 0).toString(16).padStart(8, '0').slice(0, 8), 16);
-	return hashNum % SHARD_COUNT;
+	// 纯数字ID直接取模10
+	// 例如: "12345" -> 12345 % 10 = 5 -> 放入 DB_5
+	const num = parseInt(vodId, 10);
+	return isNaN(num) ? 0 : (num % SHARD_COUNT);
 }
 
 function getShard(env: Env, index: number): D1Database {
