@@ -13,8 +13,8 @@ const config = {
 		adapter: adapter({
 			pages: 'build',
 			assets: 'build',
-			// SPA路由使用200.html作为fallback（首页prerender为index.html）
-			fallback: '200.html',
+			// SPA路由使用index.html作为fallback
+			fallback: 'index.html',
 			precompress: true,
 			strict: false
 		}),
