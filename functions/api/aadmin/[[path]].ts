@@ -299,5 +299,32 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 		return json({ success: true, message: '删除成功' });
 	}
 
+	// 7. 热搜词设置（发现页显示，逗号分隔）
+	if (path === '/api/aadmin/hot-keywords') {
+		// GET: 获取当前热搜词
+		if (request.method === 'GET') {
+			const hotKeywordsStr = await env.CACHE.get('hot_keywords') || '';
+			return json({ success: true, data: hotKeywordsStr });
+		}
+
+		// POST: 设置热搜词（逗号分隔）
+		if (request.method === 'POST') {
+			const body = await request.json<{ keywords?: string }>();
+			if (body.keywords === undefined) {
+				return json({ success: false, message: '请提供关键词' }, 400);
+			}
+
+			// 保存到KV
+			await env.CACHE.put('hot_keywords', body.keywords);
+			return json({ success: true, message: '设置成功' });
+		}
+
+		// DELETE: 清空热搜词
+		if (request.method === 'DELETE') {
+			await env.CACHE.delete('hot_keywords');
+			return json({ success: true, message: '已清空' });
+		}
+	}
+
 	return json({ success: false, message: 'API not found' }, 404);
 };

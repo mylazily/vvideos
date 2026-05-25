@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { goto } from '$app/navigation';
   import NavBar from '$components/NavBar.svelte';
   import { generateDiscoverSEO, generateBreadcrumbSchema } from '$lib/seo';
 
@@ -9,6 +10,7 @@
   let actors = $state<string[]>([]);
   let keywords = $state<string[]>([]);
   let tagsLoading = $state(true);
+  let searchQuery = $state('');
 
   let seo = $derived(generateDiscoverSEO());
 
@@ -35,6 +37,12 @@
       tagsLoading = false;
     }
   });
+
+  function handleSearch() {
+    if (searchQuery.trim()) {
+      goto('/search/' + encodeURIComponent(searchQuery.trim()) + '/1');
+    }
+  }
 </script>
 
 <svelte:head>
@@ -55,7 +63,25 @@
 
 <div class="min-h-screen bg-gray-50">
   <header class="sticky top-0 bg-white border-b border-gray-100 px-3 py-2 z-50">
-    <h1 class="text-lg font-bold text-pink-500">发现</h1>
+    <div class="flex items-center gap-2">
+      <div class="flex-1 relative">
+        <input
+          type="text"
+          bind:value={searchQuery}
+          placeholder="搜索电影、电视剧、动漫..."
+          class="w-full h-9 pl-4 pr-10 text-sm bg-gray-100 border-0 rounded-full focus:outline-none focus:ring-2 focus:ring-pink-500"
+          onkeydown={(e) => e.key === 'Enter' && handleSearch()}
+        />
+        <button
+          onclick={handleSearch}
+          class="absolute right-1 top-1/2 -translate-y-1/2 w-7 h-7 flex items-center justify-center bg-pink-500 text-white rounded-full hover:bg-pink-600 transition-colors"
+        >
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+          </svg>
+        </button>
+      </div>
+    </div>
   </header>
 
   <main class="pb-16">

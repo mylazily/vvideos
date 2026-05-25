@@ -381,7 +381,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 		});
 	}
 
-	// 4. 视频列表 - 边缘缓存
+	// 4. 视频列表 - 边缘缓存（从所有分片聚合）
 	if (path === '/api/videos') {
 		const category = url.searchParams.get('category') || '';
 		const page = parseInt(url.searchParams.get('page') || '1');
@@ -391,26 +391,49 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 			const cached = await getEdgeCache(request);
 			if (cached) return json(cached, 200, CACHE_TTL.list);
 
-			const limit = Math.min(parseInt(url.searchParams.get('limit') || '20'), 50);
+			const limit = Math.min(parseInt(url.searchParams.get('limit') || '24'), 50);
 			const offset = (page - 1) * limit;
 
-			// 只查1个分片获取数据（减少负载）
-			const db = env.DB_0;
+			// 从所有分片获取数据
+			const shards = getAllShards(env);
 
-			let where = 'WHERE status = 1';
-			let queryParams: any[] = [];
-			if (category && category !== '全部') {
-				where += ' AND category = ?';
-				queryParams.push(category);
-			}
+			// 并行查询所有分片
+			const shardResults = await Promise.all(
+				shards.map(db => {
+					let where = 'WHERE status = 1';
+					let queryParams: any[] = [];
+					if (category && category !== '全部') {
+						where += ' AND category = ?';
+						queryParams.push(category);
+					}
 
-			const listQuery = `SELECT id, vod_id, title, cover, category, views, vod_year, vod_remarks FROM videos ${where} ORDER BY created_at DESC LIMIT ${limit} OFFSET ${offset}`;
-			const countQuery = `SELECT COUNT(*) as count FROM videos ${where}`;
+					const listQuery = `SELECT id, vod_id, title, cover, category, views, vod_year, vod_remarks, created_at FROM videos ${where} ORDER BY created_at DESC LIMIT ${limit + offset}`;
+					const countQuery = `SELECT COUNT(*) as count FROM videos ${where}`;
 
-			const [listResult, countResult] = await Promise.all([
-				db.prepare(listQuery).bind(...queryParams).all<{ results: any[] }>().then(r => r.results),
-				db.prepare(countQuery).bind(...queryParams).first<{ count: number }>().then(r => r?.count || 0)
-			]);
+					return Promise.all([
+						db.prepare(listQuery).bind(...queryParams).all<{ results: any[] }>().then(r => r.results || []),
+						db.prepare(countQuery).bind(...queryParams).first<{ count: number }>().then(r => r?.count || 0)
+					]);
+				})
+			);
+
+			// 合并所有分片数据
+			const allVideos = shardResults.flatMap(r => r[0]);
+			const totalCount = shardResults.reduce((sum, r) => sum + r[1], 0);
+
+			// 去重并按时间排序
+			const seen = new Set<string>();
+			const uniqueVideos = allVideos
+				.filter(v => {
+					if (seen.has(v.vod_id)) return false;
+					seen.add(v.vod_id);
+					return true;
+				})
+				.sort((a, b) => b.created_at - a.created_at);
+
+			// 分页
+			const listResult = uniqueVideos.slice(offset, offset + limit);
+			const countResult = totalCount;
 
 			const total = countResult * SHARD_COUNT; // 估算总数
 
@@ -548,13 +571,24 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 		});
 	}
 
-	// 9. 热门关键词 - 短缓存
+	// 9. 热门关键词 - 短缓存（支持后台设置，逗号分隔）
 	if (path === '/api/keywords') {
 		return dedupeRequest('keywords', async () => {
 			const cached = await getEdgeCache(request);
 			if (cached) return json(cached, 200, CACHE_TTL.keywords);
 			
-			// 只查1个分片，随机采样
+			// 优先从KV读取后台设置的热搜词（逗号分隔）
+			const hotKeywordsStr = await env.CACHE.get('hot_keywords');
+			if (hotKeywordsStr) {
+				const keywords = hotKeywordsStr.split(/[,，]/).map(k => k.trim()).filter(k => k);
+				if (keywords.length > 0) {
+					const data = { success: true, data: keywords.slice(0, 20) };
+					await setEdgeCache(request, data, CACHE_TTL.keywords);
+					return json(data, 200, CACHE_TTL.keywords);
+				}
+			}
+			
+			// 回退：从数据库随机采样
 			const keywords = await env.DB_0.prepare('SELECT DISTINCT title FROM videos WHERE status = 1 AND views > 1000 ORDER BY RANDOM() LIMIT 20')
 				.all<{ results: { title: string }[] }>().then(r => r.results.map(r => r.title.slice(0, 6)));
 			
