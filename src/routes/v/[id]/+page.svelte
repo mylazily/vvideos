@@ -39,17 +39,14 @@
     source?: SourceInfo;
   }
 
-  // ============ Props: 服务端数据 ============
-  let { data } = $props();
-
   // ============ 状态管理 ============
-  let video = $state<VideoDetail | null>(data.video);
-  let loading = $state(!data.video);
+  let video = $state<VideoDetail | null>(null);
+  let loading = $state(true);
   let errorMsg = $state('');
   let playSources = $state<PlaySource[]>([]);
   let currentSourceIndex = $state(0);
   let hlsPlayer: any = null;
-  let relatedVideos = $state<Video[]>(data.related || []);
+  let relatedVideos = $state<Video[]>([]);
   let favorited = $state(false);
   let playerLoading = $state(false);
   let videoEl: HTMLVideoElement | null = $state(null);
@@ -67,12 +64,7 @@
 
   // ============ 生命周期 ============
   onMount(() => {
-    // 如果有服务端数据，直接初始化播放器
-    if (data.video) {
-      initVideo(data.video);
-    } else {
-      loadVideo();
-    }
+    loadVideo();
     return () => destroyPlayer();
   });
 
@@ -136,31 +128,6 @@
 
   // @ts-ignore 全局预取数据
   declare const _VPD: any;
-
-  // 直接使用服务端数据初始化视频（零延迟）
-  function initVideo(videoData: VideoDetail) {
-    video = videoData;
-    
-    // 解析播放源
-    playSources = parsePlaySources(video.play_sources || []);
-    
-    addToHistory({
-      vod_id: video.vod_id, title: video.title, cover: video.cover,
-      category: video.category, vod_year: video.vod_year, vod_area: video.vod_area
-    });
-    favorited = isFavorite(video.vod_id);
-    
-    // 检查播放源
-    if (playSources.length === 0) {
-      errorMsg = '暂无可用播放源';
-      return;
-    }
-    
-    // 立即播放
-    const url = playSources[0].url;
-    prefetchStreamDomain(url);
-    startPlayback(url);
-  }
 
   async function loadVideo() {
     errorMsg = '';
