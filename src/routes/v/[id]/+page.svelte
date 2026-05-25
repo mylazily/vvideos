@@ -335,35 +335,43 @@
 
       if (typeof Hls !== 'undefined' && Hls.isSupported()) {
         hlsPlayer = new Hls({
-          enableWorker: true,
-          lowLatencyMode: false,         // 禁用低延迟模式，允许更长的预缓存
-          // 预缓存配置：保证用户不卡，预缓存10分钟以上
-          // 首帧极速：只需3秒缓冲即可播放，后台持续预缓存到10分钟
-          maxBufferLength: 3,            // 首帧只需3秒即可播放
-          maxMaxBufferLength: 600,       // 最大预缓存600秒（10分钟，保证不卡）
-          maxBufferSize: 200 * 1000 * 1000, // 最大缓冲200MB（支持10分钟高清视频）
+          // ===== 核心性能配置（参考官方demo最佳实践） =====
+          enableWorker: true,              // Web Worker 解析（不阻塞主线程）
+          lowLatencyMode: false,           // 禁用低延迟模式，允许更长的预缓存
+          
+          // ===== 首帧极速配置 =====
+          maxBufferLength: 1.5,            // 首帧只需1.5秒即可播放（从3秒降低）
+          maxMaxBufferLength: 600,         // 最大预缓存600秒（10分钟，保证不卡）
+          maxBufferSize: 200 * 1000 * 1000,// 最大缓冲200MB
           maxBufferHole: 0.5,
-          backBufferLength: 90,          // 保留90秒回放缓冲（seek不重新加载）
-          // ABR自动画质（参考官方demo）
-          startLevel: -1,                // 自动选择起始画质（ABR估算）
-          abrEwmaDefaultEstimate: 500000, // 初始带宽估算500kbps
-          startFragPrefetch: true,       // 预取第一个片段
-          progressive: true,             // 渐进式加载
-          // 自动恢复（参考官方demo）
+          backBufferLength: 90,            // 保留90秒回放缓冲（seek不重新加载）
+          
+          // ===== ABR自动画质（参考官方demo） =====
+          startLevel: -1,                  // 自动选择起始画质
+          abrEwmaDefaultEstimate: 1000000, // 初始带宽估算1Mbps（从500kbps提高，更快选择高质量）
+          abrBandWidthFactor: 0.95,        // 带宽安全系数
+          abrMaxWithRealBitrate: true,     // 使用真实码率估算
+          startFragPrefetch: true,         // 预取第一个片段
+          progressive: true,               // 渐进式加载
+          
+          // ===== 自动恢复（参考官方demo） =====
           autoRecoverError: true,
           stopOnStall: false,
-          // 超时配置
-          fragLoadingTimeOut: 20000,     // 片段加载超时20秒（长视频片段需要更长时间）
-          manifestLoadingTimeOut: 10000, // 清单加载超时10秒
-          levelLoadingTimeOut: 10000,    // 画质列表加载超时10秒
-          // 重试配置（更宽容，避免轻易放弃）
-          fragLoadingMaxRetry: 4,
-          manifestLoadingMaxRetry: 3,
-          levelLoadingMaxRetry: 3,
-          fragLoadingRetryDelay: 500,
-          manifestLoadingRetryDelay: 500,
-          levelLoadingRetryDelay: 500,
-          // 禁用非核心功能
+          
+          // ===== 超时配置（更激进，快速失败重试） =====
+          fragLoadingTimeOut: 15000,       // 片段加载超时15秒
+          manifestLoadingTimeOut: 5000,    // 清单加载超时5秒（从10秒降低）
+          levelLoadingTimeOut: 5000,       // 画质列表加载超时5秒
+          
+          // ===== 重试配置 =====
+          fragLoadingMaxRetry: 3,
+          manifestLoadingMaxRetry: 2,
+          levelLoadingMaxRetry: 2,
+          fragLoadingRetryDelay: 300,
+          manifestLoadingRetryDelay: 300,
+          levelLoadingRetryDelay: 300,
+          
+          // ===== 禁用非核心功能（减少开销） =====
           enableCEA708Captions: false,
           enableWebVTT: false,
           enableIMSC1: false,
@@ -516,47 +524,36 @@
           {#if video.category}<span>{video.category}</span>{/if}
           {#if video.vod_year}<span>{video.vod_year}</span>{/if}
           {#if video.vod_area}<span>{video.vod_area}</span>{/if}
-          {#if video.vod_remarks}<span class="text-pink-500">{video.vod_remarks}</span>{/if}
-          {#if video.source}
-            <a href="/category/{encodeURIComponent(video.category || '全部')}/1?source={video.source.id}" class="text-blue-500 hover:underline">
-              来源:{video.source.display_name}
-            </a>
-          {/if}
+          {#if video.vod_lang}<span>{video.vod_lang}</span>{/if}
         </div>
-        {#if video.vod_director}
-          <div class="text-sm mb-1"><span class="text-gray-500">导演：</span><span>{video.vod_director}</span></div>
-        {/if}
         {#if video.vod_actor}
-          <div class="text-sm"><span class="text-gray-500">演员：</span><span>{video.vod_actor}</span></div>
+          <div class="text-sm text-gray-600 mb-2">
+            <span class="text-gray-400">演员：</span>{video.vod_actor}
+          </div>
+        {/if}
+        {#if video.vod_director}
+          <div class="text-sm text-gray-600 mb-2">
+            <span class="text-gray-400">导演：</span>{video.vod_director}
+          </div>
+        {/if}
+        {#if video.vod_remarks}
+          <div class="text-sm text-pink-500 mb-2">{video.vod_remarks}</div>
         {/if}
       </article>
 
-      <!-- 收藏按钮 -->
-      <div class="px-3 py-2 bg-white border-t flex items-center gap-3">
-        <button
-          onclick={() => {
-            if (favorited) { removeFavorite(video.vod_id); favorited = false; }
-            else { addFavorite({ vod_id: video.vod_id, title: video.title, cover: video.cover, category: video.category, vod_year: video.vod_year }); favorited = true; }
-          }}
-          class="flex items-center gap-1 px-4 py-2 text-sm rounded-full transition-colors {favorited ? 'bg-pink-500 text-white' : 'bg-gray-100 text-gray-600'}"
-        >
-          {favorited ? '♥' : '♡'} {favorited ? '已收藏' : '收藏'}
-        </button>
-      </div>
-
-      <!-- 线路选择 -->
+      <!-- 播放源选择 -->
       {#if playSources.length > 0}
-        <section class="mt-2 bg-white p-3">
-          <h3 class="font-medium mb-2">播放线路</h3>
-          <div class="flex gap-2 flex-wrap">
-            {#each playSources as source, idx}
+        <section class="p-3 bg-white mt-2">
+          <h2 class="text-sm font-medium text-gray-700 mb-2">播放线路</h2>
+          <div class="flex flex-wrap gap-2">
+            {#each playSources as source, i}
               <button
-                onclick={() => playSource(idx)}
-                class="px-3 py-1.5 text-sm rounded transition-colors {currentSourceIndex === idx ? 'bg-pink-500 text-white' : 'bg-gray-100'}"
+                onclick={() => playSource(i)}
+                class="px-3 py-1.5 text-sm rounded-lg border transition-colors {i === currentSourceIndex ? 'bg-pink-500 text-white border-pink-500' : 'bg-gray-50 text-gray-600 border-gray-200 hover:border-pink-300'}"
               >
                 {source.name}
                 {#if source.duration > 0}
-                  <span class="text-xs opacity-70">{formatDuration(source.duration)}</span>
+                  <span class="text-xs opacity-70 ml-1">{formatDuration(source.duration)}</span>
                 {/if}
               </button>
             {/each}
@@ -564,19 +561,34 @@
         </section>
       {/if}
 
-      <!-- 简介 -->
-      <section class="mt-2 bg-white p-3">
-        <h3 class="font-medium mb-2">简介</h3>
-        <p class="text-sm text-gray-600 leading-relaxed">{autoDescription}</p>
+      <!-- 操作按钮 -->
+      <section class="p-3 bg-white mt-2 flex gap-3">
+        <button
+          onclick={() => {
+            if (favorited) {
+              removeFavorite(video.vod_id);
+              favorited = false;
+            } else {
+              addFavorite({ vod_id: video.vod_id, title: video.title, cover: video.cover, category: video.category, vod_year: video.vod_year, vod_area: video.vod_area });
+              favorited = true;
+            }
+          }}
+          class="flex-1 py-2 text-sm rounded-lg border {favorited ? 'bg-pink-50 text-pink-500 border-pink-200' : 'bg-gray-50 text-gray-600 border-gray-200'}"
+        >
+          {favorited ? '♡ 已收藏' : '♡ 收藏'}
+        </button>
+        <a href="/history" class="flex-1 py-2 text-sm text-center rounded-lg border bg-gray-50 text-gray-600 border-gray-200">
+          🕐 历史
+        </a>
       </section>
 
-      <!-- 相关视频 -->
+      <!-- 相关推荐 -->
       {#if relatedVideos.length > 0}
-        <section class="mt-2 bg-white p-3">
-          <h3 class="font-medium mb-2">猜你喜欢</h3>
+        <section class="p-3 bg-white mt-2">
+          <h2 class="text-sm font-medium text-gray-700 mb-2">相关推荐</h2>
           <div class="grid grid-cols-3 gap-2">
-            {#each relatedVideos as rv, i (rv.vod_id)}
-              <VideoCard video={rv} loading={i < 3 ? 'eager' : 'lazy'} />
+            {#each relatedVideos.slice(0, 6) as rv}
+              <VideoCard {rv} />
             {/each}
           </div>
         </section>
