@@ -239,11 +239,30 @@
     // 绑定错误处理（只绑定一次）
     bindVideoErrorHandler();
 
+    // 绑定播放进度保存
+    bindProgressTracker();
+
     if (url.includes('.m3u8')) {
       playHls(videoEl, url);
     } else {
       playNative(videoEl, url);
     }
+  }
+
+  // 绑定播放进度追踪
+  function bindProgressTracker() {
+    if (!videoEl) return;
+    const onTimeUpdate = () => {
+      if (!videoEl || !video) return;
+      const currentTime = videoEl.currentTime;
+      const duration = videoEl.duration || 0;
+      if (duration > 0 && currentTime > 0) {
+        updateHistoryProgress(video.vod_id, currentTime, duration);
+      }
+    };
+    videoEl.addEventListener('timeupdate', onTimeUpdate);
+    // 存储清理函数
+    videoEl._progressCleanup = () => videoEl.removeEventListener('timeupdate', onTimeUpdate);
   }
 
   // 原生视频播放（非m3u8）

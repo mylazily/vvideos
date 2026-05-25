@@ -425,7 +425,7 @@
 
   async function deleteKeyword(keyword: string) {
     try {
-      await authFetch('/api/admin/keywords', {
+      await authFetch('/api/keywords', {
         method: 'DELETE',
         body: JSON.stringify({ keyword })
       });

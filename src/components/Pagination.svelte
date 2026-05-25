@@ -12,6 +12,8 @@
     const pages: (number | string)[] = [];
     const maxVisible = 5;
 
+    if (totalPages <= 0) return pages;
+
     if (totalPages <= maxVisible) {
       for (let i = 1; i <= totalPages; i++) {
         pages.push(i);
@@ -96,7 +98,9 @@
   {/if}
 
   <!-- 页码信息 -->
-  <span class="text-sm text-gray-500 ml-2">
-    共 {totalPages} 页
-  </span>
+  {#if totalPages > 0}
+    <span class="text-sm text-gray-500 ml-2">
+      共 {totalPages} 页
+    </span>
+  {/if}
 </div>

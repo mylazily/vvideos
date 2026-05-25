@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import PageLayout from '$components/PageLayout.svelte';
-  import { getStorageSize, clearAllData } from '$lib/storage';
+  import { getStorageSize, clearAllData, clearFavorites, clearHistory } from '$lib/storage';
 
   let storageSize = $state({ favorites: 0, history: 0 });
 
@@ -11,14 +11,14 @@
 
   function handleClearFavorites() {
     if (confirm('确定要清空所有收藏吗？')) {
-      localStorage.removeItem('vvideos_favorites');
+      clearFavorites();
       storageSize = getStorageSize();
     }
   }
 
   function handleClearHistory() {
     if (confirm('确定要清空所有观看历史吗？')) {
-      localStorage.removeItem('vvideos_history');
+      clearHistory();
       storageSize = getStorageSize();
     }
   }
