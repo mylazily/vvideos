@@ -73,7 +73,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 				   vod_lang LIKE ?
 				 )
 				 ORDER BY created_at DESC`
-			).bind(searchPattern, searchPattern, searchPattern, searchPattern, searchPattern, searchPattern).all<any>()
+			).bind(searchPattern, searchPattern, searchPattern, searchPattern, searchPattern, searchPattern).all()
 		));
 		
 		const allVideos: any[] = [];
