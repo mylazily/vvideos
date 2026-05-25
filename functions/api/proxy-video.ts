@@ -1,5 +1,6 @@
 // 视频流代理 - 解决 CORS 跨域问题
 // 将外部 m3u8/ts 流通过 Cloudflare Workers 代理，添加正确 CORS 头
+// 重写 m3u8 内的相对路径为代理路径
 
 import type { PagesFunction } from '@cloudflare/workers-types';
 
@@ -28,8 +29,11 @@ export const onRequest: PagesFunction = async (context) => {
     'xinlangtupian.com',
   ];
   
+  let targetOrigin: string;
   try {
-    const targetHost = new URL(targetUrl).hostname;
+    const targetUrlObj = new URL(targetUrl);
+    targetOrigin = targetUrlObj.origin;
+    const targetHost = targetUrlObj.hostname;
     const isAllowed = allowedHosts.some(host => targetHost.includes(host));
     if (!isAllowed) {
       return new Response('Domain not allowed', { status: 403 });
@@ -43,13 +47,11 @@ export const onRequest: PagesFunction = async (context) => {
     const response = await fetch(targetUrl, {
       method: context.request.method,
       headers: {
-        // 转发必要的请求头
         'Accept': context.request.headers.get('Accept') || '*/*',
         'Accept-Language': context.request.headers.get('Accept-Language') || 'zh-CN,zh;q=0.9',
         'User-Agent': context.request.headers.get('User-Agent') || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'Referer': new URL(targetUrl).origin + '/',
+        'Referer': targetOrigin + '/',
       },
-      // 不跟随重定向，让播放器处理
       redirect: 'follow',
     });
 
@@ -76,6 +78,18 @@ export const onRequest: PagesFunction = async (context) => {
       corsHeaders.set('Content-Type', 'application/octet-stream');
     }
 
+    // 对于 m3u8 文件，重写相对路径为代理路径
+    if (targetUrl.includes('.m3u8')) {
+      const text = await response.text();
+      // 重写相对路径：将 /xxx 或 ./xxx 转换为代理路径
+      const rewritten = rewriteM3u8Paths(text, targetUrl, targetOrigin);
+      return new Response(rewritten, {
+        status: response.status,
+        statusText: response.statusText,
+        headers: corsHeaders,
+      });
+    }
+
     return new Response(response.body, {
       status: response.status,
       statusText: response.statusText,
@@ -85,6 +99,40 @@ export const onRequest: PagesFunction = async (context) => {
     return new Response('Proxy error: ' + (error as Error).message, { status: 502 });
   }
 };
+
+// 重写 m3u8 文件中的相对路径
+function rewriteM3u8Paths(content: string, originalUrl: string, origin: string): string {
+  const lines = content.split('\n');
+  const baseUrl = originalUrl.substring(0, originalUrl.lastIndexOf('/') + 1);
+  
+  return lines.map(line => {
+    // 跳过注释行和空行
+    if (line.startsWith('#') || line.trim() === '') {
+      return line;
+    }
+    
+    // 处理相对路径
+    let url = line.trim();
+    
+    // 绝对路径（以 http 开头）- 转换为代理路径
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      return `/api/proxy-video?url=${encodeURIComponent(url)}`;
+    }
+    
+    // 相对路径（以 / 开头）- 转换为绝对路径再代理
+    if (url.startsWith('/')) {
+      const absoluteUrl = origin + url;
+      return `/api/proxy-video?url=${encodeURIComponent(absoluteUrl)}`;
+    }
+    
+    // 相对路径（以 ./ 开头或无前缀）- 相对于当前 m3u8 文件位置
+    if (url.startsWith('./')) {
+      url = url.substring(2);
+    }
+    const absoluteUrl = baseUrl + url;
+    return `/api/proxy-video?url=${encodeURIComponent(absoluteUrl)}`;
+  }).join('\n');
+}
 
 // 处理 OPTIONS 预检请求
 export const onRequestOptions: PagesFunction = async () => {
