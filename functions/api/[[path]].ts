@@ -65,6 +65,7 @@ function getAllShards(env: Env): D1Database[] {
 interface VideoRow {
 	id: number;
 	vod_id: string;
+	source_id: number;
 	title: string;
 	cover: string;
 	category: string;
@@ -76,9 +77,8 @@ interface VideoRow {
 	vod_actor: string;
 	vod_remarks: string;
 	vod_lang: string;
-	source_id: number;
-	play_url_1: string; play_url_2: string; play_url_3: string; play_url_4: string; play_url_5: string;
-	duration_1: number; duration_2: number; duration_3: number; duration_4: number; duration_5: number;
+	play_url: string;
+	duration: number;
 	ad_segments: string;
 }
 
@@ -156,11 +156,7 @@ async function formatVideo(row: VideoRow, env: Env, needSources = false) {
 	}
 
 	const sources = [];
-	if (row.play_url_1) sources.push({ url: row.play_url_1, duration: row.duration_1 });
-	if (row.play_url_2) sources.push({ url: row.play_url_2, duration: row.duration_2 });
-	if (row.play_url_3) sources.push({ url: row.play_url_3, duration: row.duration_3 });
-	if (row.play_url_4) sources.push({ url: row.play_url_4, duration: row.duration_4 });
-	if (row.play_url_5) sources.push({ url: row.play_url_5, duration: row.duration_5 });
+	if (row.play_url) sources.push({ url: row.play_url, duration: row.duration || 0 });
 
 	// 过滤屏蔽域名
 	const blocked = await getBlockedDomainsCached(env);
@@ -327,7 +323,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 			const shardIdx = getShardIndex(vodId);
 			const db = getShard(env, shardIdx);
 			const row = await db.prepare(
-				'SELECT id, vod_id, title, cover, category, views, created_at, vod_year, vod_area, vod_director, vod_actor, vod_remarks, vod_lang, source_id, play_url_1, play_url_2, play_url_3, play_url_4, play_url_5, duration_1, duration_2, duration_3, duration_4, duration_5, ad_segments FROM videos WHERE vod_id = ? AND status = 1'
+				'SELECT id, vod_id, source_id, title, cover, category, views, created_at, vod_year, vod_area, vod_director, vod_actor, vod_remarks, vod_lang, play_url, duration, ad_segments FROM videos WHERE vod_id = ? AND status = 1'
 			).bind(vodId).first<VideoRow>();
 			
 			if (!row) return json({ success: false, message: '视频不存在' }, 404);
