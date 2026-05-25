@@ -64,7 +64,6 @@
 ### 2.6 视频播放优化
 - **HLS.js 使用最小 lite 版本**（`import('hls.js/light')`）
 - 播放器缓冲区：`maxBufferLength = 3`（3秒），`maxMaxBufferLength = 600`（10分钟）
-- 不允许 `preload="auto"`，使用 `preload="metadata"`
 - **保证用户打开网站快，看视频不卡**
 
 ---
