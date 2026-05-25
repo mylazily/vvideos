@@ -24,6 +24,7 @@ interface VideoData {
 	vod_play_url: string;
 	vod_remarks?: string;
 	vod_lang?: string;
+	vod_time?: number; // 视频更新时间戳（用于今日/本周/本月采集）
 	duration?: number;
 }
 
@@ -31,10 +32,11 @@ interface CollectOptions {
 	sourceUrl: string;
 	sourceId: number;
 	env: Env;
-	mode: 'full' | 'single';
+	mode: 'full' | 'single' | 'today' | 'week' | 'month';
 	pages?: number;
 	signal?: AbortSignal;
 	categories?: string[];
+	hours?: number; // 采集最近多少小时的数据
 }
 
 interface CollectResult {
@@ -161,10 +163,15 @@ function extractDuration(url: string): number {
 }
 
 function getShard(vodId: string, env: Env): D1Database {
-	// 按视频ID尾号数字分片 0-9
-	// 例如: "mpg9fqw7zqoz5" -> 末尾是 "5" -> 放入 DB_5
-	const match = vodId.match(/(\d)$/);
-	const shardIndex = match ? parseInt(match[1], 10) : (parseInt(fnv1aHash(vodId).slice(0, 8), 16) % 10);
+	// 按视频ID数字编号分片 0-9
+	// 例如: "mpg9fr6gpafsu" -> 提取数字 "96" -> 96 % 10 = 6 -> 放入 DB_6
+	const digits = vodId.match(/\d/g);
+	let shardIndex: number;
+	if (digits && digits.length > 0) {
+		shardIndex = parseInt(digits.join(''), 10) % 10;
+	} else {
+		shardIndex = parseInt(fnv1aHash(vodId).slice(0, 8), 16) % 10;
+	}
 	const shards = [env.DB_0, env.DB_1, env.DB_2, env.DB_3, env.DB_4, env.DB_5, env.DB_6, env.DB_7, env.DB_8, env.DB_9];
 	return shards[shardIndex];
 }
@@ -268,6 +275,15 @@ async function collectPageDetails(sourceUrl: string, ids: string[], signal?: Abo
 	const videos: VideoData[] = [];
 	for (const v of detailData.list) {
 		if (!v.vod_play_url) continue;
+		// 解析vod_time（可能是时间戳或日期字符串）
+		let vodTime: number | undefined;
+		if (v.vod_time) {
+			const timeNum = parseInt(v.vod_time);
+			if (!isNaN(timeNum)) {
+				// 判断是秒还是毫秒（大于1e12认为是毫秒）
+				vodTime = timeNum > 1e12 ? Math.floor(timeNum / 1000) : timeNum;
+			}
+		}
 		videos.push({
 			vod_id: v.vod_id?.toString(),
 			vod_name: v.vod_name || v.title || '',
@@ -280,6 +296,7 @@ async function collectPageDetails(sourceUrl: string, ids: string[], signal?: Abo
 			vod_play_url: v.vod_play_url,
 			vod_remarks: v.vod_remarks || '',
 			vod_lang: v.vod_lang || '',
+			vod_time: vodTime,
 			duration: extractDuration(v.vod_play_url)
 		});
 	}
@@ -468,9 +485,12 @@ async function saveVideo(video: VideoData, sourceId: number, env: Env): Promise<
 // ============ 核心采集函数：支持全量和单页模式 ============
 
 async function collectAll(options: CollectOptions): Promise<CollectResult> {
-	const { sourceUrl, sourceId, env, mode, pages, signal, categories } = options;
+	const { sourceUrl, sourceId, env, mode, pages, signal, categories, hours } = options;
 	const result: CollectResult = { total: 0, new: 0, merged: 0, fail: 0, pagesCollected: 0, totalPages: 0, categories: {} };
 	const startedAt = Math.floor(Date.now() / 1000);
+
+	// 计算时间范围（用于过滤今日/本周/本月更新的视频）
+	const timeThreshold = hours ? startedAt - (hours * 3600) : 0;
 
 	// 采集锁：防止同一源被同时采集（KV锁，60分钟自动过期）
 	const lockKey = `collect_lock:${sourceId}`;
@@ -492,13 +512,15 @@ async function collectAll(options: CollectOptions): Promise<CollectResult> {
 		new: 0,
 		merged: 0,
 		fail: 0,
-		startedAt
+		startedAt,
+		message: hours ? `采集最近${hours}小时更新的视频` : undefined
 	});
 
 	try {
 		const { totalPages } = await collectPageList(sourceUrl, 1, signal);
 		result.totalPages = totalPages;
-		const maxPages = mode === 'full' ? totalPages : Math.min(pages || totalPages, totalPages);
+		// 时间范围采集时，最多采集20页（防止采集过多）
+		const maxPages = mode === 'full' ? totalPages : (hours ? Math.min(20, totalPages) : Math.min(pages || totalPages, totalPages));
 
 		// 更新进度中的 totalPages
 		await writeProgress(env, sourceId, {
@@ -550,6 +572,19 @@ async function collectAll(options: CollectOptions): Promise<CollectResult> {
 					// 分类过滤
 					if (categories && categories.length > 0) {
 						videos = videos.filter(v => categories.includes(v.type_name));
+					}
+
+					// 时间范围过滤（今日/本周/本月）
+					if (timeThreshold > 0) {
+						const beforeFilter = videos.length;
+						videos = videos.filter(v => {
+							// 如果没有vod_time，默认保留（可能采集站不返回时间）
+							if (!v.vod_time) return true;
+							return v.vod_time >= timeThreshold;
+						});
+						if (videos.length < beforeFilter) {
+							console.log(`[采集] 时间过滤: ${beforeFilter} -> ${videos.length} (阈值: ${timeThreshold})`);
+						}
 					}
 
 					result.total += videos.length;
@@ -730,6 +765,22 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 		if (!sourceUrl) return jsonResponse({ code: 0, msg: '缺少source_url' }, 400);
 		if (isPrivateUrl(sourceUrl)) return jsonResponse({ code: 0, msg: '不允许访问内网地址' }, 400);
 
+		// 根据模式设置时间范围（小时）
+		let hours: number | undefined;
+		switch (mode) {
+			case 'today':
+				hours = 24; // 今日更新 = 最近24小时
+				break;
+			case 'week':
+				hours = 24 * 7; // 本周更新 = 最近7天
+				break;
+			case 'month':
+				hours = 24 * 30; // 本月更新 = 最近30天
+				break;
+			default:
+				hours = undefined;
+		}
+
 		const result = await collectAll({
 			sourceUrl,
 			sourceId,
@@ -737,6 +788,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 			mode,
 			pages,
 			categories,
+			hours,
 			signal: AbortSignal.timeout(mode === 'full' ? 3600000 : 300000)
 		});
 

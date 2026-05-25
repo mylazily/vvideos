@@ -33,10 +33,14 @@ async function verifyAdminToken(request: Request, env: Env): Promise<boolean> {
 	return !!tokenData;
 }
 
-// 获取分片索引（按ID尾号数字）
+// 获取分片索引（按视频ID数字编号）
 function getShardIndex(vodId: string): number {
-	const match = vodId.match(/(\d)$/);
-	if (match) return parseInt(match[1], 10);
+	// 提取ID中的所有数字，拼接后取模10
+	// 例如: "mpg9fr6gpafsu" -> 提取数字 "96" -> 96 % 10 = 6
+	const digits = vodId.match(/\d/g);
+	if (digits && digits.length > 0) {
+		return parseInt(digits.join(''), 10) % 10;
+	}
 	// 回退到哈希
 	let hash = 2166136261;
 	for (let i = 0; i < vodId.length; i++) {
@@ -256,8 +260,9 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 	}
 
 	// 5. 触发采集（调用 collect.ts）
+	// 支持模式: single(单页), full(全量), today(今日), week(本周), month(本月)
 	if (path === '/api/aadmin/collect' && request.method === 'POST') {
-		const body = await request.json<{ source_id?: number; mode?: 'single' | 'full'; pages?: number; categories?: string[] }>();
+		const body = await request.json<{ source_id?: number; mode?: 'single' | 'full' | 'today' | 'week' | 'month'; pages?: number; categories?: string[] }>();
 
 		if (!body.source_id) {
 			return json({ success: false, message: '缺少采集源ID' }, 400);
@@ -287,6 +292,41 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 
 		const collectData = await collectRes.json();
 		return json(collectData);
+	}
+
+	// 5.1 后台静默采集（不等待完成，立即返回）
+	if (path === '/api/aadmin/collect-async' && request.method === 'POST') {
+		const body = await request.json<{ source_id?: number; mode?: 'single' | 'full' | 'today' | 'week' | 'month'; pages?: number; categories?: string[] }>();
+
+		if (!body.source_id) {
+			return json({ success: false, message: '缺少采集源ID' }, 400);
+		}
+
+		// 获取采集源信息
+		const source = await env.DB_0.prepare('SELECT * FROM sources WHERE id = ?').bind(body.source_id).first<{ id: number; name: string; api_url: string }>();
+		if (!source) {
+			return json({ success: false, message: '采集源不存在' }, 404);
+		}
+
+		// 触发后台采集（不等待完成）
+		fetch(`${url.origin}/api/collect`, {
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/json',
+				'Authorization': request.headers.get('Authorization') || ''
+			},
+			body: JSON.stringify({
+				source_url: source.api_url,
+				source_id: body.source_id,
+				mode: body.mode || 'single',
+				pages: body.pages || 5,
+				categories: body.categories
+			})
+		}).catch(() => {
+			// 忽略错误，后台运行
+		});
+
+		return json({ success: true, message: '后台采集已启动', source_id: body.source_id, mode: body.mode });
 	}
 
 	// 6. 关键词管理
