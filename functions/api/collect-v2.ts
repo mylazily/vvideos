@@ -288,16 +288,36 @@ export async function collectV2(
 	mode: 'full' | 'single' | 'today' | 'week' | 'month',
 	env: Env,
 	pages?: number,
-	signal?: AbortSignal
+	signal?: AbortSignal,
+	reverseOrder: boolean = true  // 倒序采集：最新在最上
 ): Promise<CollectResult> {
 	const { id: sourceId, api_url: sourceUrl, domain_replacements } = sourceConfig;
 	const result: CollectResult = { total: 0, new: 0, updated: 0, fail: 0, pagesCollected: 0, totalPages: 0 };
 	
 	const { totalPages } = await collectPageList(sourceUrl, 1, signal);
 	result.totalPages = totalPages;
-	const maxPages = mode === 'full' ? totalPages : Math.min(pages || 5, totalPages);
 	
-	for (let page = 1; page <= maxPages; page++) {
+	// 全量采集默认采集所有页面
+	const defaultPages = mode === 'full' ? totalPages : (pages || 5);
+	const maxPages = mode === 'full' ? totalPages : Math.min(defaultPages, totalPages);
+	
+	// 生成采集顺序（倒序：最后一页 -> 第一页）
+	let pageOrder: number[] = [];
+	if (reverseOrder) {
+		// 倒序：从maxPages到1
+		for (let p = maxPages; p >= 1; p--) {
+			pageOrder.push(p);
+		}
+	} else {
+		// 正序：从1到maxPages
+		for (let p = 1; p <= maxPages; p++) {
+			pageOrder.push(p);
+		}
+	}
+	
+	console.log(`[采集] 资源站#${sourceId} 模式=${mode} 总页数=${totalPages} 采集=${maxPages}页 顺序=${reverseOrder ? '倒序' : '正序'}`);
+	
+	for (const page of pageOrder) {
 		try {
 			const { videoIds } = await collectPageList(sourceUrl, page, signal);
 			if (videoIds.length === 0) continue;
@@ -319,8 +339,9 @@ export async function collectV2(
 				}
 			}
 			
-			result.pagesCollected = page;
-			if (page < maxPages) await new Promise(r => setTimeout(r, 1500));
+			result.pagesCollected++;
+			console.log(`[采集] 资源站#${sourceId} 进度: ${page}/${maxPages}页, 新增=${result.new}, 更新=${result.updated}`);
+			if (result.pagesCollected < pageOrder.length) await new Promise(r => setTimeout(r, 1500));
 		} catch (e) {
 			console.error(`第${page}页采集失败:`, e);
 			result.fail++;
@@ -338,7 +359,7 @@ export async function collectV2(
 	).bind(
 		sourceId,
 		`collect_${mode}`,
-		`采集完成: ${result.pagesCollected}/${result.totalPages}页`,
+		`${reverseOrder ? '倒序' : '正序'}采集完成: ${result.pagesCollected}/${result.totalPages}页`,
 		result.new,
 		result.updated,
 		Math.floor(Date.now() / 1000)
