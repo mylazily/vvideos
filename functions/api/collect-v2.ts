@@ -1,4 +1,4 @@
-// V2 采集系统：资源站独立，不跨站去重
+// V2 采集系统：资源站独立，支持域名替换和自动采集
 export interface Env {
 	DB_0: D1Database; DB_1: D1Database; DB_2: D1Database; DB_3: D1Database; DB_4: D1Database;
 	DB_5: D1Database; DB_6: D1Database; DB_7: D1Database; DB_8: D1Database; DB_9: D1Database;
@@ -6,7 +6,7 @@ export interface Env {
 }
 
 interface VideoData {
-	vod_id?: string;           // 资源站原始ID
+	vod_id?: string;
 	vod_name: string;
 	type_name: string;
 	vod_pic: string;
@@ -30,6 +30,13 @@ interface CollectResult {
 	totalPages: number;
 }
 
+interface SourceConfig {
+	id: number;
+	name: string;
+	api_url: string;
+	domain_replacements?: string;
+}
+
 // 纯数字ID生成器（每个资源站独立计数）
 async function generateVodId(sourceId: number, env: Env): Promise<string> {
 	const key = `vod_id_counter:${sourceId}`;
@@ -44,6 +51,21 @@ function getShard(vodId: string, env: Env): D1Database {
 	const num = parseInt(vodId, 10);
 	const shardIndex = isNaN(num) ? 0 : (num % 10);
 	return [env.DB_0, env.DB_1, env.DB_2, env.DB_3, env.DB_4, env.DB_5, env.DB_6, env.DB_7, env.DB_8, env.DB_9][shardIndex];
+}
+
+// 应用域名替换
+function applyDomainReplacements(playUrl: string, replacementsJson: string): string {
+	if (!replacementsJson) return playUrl;
+	try {
+		const replacements = JSON.parse(replacementsJson);
+		let result = playUrl;
+		for (const [oldDomain, newDomain] of Object.entries(replacements)) {
+			result = result.replace(new RegExp(oldDomain.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), newDomain as string);
+		}
+		return result;
+	} catch {
+		return playUrl;
+	}
 }
 
 // 标准化分类名
@@ -100,28 +122,46 @@ function extractDuration(playUrl: string): number {
 }
 
 // 获取或创建分类
-async function getOrCreateCategory(sourceId: number, categoryName: string, env: Env): Promise<number> {
+async function getOrCreateCategory(
+	sourceId: number,
+	categoryName: string,
+	env: Env,
+	displayName?: string
+): Promise<number> {
 	const normalizedName = normalizeCategory(categoryName);
-	const db = env.DB_0; // 分类存在DB_0
+	const db = env.DB_0;
 	
 	// 查找现有分类
 	const existing = await db.prepare(
-		'SELECT id FROM categories WHERE source_id = ? AND name = ?'
-	).bind(sourceId, categoryName).first<{ id: number }>();
+		'SELECT id, display_name FROM categories WHERE source_id = ? AND name = ?'
+	).bind(sourceId, categoryName).first<{ id: number; display_name: string }>();
 	
-	if (existing) return existing.id;
+	if (existing) {
+		// 如果提供了显示名称且当前为空，则更新
+		if (displayName && !existing.display_name) {
+			await db.prepare(
+				'UPDATE categories SET display_name = ? WHERE id = ?'
+			).bind(displayName, existing.id).run();
+		}
+		return existing.id;
+	}
 	
 	// 创建新分类
 	const now = Math.floor(Date.now() / 1000);
 	const result = await db.prepare(
-		'INSERT INTO categories (source_id, name, normalized_name, created_at) VALUES (?, ?, ?, ?)'
-	).bind(sourceId, categoryName, normalizedName, now).run();
+		'INSERT INTO categories (source_id, name, display_name, normalized_name, created_at) VALUES (?, ?, ?, ?, ?)'
+	).bind(sourceId, categoryName, displayName || '', normalizedName, now).run();
 	
 	return result.meta.last_row_id;
 }
 
-// 保存视频（同资源站内去重，不同资源站独立）
-async function saveVideo(video: VideoData, sourceId: number, env: Env): Promise<{ success: boolean; isNew: boolean }> {
+// 保存视频（同资源站内去重，支持域名替换）
+async function saveVideo(
+	video: VideoData,
+	sourceId: number,
+	env: Env,
+	domainReplacements?: string
+): Promise<{ success: boolean; isNew: boolean }> {
 	try {
 		const normalizedCat = normalizeCategory(video.type_name);
 		const now = Math.floor(Date.now() / 1000);
@@ -129,25 +169,34 @@ async function saveVideo(video: VideoData, sourceId: number, env: Env): Promise<
 		// 获取或创建分类
 		const categoryId = await getOrCreateCategory(sourceId, video.type_name, env);
 		
+		// 应用域名替换
+		const finalPlayUrl = applyDomainReplacements(video.vod_play_url, domainReplacements || '');
+		
 		// 检查同资源站内是否已存在（用资源站原始ID检查）
 		const existingCheck = await env.DB_0.prepare(
-			'SELECT vod_id FROM videos WHERE source_id = ? AND vod_id = ?'
-		).bind(sourceId, video.vod_id).first<{ vod_id: string }>();
+			'SELECT vod_id, play_url FROM videos WHERE source_id = ? AND vod_id = ?'
+		).bind(sourceId, video.vod_id).first<{ vod_id: string; play_url: string }>();
 		
 		if (existingCheck) {
-			// 更新现有视频
+			// 更新现有视频（如果播放链接变化了）
 			const vodId = existingCheck.vod_id;
 			const shard = getShard(vodId, env);
-			await shard.prepare(
-				`UPDATE videos SET 
-					play_url = ?, cover = ?, vod_remarks = ?, vod_actor = ?, 
-					vod_director = ?, vod_year = ?, vod_area = ?, updated_at = ?
-				 WHERE source_id = ? AND vod_id = ?`
-			).bind(
-				video.vod_play_url, video.vod_pic, video.vod_remarks || '', video.vod_actor || '',
-				video.vod_director || '', video.vod_year || '', video.vod_area || '', now,
-				sourceId, vodId
-			).run();
+			
+			// 检查播放链接是否需要更新
+			const needsUpdate = existingCheck.play_url !== finalPlayUrl;
+			
+			if (needsUpdate) {
+				await shard.prepare(
+					`UPDATE videos SET 
+						play_url = ?, cover = ?, vod_remarks = ?, vod_actor = ?, 
+						vod_director = ?, vod_year = ?, vod_area = ?, updated_at = ?
+					 WHERE source_id = ? AND vod_id = ?`
+				).bind(
+					finalPlayUrl, video.vod_pic, video.vod_remarks || '', video.vod_actor || '',
+					video.vod_director || '', video.vod_year || '', video.vod_area || '', now,
+					sourceId, vodId
+				).run();
+			}
 			return { success: true, isNew: false };
 		}
 		
@@ -163,7 +212,7 @@ async function saveVideo(video: VideoData, sourceId: number, env: Env): Promise<
 				status, views, created_at, updated_at
 			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?, ?)`
 		).bind(
-			newVodId, sourceId, categoryId, video.vod_name, video.vod_pic, video.vod_play_url,
+			newVodId, sourceId, categoryId, video.vod_name, video.vod_pic, finalPlayUrl,
 			video.duration || 0, video.vod_year || '', video.vod_area || '', video.vod_actor || '',
 			video.vod_director || '', video.vod_remarks || '', video.vod_lang || '', now, now
 		).run();
@@ -181,7 +230,11 @@ async function saveVideo(video: VideoData, sourceId: number, env: Env): Promise<
 }
 
 // 采集单页列表
-async function collectPageList(sourceUrl: string, page: number, signal?: AbortSignal): Promise<{ totalPages: number; videoIds: string[] }> {
+async function collectPageList(
+	sourceUrl: string,
+	page: number,
+	signal?: AbortSignal
+): Promise<{ totalPages: number; videoIds: string[] }> {
 	const listUrl = sourceUrl + (sourceUrl.includes('?') ? '&' : '?') + `ac=list&pg=${page}`;
 	const listRes = await fetch(listUrl, { signal: signal || AbortSignal.timeout(30000) });
 	if (!listRes.ok) throw new Error(`获取列表失败(${listRes.status})`);
@@ -200,7 +253,11 @@ async function collectPageList(sourceUrl: string, page: number, signal?: AbortSi
 }
 
 // 采集详情
-async function collectPageDetails(sourceUrl: string, ids: string[], signal?: AbortSignal): Promise<VideoData[]> {
+async function collectPageDetails(
+	sourceUrl: string,
+	ids: string[],
+	signal?: AbortSignal
+): Promise<VideoData[]> {
 	if (ids.length === 0) return [];
 	const idsStr = ids.slice(0, 100).join(',');
 	const detailUrl = sourceUrl + (sourceUrl.includes('?') ? '&' : '?') + `ac=detail&ids=${idsStr}`;
@@ -227,13 +284,13 @@ async function collectPageDetails(sourceUrl: string, ids: string[], signal?: Abo
 
 // 主采集函数
 export async function collectV2(
-	sourceUrl: string,
-	sourceId: number,
-	env: Env,
+	sourceConfig: SourceConfig,
 	mode: 'full' | 'single' | 'today' | 'week' | 'month',
+	env: Env,
 	pages?: number,
 	signal?: AbortSignal
 ): Promise<CollectResult> {
+	const { id: sourceId, api_url: sourceUrl, domain_replacements } = sourceConfig;
 	const result: CollectResult = { total: 0, new: 0, updated: 0, fail: 0, pagesCollected: 0, totalPages: 0 };
 	
 	const { totalPages } = await collectPageList(sourceUrl, 1, signal);
@@ -252,7 +309,7 @@ export async function collectV2(
 				
 				result.total += videos.length;
 				for (const video of videos) {
-					const saved = await saveVideo(video, sourceId, env);
+					const saved = await saveVideo(video, sourceId, env, domain_replacements);
 					if (saved.success) {
 						if (saved.isNew) result.new++;
 						else result.updated++;
@@ -274,6 +331,18 @@ export async function collectV2(
 	await env.DB_0.prepare(
 		'UPDATE sources SET total_videos = total_videos + ?, last_collect_at = ? WHERE id = ?'
 	).bind(result.new, Math.floor(Date.now() / 1000), sourceId).run();
+	
+	// 记录采集日志
+	await env.DB_0.prepare(
+		'INSERT INTO collect_logs (source_id, action, details, new_count, updated_count, created_at) VALUES (?, ?, ?, ?, ?, ?)'
+	).bind(
+		sourceId,
+		`collect_${mode}`,
+		`采集完成: ${result.pagesCollected}/${result.totalPages}页`,
+		result.new,
+		result.updated,
+		Math.floor(Date.now() / 1000)
+	).run();
 	
 	return result;
 }
