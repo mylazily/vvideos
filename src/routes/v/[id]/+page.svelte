@@ -104,6 +104,9 @@
     return parts.join('');
   }
 
+  // @ts-ignore 全局预取数据
+  declare const _VPD: any;
+
   async function loadVideo() {
     loading = true;
     errorMsg = '';
@@ -112,19 +115,33 @@
     destroyPlayer();
 
     try {
-      const [videoRes, relatedRes] = await Promise.all([
-        fetch(`/api/video/${videoId}`, { signal: AbortSignal.timeout(10000) }),
-        fetch(`/api/video/${videoId}/related`, { signal: AbortSignal.timeout(5000) }).catch(() => null)
-      ]);
+      // 优先使用 app.html 预取的数据（零延迟）
+      const preloadedVideo = typeof _VPD !== 'undefined' && _VPD.video ? _VPD.video : null;
+      const preloadedRelated = typeof _VPD !== 'undefined' && _VPD.related ? _VPD.related : null;
 
-      if (!videoRes.ok) { errorMsg = `请求失败 (${videoRes.status})`; return; }
+      let videoData = preloadedVideo;
+      let relatedData = preloadedRelated;
 
-      const data = await videoRes.json();
-      if (!data.success || !data.data) { errorMsg = data.message || '视频不存在'; return; }
+      // 如果预取数据不可用，走 API 请求
+      if (!videoData) {
+        const [videoRes, relatedRes] = await Promise.all([
+          fetch(`/api/video/${videoId}`, { signal: AbortSignal.timeout(10000) }),
+          fetch(`/api/video/${videoId}/related`, { signal: AbortSignal.timeout(5000) }).catch(() => null)
+        ]);
 
-      video = data.data;
+        if (!videoRes.ok) { errorMsg = `请求失败 (${videoRes.status})`; return; }
+        const data = await videoRes.json();
+        if (!data.success || !data.data) { errorMsg = data.message || '视频不存在'; return; }
+        videoData = data.data;
 
-      // 解析播放源（改进：处理更多格式）
+        if (relatedRes && relatedRes.ok) {
+          try { relatedData = (await relatedRes.json()).data || []; } catch {}
+        }
+      }
+
+      video = videoData;
+
+      // 解析播放源
       playSources = parsePlaySources(video.play_sources || []);
 
       addToHistory({
@@ -133,8 +150,8 @@
       });
       favorited = isFavorite(video.vod_id);
 
-      if (relatedRes && relatedRes.ok) {
-        try { relatedVideos = (await relatedRes.json()).data || []; } catch {}
+      if (relatedData) {
+        relatedVideos = relatedData;
       }
 
       // 检查播放源
@@ -291,27 +308,32 @@
       if (typeof Hls !== 'undefined' && Hls.isSupported()) {
         hlsPlayer = new Hls({
           enableWorker: true,
-          lowLatencyMode: false,
-          // 首帧极速配置
-          maxBufferLength: 3,
-          maxMaxBufferLength: 30,
-          maxBufferSize: 50 * 1000 * 1000,
+          lowLatencyMode: true,
+          // 预缓存配置：保证用户不卡，预缓存10分钟以上
+          maxBufferLength: 30,           // 前向缓冲目标30秒（首帧速度）
+          maxMaxBufferLength: 600,       // 最大预缓存600秒（10分钟，保证不卡）
+          maxBufferSize: 100 * 1000 * 1000, // 最大缓冲100MB
           maxBufferHole: 0.5,
-          // 从最低画质开始，首帧最快
-          startLevel: 0,
-          startFragPrefetch: true,
-          progressive: true,
+          backBufferLength: 90,          // 保留90秒回放缓冲（seek不重新加载）
+          // ABR自动画质（参考官方demo）
+          startLevel: -1,                // 自动选择起始画质（ABR估算）
+          abrEwmaDefaultEstimate: 500000, // 初始带宽估算500kbps
+          startFragPrefetch: true,       // 预取第一个片段
+          progressive: true,             // 渐进式加载
+          // 自动恢复（参考官方demo）
+          autoRecoverError: true,
+          stopOnStall: false,
           // 超时配置
-          fragLoadingTimeOut: 6000,
-          manifestLoadingTimeOut: 3000,
-          levelLoadingTimeOut: 3000,
-          // 重试配置
-          fragLoadingMaxRetry: 2,
-          manifestLoadingMaxRetry: 1,
-          levelLoadingMaxRetry: 1,
-          fragLoadingRetryDelay: 50,
-          manifestLoadingRetryDelay: 50,
-          levelLoadingRetryDelay: 50,
+          fragLoadingTimeOut: 20000,     // 片段加载超时20秒（长视频片段需要更长时间）
+          manifestLoadingTimeOut: 10000, // 清单加载超时10秒
+          levelLoadingTimeOut: 10000,    // 画质列表加载超时10秒
+          // 重试配置（更宽容，避免轻易放弃）
+          fragLoadingMaxRetry: 4,
+          manifestLoadingMaxRetry: 3,
+          levelLoadingMaxRetry: 3,
+          fragLoadingRetryDelay: 500,
+          manifestLoadingRetryDelay: 500,
+          levelLoadingRetryDelay: 500,
           // 禁用非核心功能
           enableCEA708Captions: false,
           enableWebVTT: false,
