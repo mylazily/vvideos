@@ -4,6 +4,15 @@
   import NavBar from '$components/NavBar.svelte';
   import { generateDiscoverSEO, generateBreadcrumbSchema } from '$lib/seo';
 
+  interface SourceCategory {
+    id: number;
+    name: string;
+    alias: string;
+    display_name: string;
+    categories: string[];
+  }
+
+  let sources = $state<SourceCategory[]>([]);
   let categories = $state<string[]>([]);
   let areas = $state<string[]>([]);
   let years = $state<string[]>([]);
@@ -26,6 +35,7 @@
         keywordsRes.json(),
         categoriesRes.json()
       ]);
+      sources = categoriesData.sources || [];
       categories = categoriesData.data || [];
       areas = filtersData.data?.areas || [];
       years = filtersData.data?.years || [];
@@ -109,8 +119,31 @@
         </section>
       {/if}
 
-      <!-- 分类 -->
-      {#if categories.length > 0}
+      <!-- 资源站分类 -->
+      {#if sources.length > 0}
+        {#each sources as source}
+          <section class="bg-white mt-2">
+            <div class="px-3 py-2 border-b border-gray-100 flex items-center justify-between">
+              <h2 class="text-sm font-medium text-gray-800">{source.alias || source.name}</h2>
+              <a href="/category/{encodeURIComponent(source.categories[0] || '全部')}/1?source={source.id}" class="text-xs text-pink-500">查看全部</a>
+            </div>
+            <div class="flex flex-wrap gap-2 p-3">
+              {#each source.categories.slice(0, 12) as tag}
+                <a
+                  href="/category/{encodeURIComponent(tag)}/1?source={source.id}"
+                  class="px-3 py-1.5 text-sm bg-gray-100 text-gray-700 rounded-full hover:bg-pink-50 hover:text-pink-500 transition-colors"
+                >
+                  {tag}
+                </a>
+              {/each}
+              {#if source.categories.length > 12}
+                <span class="px-3 py-1.5 text-sm text-gray-400">+{source.categories.length - 12}更多</span>
+              {/if}
+            </div>
+          </section>
+        {/each}
+      {:else if categories.length > 0}
+        <!-- 兼容：没有资源站数据时显示普通分类 -->
         <section class="bg-white mt-2">
           <div class="px-3 py-2 border-b border-gray-100">
             <h2 class="text-sm font-medium text-gray-800">分类</h2>

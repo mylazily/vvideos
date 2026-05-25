@@ -8,8 +8,18 @@
   import type { Video } from '$lib/types';
   import { generateCategorySEO, canonicalUrl, generateBreadcrumbSchema } from '$lib/seo';
 
+  interface SourceCategory {
+    id: number;
+    name: string;
+    alias: string;
+    display_name: string;
+    categories: string[];
+  }
+
+  let sources = $state<SourceCategory[]>([]);
   let categories = $state<string[]>([]);
   let activeCategory = $state('全部');
+  let activeSource = $state<number | null>(null);
   let videos = $state<Video[]>([]);
   let loading = $state(true);
   let categoriesLoading = $state(true);
@@ -23,7 +33,7 @@
   $effect(() => {
     const cat = decodeURIComponent($page.params.cat || '全部');
     const pg = parseInt($page.params.page || '1') || 1;
-    
+
     if (initialized) {
       // URL 变化时重新加载
       loadVideos(cat, pg);
@@ -42,6 +52,7 @@
       if (res.ok) {
         const data = await res.json();
         categories = data.data || [];
+        sources = data.sources || [];
         // 首次加载
         const cat = decodeURIComponent($page.params.cat || '全部');
         const pg = parseInt($page.params.page || '1') || 1;
@@ -49,6 +60,7 @@
       }
     } catch {
       categories = [];
+      sources = [];
     } finally {
       categoriesLoading = false;
     }
@@ -61,10 +73,13 @@
     currentPage = pg;
 
     try {
-      const url =
-        category === '全部'
-          ? '/api/videos?page=' + pg + '&limit=24'
-          : '/api/videos?category=' + encodeURIComponent(category) + '&page=' + pg + '&limit=24';
+      let url = '/api/videos?page=' + pg + '&limit=24';
+      if (category !== '全部') {
+        url += '&category=' + encodeURIComponent(category);
+      }
+      if (activeSource) {
+        url += '&source_id=' + activeSource;
+      }
       const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
       if (res.ok) {
         const data = await res.json();
@@ -80,6 +95,14 @@
 
   function switchCategory(cat: string) {
     goto('/category/' + encodeURIComponent(cat) + '/1');
+  }
+
+  function switchSource(sourceId: number | null) {
+    activeSource = sourceId;
+    // 切换资源站时重新加载当前分类的视频
+    loadVideos(activeCategory, 1);
+    // 更新URL
+    goto('/category/' + encodeURIComponent(activeCategory) + '/1');
   }
 
   function handlePageChange(pg: number) {
@@ -110,7 +133,35 @@
     <h1 class="text-lg font-bold text-pink-500">{activeCategory} - 在线观看</h1>
   </header>
 
-  <div class="sticky top-11 z-40 bg-white border-b border-gray-100">
+  <!-- 资源站选择器 -->
+  {#if sources.length > 0}
+    <div class="sticky top-11 z-40 bg-white border-b border-gray-100">
+      <div class="flex items-center gap-2 px-3 h-11 overflow-x-auto no-scrollbar">
+        <button
+          onclick={() => switchSource(null)}
+          class="flex-shrink-0 px-4 py-1.5 text-sm rounded-full transition-all {activeSource === null
+            ? 'bg-blue-500 text-white'
+            : 'text-gray-600 bg-gray-100'}"
+        >
+          全部资源
+        </button>
+        {#each sources as source}
+          <button
+            onclick={() => switchSource(source.id)}
+            class="flex-shrink-0 px-4 py-1.5 text-sm rounded-full transition-all {activeSource === source.id
+              ? 'bg-blue-500 text-white'
+              : 'text-gray-600 bg-gray-100'}"
+            title={source.name}
+          >
+            {source.alias || source.name}
+          </button>
+        {/each}
+      </div>
+    </div>
+  {/if}
+
+  <!-- 分类选择器 -->
+  <div class="sticky {sources.length > 0 ? 'top-22' : 'top-11'} z-40 bg-white border-b border-gray-100">
     <div class="flex items-center gap-2 px-3 h-11 overflow-x-auto no-scrollbar">
       {#if categoriesLoading}
         {#each Array(5) as _}
@@ -125,16 +176,31 @@
         >
           全部
         </button>
-        {#each categories as cat}
-          <button
-            onclick={() => switchCategory(cat)}
-            class="flex-shrink-0 px-4 py-1.5 text-sm rounded-full transition-all {activeCategory === cat
-              ? 'bg-pink-500 text-white'
-              : 'text-gray-600 bg-gray-100'}"
-          >
-            {cat}
-          </button>
-        {/each}
+        {#if activeSource}
+          <!-- 显示当前选中资源站的分类 -->
+          {#each sources.find(s => s.id === activeSource)?.categories || [] as cat}
+            <button
+              onclick={() => switchCategory(cat)}
+              class="flex-shrink-0 px-4 py-1.5 text-sm rounded-full transition-all {activeCategory === cat
+                ? 'bg-pink-500 text-white'
+                : 'text-gray-600 bg-gray-100'}"
+            >
+              {cat}
+            </button>
+          {/each}
+        {:else}
+          <!-- 显示所有分类 -->
+          {#each categories as cat}
+            <button
+              onclick={() => switchCategory(cat)}
+              class="flex-shrink-0 px-4 py-1.5 text-sm rounded-full transition-all {activeCategory === cat
+                ? 'bg-pink-500 text-white'
+                : 'text-gray-600 bg-gray-100'}"
+            >
+              {cat}
+            </button>
+          {/each}
+        {/if}
       {/if}
     </div>
   </div>

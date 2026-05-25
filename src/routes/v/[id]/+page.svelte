@@ -27,8 +27,16 @@
     duration: number;
   }
 
+  interface SourceInfo {
+    id: number;
+    name: string;
+    alias: string;
+    display_name: string;
+  }
+
   interface VideoDetail extends Video {
     play_sources: Array<{ url: string; duration: number }>;
+    source?: SourceInfo;
   }
 
   // ============ 状态管理 ============
@@ -490,6 +498,11 @@
           {#if video.vod_year}<span>{video.vod_year}</span>{/if}
           {#if video.vod_area}<span>{video.vod_area}</span>{/if}
           {#if video.vod_remarks}<span class="text-pink-500">{video.vod_remarks}</span>{/if}
+          {#if video.source}
+            <a href="/category/{encodeURIComponent(video.category || '全部')}/1?source={video.source.id}" class="text-blue-500 hover:underline">
+              来源:{video.source.display_name}
+            </a>
+          {/if}
         </div>
         {#if video.vod_director}
           <div class="text-sm mb-1"><span class="text-gray-500">导演：</span><span>{video.vod_director}</span></div>

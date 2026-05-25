@@ -76,6 +76,7 @@ interface VideoRow {
 	vod_actor: string;
 	vod_remarks: string;
 	vod_lang: string;
+	source_id: number;
 	play_url_1: string; play_url_2: string; play_url_3: string; play_url_4: string; play_url_5: string;
 	duration_1: number; duration_2: number; duration_3: number; duration_4: number; duration_5: number;
 	ad_segments: string;
@@ -326,13 +327,27 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 			const shardIdx = getShardIndex(vodId);
 			const db = getShard(env, shardIdx);
 			const row = await db.prepare(
-				'SELECT id, vod_id, title, cover, category, views, created_at, vod_year, vod_area, vod_director, vod_actor, vod_remarks, vod_lang, play_url_1, play_url_2, play_url_3, play_url_4, play_url_5, duration_1, duration_2, duration_3, duration_4, duration_5, ad_segments FROM videos WHERE vod_id = ? AND status = 1'
+				'SELECT id, vod_id, title, cover, category, views, created_at, vod_year, vod_area, vod_director, vod_actor, vod_remarks, vod_lang, source_id, play_url_1, play_url_2, play_url_3, play_url_4, play_url_5, duration_1, duration_2, duration_3, duration_4, duration_5, ad_segments FROM videos WHERE vod_id = ? AND status = 1'
 			).bind(vodId).first<VideoRow>();
 			
 			if (!row) return json({ success: false, message: '视频不存在' }, 404);
 			
+			// 获取资源站信息
+			let sourceInfo = null;
+			if (row.source_id) {
+				sourceInfo = await env.DB_0.prepare(
+					'SELECT id, name, alias, COALESCE(alias, name) as display_name FROM sources WHERE id = ?'
+				).bind(row.source_id).first<{ id: number; name: string; alias: string; display_name: string }>();
+			}
+			
 			const video = await formatVideo(row, env, true);
-			const data = { success: true, data: video };
+			const data = { 
+				success: true, 
+				data: {
+					...video,
+					source: sourceInfo
+				}
+			};
 			await setEdgeCache(request, data, CACHE_TTL.video);
 			
 			// 异步增加浏览量
@@ -373,8 +388,9 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 	// 4. 视频列表 - 边缘缓存（从所有分片聚合）
 	if (path === '/api/videos') {
 		const category = url.searchParams.get('category') || '';
+		const sourceId = url.searchParams.get('source_id') || '';
 		const page = parseInt(url.searchParams.get('page') || '1');
-		const cacheKey = `videos-${category}-${page}`;
+		const cacheKey = `videos-${category}-${sourceId}-${page}`;
 
 		return dedupeRequest(cacheKey, async () => {
 			const cached = await getEdgeCache(request);
@@ -394,6 +410,10 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 					if (category && category !== '全部') {
 						where += ' AND category = ?';
 						queryParams.push(category);
+					}
+					if (sourceId) {
+						where += ' AND source_id = ?';
+						queryParams.push(parseInt(sourceId));
 					}
 
 					const listQuery = `SELECT id, vod_id, title, cover, category, views, vod_year, vod_remarks, created_at FROM videos ${where} ORDER BY created_at DESC LIMIT ${limit + offset}`;
@@ -493,12 +513,41 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 		return dedupeRequest('categories', async () => {
 			const cached = await getEdgeCache(request);
 			if (cached) return json(cached, 200, CACHE_TTL.categories);
-			
-			// 只查1个分片
-			const categories = await env.DB_0.prepare('SELECT DISTINCT category FROM videos WHERE status = 1 AND category != "" ORDER BY category')
-				.all<{ results: { category: string }[] }>().then(r => r.results.map(r => r.category));
-			
-			const data = { success: true, data: categories };
+
+			// 获取所有启用的资源站及其别名
+			const sources = await env.DB_0.prepare(
+				'SELECT id, name, alias, COALESCE(alias, name) as display_name FROM sources WHERE status = 1 ORDER BY name'
+			).all<{ results: { id: number; name: string; alias: string; display_name: string }[] }>().then(r => r.results);
+
+			// 为每个资源站获取其分类
+			const sourceCategories = await Promise.all(
+				sources.map(async (source) => {
+					// 从所有分片中查找该资源站的分类
+					const shards = getAllShards(env);
+					const categoryResults = await Promise.all(
+						shards.map(db =>
+							db.prepare('SELECT DISTINCT category FROM videos WHERE source_id = ? AND status = 1 AND category != ""')
+								.bind(source.id)
+								.all<{ results: { category: string }[] }>()
+								.then(r => r.results.map(r => r.category))
+						)
+					);
+					const categories = [...new Set(categoryResults.flat())].sort();
+					return {
+						...source,
+						categories
+					};
+				})
+			);
+
+			// 同时返回扁平化的分类列表（用于兼容旧接口）
+			const allCategories = [...new Set(sourceCategories.flatMap(s => s.categories))].sort();
+
+			const data = {
+				success: true,
+				data: allCategories,
+				sources: sourceCategories.filter(s => s.categories.length > 0)
+			};
 			await setEdgeCache(request, data, CACHE_TTL.categories);
 			return json(data, 200, CACHE_TTL.categories);
 		});
