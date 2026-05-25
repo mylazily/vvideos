@@ -1,20 +1,7 @@
 {
   "version": 1,
   "include": [
-    "/api/*",
-    "/collect/*",
-    "/admin/*",
-    "/v/*",
-    "/discover*",
-    "/category/*",
-    "/search/*",
-    "/rank/*",
-    "/tag/*",
-    "/profile/*",
-    "/history/*",
-    "/favorite/*",
-    "/settings/*",
-    "/cross/*"
+    "/api/*"
   ],
   "exclude": [
     "/_app/*",
