@@ -55,8 +55,11 @@
 
 		// 浏览器检测 + 域名连接检测
 		const checkBrowser = async () => {
-			const { applySubdomainSEO } = await import('$lib/subdomain');
-			const { detectBrowser } = await import('$lib/browser-detect');
+			// 合并导入，减少一个chunk请求
+			const [{ applySubdomainSEO }, { detectBrowser }] = await Promise.all([
+				import('$lib/subdomain'),
+				import('$lib/browser-detect')
+			]);
 			applySubdomainSEO();
 			const browserInfo = detectBrowser();
 

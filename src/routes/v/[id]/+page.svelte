@@ -10,8 +10,6 @@
     generatePageTitle,
     generateVideoSchema,
     generateBreadcrumbSchema,
-    generateOrganizationSchema,
-    generateWebPageSchema,
     canonicalUrl,
     SITE_URL,
     SITE_NAME
@@ -310,7 +308,8 @@
           enableWorker: true,
           lowLatencyMode: true,
           // 预缓存配置：保证用户不卡，预缓存10分钟以上
-          maxBufferLength: 30,           // 前向缓冲目标30秒（首帧速度）
+          // 首帧极速：只需3秒缓冲即可播放，后台持续预缓存到10分钟
+          maxBufferLength: 3,
           maxMaxBufferLength: 600,       // 最大预缓存600秒（10分钟，保证不卡）
           maxBufferSize: 100 * 1000 * 1000, // 最大缓冲100MB
           maxBufferHole: 0.5,
@@ -422,8 +421,6 @@
       cover: video.cover, play_url: playSources[0]?.url || '', vod_id: video.vod_id
     }))}</script>`}
     {@html `<script type="application/ld+json">${JSON.stringify(generateBreadcrumbSchema(breadcrumbs))}</script>`}
-    {@html `<script type="application/ld+json">${JSON.stringify(generateOrganizationSchema())}</script>`}
-    {@html `<script type="application/ld+json">${JSON.stringify(generateWebPageSchema({ title: seoTitle, description: seoDesc, url: canonicalUrl(`/v/${video.vod_id}`) }))}</script>`}
   {:else}
     <title>视频详情 - {SITE_NAME}</title>
     <meta name="robots" content="noindex, follow" />

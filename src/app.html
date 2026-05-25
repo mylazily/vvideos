@@ -59,12 +59,20 @@
         .then(function(d) {
           if (d && d.success && d.data) {
             _VPD.video = d.data;
-            // 预连接流媒体域名
+            // 解析播放源URL（支持 $ 和 $# 分隔符）
             var sources = d.data.play_sources || [];
             if (sources.length > 0) {
               try {
-                var firstUrl = sources[0].url;
-                var host = new URL(firstUrl).host;
+                var rawUrl = sources[0].url || '';
+                // 提取实际播放URL（去掉名称前缀）
+                var playUrl = rawUrl;
+                if (rawUrl.indexOf('$') > -1) {
+                  var parts = rawUrl.split('#');
+                  var firstEp = parts[0];
+                  var dollarIdx = firstEp.indexOf('$');
+                  if (dollarIdx > -1) playUrl = firstEp.substring(dollarIdx + 1);
+                }
+                var host = new URL(playUrl).host;
                 if (host && host !== location.host) {
                   var link = document.createElement('link');
                   link.rel = 'preconnect';

@@ -1,9 +1,9 @@
-// Service Worker v18 - API缓存5分钟 + 视频缓存优化 + 首帧极速
-const STATIC_CACHE = 'evideos-static-v18';
-const IMAGE_CACHE = 'evideos-images-v18';
-const API_CACHE = 'evideos-api-v18';
-const VIDEO_CACHE = 'evideos-video-v18';
-const CACHE_VERSION = 'v18';
+// Service Worker v19 - 首帧极速 + 预缓存10分钟
+const STATIC_CACHE = 'evideos-static-v19';
+const IMAGE_CACHE = 'evideos-images-v19';
+const API_CACHE = 'evideos-api-v19';
+const VIDEO_CACHE = 'evideos-video-v19';
+const CACHE_VERSION = 'v19';
 
 // 缓存TTL（毫秒）- 恢复原来的配置
 const API_TTL = 5 * 60 * 1000;         // API缓存5分钟
