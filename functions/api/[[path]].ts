@@ -45,8 +45,16 @@ async function getBlockedDomainsCached(env: Env): Promise<string[]> {
 	return blockedDomainsCache;
 }
 
-// ============ 定向分片算法（与 collect.ts 保持一致的 FNV-1a） ============
+// ============ 定向分片算法（按视频ID尾号数字分片 0-9） ============
 function getShardIndex(vodId: string): number {
+	// 提取ID末尾的数字字符，转为数字后取模10
+	// 例如: "mpg9fqw7zqoz5" -> 末尾是 "5" -> 放入 DB_5
+	// 例如: "mpfui87t6pgq8" -> 末尾是 "8" -> 放入 DB_8
+	const match = vodId.match(/(\d)$/);
+	if (match) {
+		return parseInt(match[1], 10);
+	}
+	// 如果没有数字结尾，回退到FNV-1a哈希
 	let hash = 2166136261;
 	for (let i = 0; i < vodId.length; i++) {
 		hash ^= vodId.charCodeAt(i);

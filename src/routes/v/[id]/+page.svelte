@@ -114,13 +114,16 @@
 
     try {
       // 优先使用 app.html 预取的数据（零延迟）
-      const preloadedVideo = typeof _VPD !== 'undefined' && _VPD.video ? _VPD.video : null;
+      // 但必须先验证预取数据的视频ID与当前页面ID是否匹配
+      // @ts-ignore
+      const preloadedVideo = typeof _VPD !== 'undefined' && _VPD.video && _VPD.video.vod_id === videoId ? _VPD.video : null;
+      // @ts-ignore
       const preloadedRelated = typeof _VPD !== 'undefined' && _VPD.related ? _VPD.related : null;
 
       let videoData = preloadedVideo;
       let relatedData = preloadedRelated;
 
-      // 如果预取数据不可用，走 API 请求
+      // 如果预取数据不可用或ID不匹配，走 API 请求
       if (!videoData) {
         const [videoRes, relatedRes] = await Promise.all([
           fetch(`/api/video/${videoId}`, { signal: AbortSignal.timeout(10000) }),
@@ -306,12 +309,12 @@
       if (typeof Hls !== 'undefined' && Hls.isSupported()) {
         hlsPlayer = new Hls({
           enableWorker: true,
-          lowLatencyMode: true,
+          lowLatencyMode: false,         // 禁用低延迟模式，允许更长的预缓存
           // 预缓存配置：保证用户不卡，预缓存10分钟以上
           // 首帧极速：只需3秒缓冲即可播放，后台持续预缓存到10分钟
-          maxBufferLength: 3,
+          maxBufferLength: 3,            // 首帧只需3秒即可播放
           maxMaxBufferLength: 600,       // 最大预缓存600秒（10分钟，保证不卡）
-          maxBufferSize: 100 * 1000 * 1000, // 最大缓冲100MB
+          maxBufferSize: 200 * 1000 * 1000, // 最大缓冲200MB（支持10分钟高清视频）
           maxBufferHole: 0.5,
           backBufferLength: 90,          // 保留90秒回放缓冲（seek不重新加载）
           // ABR自动画质（参考官方demo）
