@@ -360,51 +360,59 @@
       }
 
       if (typeof Hls !== 'undefined' && Hls.isSupported()) {
+        // 完全参考官方 demo 配置
+        // https://hlsjs.video-dev.org/demo/
         hlsPlayer = new Hls({
-          // ===== 核心性能配置 =====
-          enableWorker: true,              // Web Worker 解析（不阻塞主线程）
-          lowLatencyMode: false,           // 禁用低延迟模式
-          progressive: true,               // 渐进式加载
+          // ===== 官方 demo 核心配置 =====
+          debug: false,                    // 生产环境关闭调试
+          enableWorker: true,              // Web Worker 解析（官方推荐）
+          lowLatencyMode: true,            // 低延迟模式（官方 demo 启用）
+          backBufferLength: 90,            // 回放缓冲 90 秒（官方 demo 配置）
           
-          // ===== 首帧极速配置（关键优化） =====
-          maxBufferLength: 10,             // 初始缓冲10秒即可播放
-          maxMaxBufferLength: 60,          // 最大预缓存60秒
-          maxBufferSize: 0,                // 不限制缓冲大小
-          maxBufferHole: 0.5,              // 允许0.5秒的缓冲空洞
-          backBufferLength: 30,            // 保留30秒回放缓冲
+          // ===== 首帧 3 秒配置（用户要求） =====
+          maxBufferLength: 3,              // 首帧只需 3 秒即可播放
+          maxMaxBufferLength: 600,         // 边播边缓存 10 分钟（600秒）
+          maxBufferSize: 60 * 1000 * 1000, // 最大缓冲 60MB（官方默认值）
+          maxBufferHole: 0.1,              // 缓冲空洞容忍 0.1 秒（官方默认）
           
-          // ===== ABR自动画质（快速启动） =====
-          startLevel: 0,                   // 从最低画质开始（最快加载）
-          abrEwmaDefaultEstimate: 10000000, // 初始带宽估算10Mbps
-          abrBandWidthFactor: 0.8,         // 带宽安全系数
-          abrMaxWithRealBitrate: true,     // 使用真实码率估算
+          // ===== ABR 自适应码率（官方默认） =====
+          startLevel: -1,                  // 自动选择起始画质
+          abrEwmaDefaultEstimate: 500000,  // 初始带宽估算 500kbps
+          abrBandWidthFactor: 0.95,        // 带宽安全系数
+          abrMaxWithRealBitrate: true,     // 使用真实码率
           
-          // ===== 自动恢复 =====
-          autoRecoverError: true,
-          stopOnStall: false,
+          // ===== 加载策略（官方推荐配置） =====
+          autoStartLoad: true,             // 自动开始加载
+          startFragPrefetch: false,        // 不预取第一个片段
+          testBandwidth: true,             // 测试带宽
+          progressive: false,              // 非渐进式加载（官方默认）
           
-          // ===== 超时配置 =====
-          fragLoadingTimeOut: 15000,       // 片段加载超时15秒
-          manifestLoadingTimeOut: 8000,    // 清单加载超时8秒
-          levelLoadingTimeOut: 8000,       // 画质列表加载超时8秒
+          // ===== 官方默认加载策略 =====
+          fragLoadPolicy: {
+            default: {
+              maxTimeToFirstByteMs: 9000,
+              maxLoadTimeMs: 100000,
+              timeoutRetry: {
+                maxNumRetry: 2,
+                retryDelayMs: 0,
+                maxRetryDelayMs: 0,
+              },
+              errorRetry: {
+                maxNumRetry: 5,
+                retryDelayMs: 3000,
+                maxRetryDelayMs: 15000,
+                backoff: 'linear',
+              },
+            },
+          },
           
-          // ===== 重试配置 =====
-          fragLoadingMaxRetry: 3,
-          manifestLoadingMaxRetry: 2,
-          levelLoadingMaxRetry: 2,
-          fragLoadingRetryDelay: 500,
-          manifestLoadingRetryDelay: 500,
-          levelLoadingRetryDelay: 500,
-          
-          // ===== 禁用非核心功能 =====
+          // ===== 禁用非核心功能（减少开销） =====
           enableCEA708Captions: false,
           enableWebVTT: false,
           enableIMSC1: false,
           enableID3Metadata: false,
           enableEPG: false,
-          
-          // ===== 调试 =====
-          debug: false,
+          enableSoftwareAES: false,
         });
 
         hlsPlayer.on(Hls.Events.MANIFEST_PARSED, () => {
