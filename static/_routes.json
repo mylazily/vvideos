@@ -4,6 +4,7 @@
   "exclude": [
     "/assets/*",
     "/_app/*",
+    "/build/*",
     "/*.js",
     "/*.css",
     "/*.png",
@@ -12,12 +13,14 @@
     "/*.gif",
     "/*.svg",
     "/*.ico",
-    "/*.json",
-    "/*.txt",
-    "/*.xml",
+    "/*.woff",
+    "/*.woff2",
+    "/*.ttf",
+    "/*.eot",
     "/sw.js",
     "/manifest.json",
     "/sitemap.xml",
-    "/robots.txt"
+    "/robots.txt",
+    "/blocked.html"
   ]
 }
