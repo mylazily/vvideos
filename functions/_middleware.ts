@@ -5,19 +5,25 @@ export const onRequest: PagesFunction = async (context) => {
 	const url = new URL(context.request.url);
 	const path = url.pathname;
 
-	// API请求 - 让其他Functions处理
+	// API请求 - 交给其他Functions处理
 	if (path.startsWith('/api/')) {
 		return context.next();
 	}
 
-	// 静态资源 - 直接服务
-	const staticExts = ['.js', '.css', '.png', '.jpg', '.svg', '.ico', '.webp', '.woff', '.woff2', '.ttf', '.eot', '.xml', '.json', '.html', '.br', '.gz'];
+	// 静态资源 - 使用 context.next() 让 Assets 处理
+	const staticExts = ['.js', '.css', '.png', '.jpg', '.svg', '.ico', '.webp', '.woff', '.woff2', '.ttf', '.eot', '.xml', '.json', '.br', '.gz'];
 	if (staticExts.some(ext => path.endsWith(ext))) {
 		return context.next();
 	}
 
 	const staticPaths = ['/_app', '/static', '/favicon.png', '/icon.svg', '/icon-192.png', '/icon-512.png', '/manifest.json', '/robots.txt', '/sw.js', '/blocked.html'];
 	if (staticPaths.some(p => path.startsWith(p))) {
+		return context.next();
+	}
+
+	// 已知页面文件 (SvelteKit预渲染的) - 直接服务
+	const knownPages = ['/index.html', '/200.html'];
+	if (knownPages.some(p => path === p || path.endsWith('.html'))) {
 		return context.next();
 	}
 
@@ -29,26 +35,31 @@ export const onRequest: PagesFunction = async (context) => {
 			return response;
 		}
 	} catch {
-		// 文件不存在，继续fallback
+		// context.next() 失败，继续fallback
 	}
 
-	// SPA fallback - 返回200.html
-	const fallbackUrl = new URL('/200.html', url);
-	const fallbackRequest = new Request(fallbackUrl.toString(), {
+	// SPA fallback - 直接返回200.html的内容
+	// 不改变URL，让浏览器保持在当前路径
+	const fallbackRequest = new Request(url.origin + '/200.html', {
 		method: 'GET',
-		headers: context.request.headers
+		headers: {
+			'Accept': 'text/html'
+		}
 	});
 
 	try {
 		const fallbackResponse = await context.env.ASSETS.fetch(fallbackRequest);
 		if (fallbackResponse.status === 200) {
-			return new Response(fallbackResponse.body, {
+			// 返回200.html，但使用当前请求的URL
+			// 这样SvelteKit客户端路由会根据当前URL渲染对应页面
+			const response = new Response(fallbackResponse.body, {
 				status: 200,
 				headers: {
 					'Content-Type': 'text/html;charset=UTF-8',
-					'Cache-Control': 'no-cache'
+					'Cache-Control': 'no-cache, no-store, must-revalidate'
 				}
 			});
+			return response;
 		}
 	} catch {
 		// fallback失败
