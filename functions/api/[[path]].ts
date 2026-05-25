@@ -3,8 +3,6 @@ export interface Env {
 	DB_5: D1Database; DB_6: D1Database; DB_7: D1Database; DB_8: D1Database; DB_9: D1Database;
 	CACHE: KVNamespace;
 	ADMIN_PASSWORD: string;
-	VIDEOS_KV: KVNamespace;
-	ASSETS: Fetcher;
 }
 
 import { getBlockedDomains } from './domain-health';

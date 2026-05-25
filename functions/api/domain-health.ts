@@ -41,7 +41,7 @@ const CONFIG = {
 // 从KV获取域名健康数据
 async function getDomainHealth(env: any): Promise<Map<string, DomainHealth>> {
   try {
-    const data = await env.VIDEOS_KV.get('domain_health_v2', 'json');
+    const data = await env.CACHE.get('domain_health_v2', 'json');
     return new Map(Object.entries(data || {}));
   } catch {
     return new Map();
@@ -51,7 +51,7 @@ async function getDomainHealth(env: any): Promise<Map<string, DomainHealth>> {
 // 保存域名健康数据
 async function saveDomainHealth(env: any, healthMap: Map<string, DomainHealth>) {
   const obj = Object.fromEntries(healthMap.entries());
-  await env.VIDEOS_KV.put('domain_health_v2', JSON.stringify(obj), {
+  await env.CACHE.put('domain_health_v2', JSON.stringify(obj), {
     expirationTtl: 86400 * 90 // 90天过期
   });
 }
@@ -61,24 +61,20 @@ async function extractM3u8Domains(env: any): Promise<string[]> {
   const domains = new Set<string>();
   
   try {
-    // 从KV中扫描视频数据
-    const list = await env.VIDEOS_KV.list({ prefix: 'video:' });
+    // 从数据库中查询视频数据
+    const shards = [env.DB_0, env.DB_1, env.DB_2, env.DB_3, env.DB_4, env.DB_5, env.DB_6, env.DB_7, env.DB_8, env.DB_9];
     
-    // 采样检测 - 只检查前100个视频
-    for (const key of list.keys.slice(0, 100)) {
-      try {
-        const data = await env.VIDEOS_KV.get(key, 'json');
-        if (data?.play_sources) {
-          for (const source of data.play_sources) {
-            if (source.url) {
-              try {
-                const urlObj = new URL(source.url);
-                if (urlObj.hostname) domains.add(urlObj.hostname);
-              } catch {}
-            }
-          }
+    // 采样检测 - 从每个分片检查部分视频
+    for (const db of shards) {
+      const rows = await db.prepare('SELECT play_url FROM videos WHERE status = 1 LIMIT 20').all<{ results: { play_url: string }[] }>();
+      for (const row of rows.results || []) {
+        if (row.play_url) {
+          try {
+            const urlObj = new URL(row.play_url);
+            if (urlObj.hostname) domains.add(urlObj.hostname);
+          } catch {}
         }
-      } catch {}
+      }
     }
   } catch (e) {
     console.error('提取域名失败:', e);
