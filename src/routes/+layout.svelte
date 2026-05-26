@@ -3,12 +3,14 @@
 	import type { Snippet } from 'svelte';
 	import { onMount } from 'svelte';
 	import { navigating } from '$app/stores';
-
 	import { browser } from '$app/environment';
 
 	let { children }: { children: Snippet } = $props();
 
 	let displayMode = $state(1); // 1=正常, 2=全屏引导
+
+	// 响应式导航状态
+	let isNavigating = $derived($navigating !== null);
 
 	// 仅客户端SPA页面执行：PWA注入 + SW注册 + 浏览器检测
 	onMount(() => {
@@ -130,7 +132,7 @@
 		<UserGuide blocked={true} />
 	{/await}
 {:else}
-	{#if browser && $navigating}
+	{#if browser && isNavigating}
 		<div class="fixed top-0 left-0 right-0 z-[100]">
 			<div class="h-0.5 bg-pink-100 overflow-hidden">
 				<div class="h-full bg-pink-500 animate-loading-bar"></div>
@@ -146,6 +148,7 @@
 		50% { width: 60%; margin-left: 20%; }
 		100% { width: 0%; margin-left: 100%; }
 	}
+	
 	.animate-loading-bar {
 		animation: loading-bar 1.5s ease-in-out infinite;
 	}
