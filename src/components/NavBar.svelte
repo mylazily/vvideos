@@ -14,7 +14,7 @@
       首页
     </a>
     <a
-      href="/category/全部/1"
+      href="/category"
       class="flex-1 h-full flex items-center justify-center text-sm {currentPath.includes('/category') ? 'text-pink-500 font-medium' : 'text-gray-600'}"
       aria-current={currentPath.includes('/category') ? 'page' : undefined}
     >

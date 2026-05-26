@@ -18,8 +18,8 @@
 
   let sources = $state<SourceCategory[]>([]);
   let categories = $state<string[]>([]);
-  let activeCategory = $state('全部');
-  let activeSource = $state<number | null>(null);
+  let activeCategory = $state('');
+  let activeSource = $state<SourceCategory | null>(null);
   let videos = $state<Video[]>([]);
   let loading = $state(true);
   let categoriesLoading = $state(true);
@@ -27,15 +27,33 @@
   let totalPages = $state(1);
   let initialized = $state(false);
 
-  let seo = $derived(generateCategorySEO(activeCategory, currentPage));
+  let seo = $derived(
+    activeSource
+      ? `${activeSource.alias || activeSource.name} - ${activeCategory}`
+      : activeCategory
+  );
+  let seoData = $derived(generateCategorySEO(seo, currentPage));
+
+  // 当前资源站的分类列表
+  let currentCategories = $derived<string[]>(
+    activeSource ? activeSource.categories : []
+  );
 
   // 监听 URL 参数变化
   $effect(() => {
-    const cat = decodeURIComponent($page.params.cat || '全部');
+    const cat = decodeURIComponent($page.params.cat || '');
     const pg = parseInt($page.params.page || '1') || 1;
+    const sourceParam = $page.url.searchParams.get('source');
 
     if (initialized) {
       // URL 变化时重新加载
+      if (sourceParam) {
+        const sourceId = parseInt(sourceParam);
+        const source = sources.find(s => s.id === sourceId) || null;
+        if (source && source !== activeSource) {
+          activeSource = source;
+        }
+      }
       loadVideos(cat, pg);
     }
   });
@@ -53,10 +71,31 @@
         const data = await res.json();
         categories = data.data || [];
         sources = data.sources || [];
-        // 首次加载
-        const cat = decodeURIComponent($page.params.cat || '全部');
+
+        // 首次加载：确定 source
+        const cat = decodeURIComponent($page.params.cat || '');
         const pg = parseInt($page.params.page || '1') || 1;
-        await loadVideos(cat, pg);
+        const sourceParam = $page.url.searchParams.get('source');
+
+        if (sourceParam) {
+          const sourceId = parseInt(sourceParam);
+          activeSource = sources.find(s => s.id === sourceId) || null;
+        }
+
+        // 如果没有指定 source，默认选择第一个资源站
+        if (!activeSource && sources.length > 0) {
+          activeSource = sources[0];
+        }
+
+        // 如果没有指定分类，使用当前资源站的第一个分类
+        if (!cat && activeSource && activeSource.categories.length > 0) {
+          activeCategory = activeSource.categories[0];
+          goto('/category/' + encodeURIComponent(activeCategory) + '/1?source=' + activeSource.id, { replaceState: true });
+          return;
+        }
+
+        activeCategory = cat || (activeSource ? activeSource.categories[0] : '');
+        await loadVideos(activeCategory, pg);
       }
     } catch {
       categories = [];
@@ -74,11 +113,11 @@
 
     try {
       let url = '/api/videos?page=' + pg + '&limit=24';
-      if (category !== '全部') {
+      if (category) {
         url += '&category=' + encodeURIComponent(category);
       }
       if (activeSource) {
-        url += '&source_id=' + activeSource;
+        url += '&source_id=' + activeSource.id;
       }
       const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
       if (res.ok) {
@@ -94,25 +133,29 @@
   }
 
   function switchCategory(cat: string) {
-    goto('/category/' + encodeURIComponent(cat) + '/1');
+    let url = '/category/' + encodeURIComponent(cat) + '/1';
+    if (activeSource) {
+      url += '?source=' + activeSource.id;
+    }
+    goto(url);
   }
 
-  function switchSource(sourceId: number | null) {
-    activeSource = sourceId;
-    // 切换资源站时重新加载当前分类的视频
-    loadVideos(activeCategory, 1);
-    // 更新URL
-    goto('/category/' + encodeURIComponent(activeCategory) + '/1');
+  function switchSource(source: SourceCategory) {
+    activeSource = source;
+    // 切换资源站时，使用该资源站的第一个分类
+    const firstCat = source.categories[0] || '';
+    let url = '/category/' + encodeURIComponent(firstCat) + '/1?source=' + source.id;
+    goto(url);
   }
 </script>
 
 <svelte:head>
-  <title>{seo.title}</title>
-  <meta name="description" content={seo.description} />
-  <meta name="keywords" content={seo.keywords} />
+  <title>{seoData.title}</title>
+  <meta name="description" content={seoData.description} />
+  <meta name="keywords" content={seoData.keywords} />
   <link rel="canonical" href={canonicalUrl('/category/' + encodeURIComponent(activeCategory))} />
-  <meta property="og:title" content={seo.title} />
-  <meta property="og:description" content={seo.description} />
+  <meta property="og:title" content={seoData.title} />
+  <meta property="og:description" content={seoData.description} />
   <meta property="og:type" content="website" />
   {#if currentPage > 1}
     <link rel="prev" href="https://evideos.pages.dev/category/{encodeURIComponent(activeCategory)}/{currentPage - 1}" />
@@ -120,30 +163,22 @@
   {#if currentPage < totalPages}
     <link rel="next" href="https://evideos.pages.dev/category/{encodeURIComponent(activeCategory)}/{currentPage + 1}" />
   {/if}
-  {@html `<script type="application/ld+json">${JSON.stringify(generateBreadcrumbSchema([{name: '首页', url: 'https://evideos.pages.dev/'}, {name: '分类', url: 'https://evideos.pages.dev/category'}, {name: activeCategory, url: `https://evideos.pages.dev/category/${encodeURIComponent(activeCategory)}/1`}]))}</script>`}
+  {@html `<script type="application/ld+json">${JSON.stringify(generateBreadcrumbSchema([{name: '首页', url: 'https://evideos.pages.dev/'}, {name: '分类', url: 'https://evideos.pages.dev/category'}, {name: seo, url: `https://evideos.pages.dev/category/${encodeURIComponent(activeCategory)}/1`}]))}</script>`}
 </svelte:head>
 
 <div class="min-h-screen bg-gray-50">
   <header class="sticky top-0 bg-white border-b border-gray-100 px-3 py-2 z-50">
-    <h1 class="text-lg font-bold text-pink-500">{activeCategory} - 在线观看</h1>
+    <h1 class="text-lg font-bold text-pink-500">{seo} - 在线观看</h1>
   </header>
 
   <!-- 资源站选择器 -->
   {#if sources.length > 0}
     <div class="sticky top-11 z-40 bg-white border-b border-gray-100">
       <div class="flex items-center gap-2 px-3 h-11 overflow-x-auto no-scrollbar">
-        <button
-          onclick={() => switchSource(null)}
-          class="flex-shrink-0 px-4 py-1.5 text-sm rounded-full transition-all {activeSource === null
-            ? 'bg-blue-500 text-white'
-            : 'text-gray-600 bg-gray-100'}"
-        >
-          全部资源
-        </button>
         {#each sources as source}
           <button
-            onclick={() => switchSource(source.id)}
-            class="flex-shrink-0 px-4 py-1.5 text-sm rounded-full transition-all {activeSource === source.id
+            onclick={() => switchSource(source)}
+            class="flex-shrink-0 px-4 py-1.5 text-sm rounded-full transition-all {activeSource?.id === source.id
               ? 'bg-blue-500 text-white'
               : 'text-gray-600 bg-gray-100'}"
             title={source.name}
@@ -163,39 +198,16 @@
           <div class="flex-shrink-0 px-4 py-1.5 h-7 bg-gray-200 rounded-full animate-pulse"></div>
         {/each}
       {:else}
-        <button
-          onclick={() => switchCategory('全部')}
-          class="flex-shrink-0 px-4 py-1.5 text-sm rounded-full transition-all {activeCategory === '全部'
-            ? 'bg-pink-500 text-white'
-            : 'text-gray-600 bg-gray-100'}"
-        >
-          全部
-        </button>
-        {#if activeSource}
-          <!-- 显示当前选中资源站的分类 -->
-          {#each sources.find(s => s.id === activeSource)?.categories || [] as cat}
-            <button
-              onclick={() => switchCategory(cat)}
-              class="flex-shrink-0 px-4 py-1.5 text-sm rounded-full transition-all {activeCategory === cat
-                ? 'bg-pink-500 text-white'
-                : 'text-gray-600 bg-gray-100'}"
-            >
-              {cat}
-            </button>
-          {/each}
-        {:else}
-          <!-- 显示所有分类 -->
-          {#each categories as cat}
-            <button
-              onclick={() => switchCategory(cat)}
-              class="flex-shrink-0 px-4 py-1.5 text-sm rounded-full transition-all {activeCategory === cat
-                ? 'bg-pink-500 text-white'
-                : 'text-gray-600 bg-gray-100'}"
-            >
-              {cat}
-            </button>
-          {/each}
-        {/if}
+        {#each currentCategories as cat}
+          <button
+            onclick={() => switchCategory(cat)}
+            class="flex-shrink-0 px-4 py-1.5 text-sm rounded-full transition-all {activeCategory === cat
+              ? 'bg-pink-500 text-white'
+              : 'text-gray-600 bg-gray-100'}"
+          >
+            {cat}
+          </button>
+        {/each}
       {/if}
     </div>
   </div>

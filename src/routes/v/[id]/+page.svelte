@@ -9,7 +9,6 @@
     generatePageTitle,
     generateVideoSchema,
     generateBreadcrumbSchema,
-    generateFAQSchema,
     canonicalUrl,
     SITE_URL,
     SITE_NAME

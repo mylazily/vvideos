@@ -3,7 +3,7 @@
   import { onMount } from 'svelte';
 
   onMount(() => {
-    goto('/category/全部/1', { replaceState: true });
+    goto('/category', { replaceState: true });
   });
 </script>
 
