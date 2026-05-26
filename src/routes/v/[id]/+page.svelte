@@ -10,33 +10,21 @@
     generatePageTitle,
     generateVideoSchema,
     generateBreadcrumbSchema,
+    generateOrganizationSchema,
+    generateWebPageSchema,
+    generateFAQSchema,
+    generateImageAlt,
     canonicalUrl,
     SITE_URL,
     SITE_NAME
   } from '$lib/seo';
-  import { addToHistory, updateHistoryProgress, flushProgress, addFavorite, removeFavorite, isFavorite } from '$lib/storage';
-
-  // HLS.js 类型声明（CDN加载为全局变量）
-  declare const Hls: any;
+  import { addToHistory } from '$lib/storage';
+  import type { PlaySource, AdSegment } from '$lib/player-manager';
 
   // ============ 类型定义 ============
-  interface PlaySource {
-    id: string;
-    name: string;
-    url: string;
-    duration: number;
-  }
-
-  interface SourceInfo {
-    id: number;
-    name: string;
-    alias: string;
-    display_name: string;
-  }
-
   interface VideoDetail extends Video {
     play_sources: Array<{ url: string; duration: number }>;
-    source?: SourceInfo;
+    ad_segments: AdSegment[];
   }
 
   // ============ 状态管理 ============
@@ -46,415 +34,275 @@
   let playSources = $state<PlaySource[]>([]);
   let currentSourceIndex = $state(0);
   let hlsPlayer: any = null;
+  let showPlayButton = $state(false);
+  let isPlaying = $state(false);
+  let isLoadingVideo = false;
   let relatedVideos = $state<Video[]>([]);
-  let favorited = $state(false);
-  let playerLoading = $state(false);
-  let videoEl: HTMLVideoElement | null = $state(null);
+  let isBuffering = $state(false);
+  let bufferHealth = $state(0);
+  let skippedAds = $state<AdSegment[]>([]);
+  let isCheckingLines = $state(false);
 
   // ============ 派生状态 ============
   let videoId = $derived($page.params.id);
+  let currentSource = $derived(playSources[currentSourceIndex]);
+  let adSegments = $derived([...(video?.ad_segments || [])]);
 
-  // ============ 视频 URL 处理 ============
-  function getVideoUrl(url: string): string {
-    if (!url) return url;
-    if (url.startsWith('/api/proxy-video')) return url;
-    if (url.startsWith('/')) return url;
-    return url;
-  }
+  // ============ SEO 数据 ============
+  let seoTitle = $derived(video ? generatePageTitle({
+    title: video.title,
+    category: video.category,
+    vod_year: video.vod_year,
+    vod_area: video.vod_area
+  }) : '');
+  let seoDesc = $derived(video ? generateSEODescription({
+    title: video.title,
+    category: video.category,
+    vod_year: video.vod_year,
+    vod_area: video.vod_area,
+    vod_actor: video.vod_actor,
+    vod_director: video.vod_director
+  }) : '');
 
   // ============ 生命周期 ============
   onMount(() => {
     loadVideo();
-    return () => destroyPlayer();
+    return () => {
+      destroyPlayer();
+    };
   });
-
-  // 监听 videoId 变化，切换视频时重新加载
-  $effect(() => {
-    const currentId = videoId;
-    if (currentId && video && video.vod_id !== currentId) {
-      loadVideo();
-    }
-  });
-
-  // 预连接 m3u8 域名（节省 DNS + TCP + TLS 时间）
-  function prefetchStreamDomain(url: string) {
-    try {
-      const host = new URL(url).host;
-      if (host && host !== location.host) {
-        // 同时添加 preconnect 和 dns-prefetch
-        const rels = ['preconnect', 'dns-prefetch'];
-        for (const rel of rels) {
-          if (!document.querySelector(`link[rel="${rel}"][href="https://${host}"]`)) {
-            const link = document.createElement('link');
-            link.rel = rel;
-            link.href = `https://${host}`;
-            if (rel === 'preconnect') link.crossOrigin = '';
-            document.head.appendChild(link);
-          }
-        }
-      }
-    } catch {}
-  }
-
-  // ============ SEO 数据（延迟计算） ============
-  let autoDescription = $derived(video ? generateAutoDescription(video) : '');
-  let seoTitle = $derived(video ? generatePageTitle({
-    title: video.title, category: video.category, vod_year: video.vod_year, vod_area: video.vod_area
-  }) : '');
-  let seoDesc = $derived(video ? generateSEODescription({
-    title: video.title, category: video.category, vod_year: video.vod_year, vod_area: video.vod_area,
-    vod_actor: video.vod_actor, vod_director: video.vod_director
-  }) : '');
-  let breadcrumbs = $derived(video ? [
-    { name: '首页', url: SITE_URL },
-    { name: video.category || '视频', url: `${SITE_URL}/category/${encodeURIComponent(video.category || '全部')}/1` },
-    { name: video.title, url: `${SITE_URL}/v/${video.vod_id}` }
-  ] : []);
 
   // ============ 核心函数 ============
-  function generateAutoDescription(v: VideoDetail): string {
-    const parts: string[] = [];
-    parts.push(`《${v.title}》`);
-    if (v.category) parts.push(`是一部${v.category}作品`);
-    if (v.vod_year) parts.push(`，${v.vod_year}年${v.vod_area || ''}出品`);
-    if (v.vod_director) parts.push(`，由${v.vod_director}执导`);
-    if (v.vod_actor) {
-      const actors = v.vod_actor.split(/[,，]/).slice(0, 4).join('、');
-      parts.push(`，${actors}主演`);
-    }
-    parts.push(`。在${SITE_NAME}即可在线免费观看${v.title}完整版，高清流畅，支持手机播放。`);
-    return parts.join('');
-  }
-
-  // @ts-ignore 全局预取数据
-  declare const _VPD: any;
-
   async function loadVideo() {
+    if (isLoadingVideo || (video && video.vod_id === videoId)) return;
+    isLoadingVideo = true;
+    loading = true;
     errorMsg = '';
     playSources = [];
     currentSourceIndex = 0;
     destroyPlayer();
 
     try {
-      // 优先使用 app.html 预取的数据（零延迟）
-      // @ts-ignore
-      const preloadedVideo = typeof _VPD !== 'undefined' && _VPD.video && _VPD.video.vod_id === videoId ? _VPD.video : null;
-      // @ts-ignore
-      const preloadedRelated = typeof _VPD !== 'undefined' && _VPD.related ? _VPD.related : null;
-
-      let videoData = preloadedVideo;
-      let relatedData = preloadedRelated;
-
-      // 如果预取数据不可用，走 API 请求
-      if (!videoData) {
-        loading = true;
-        const videoRes = await fetch(`/api/video/${videoId}`, { signal: AbortSignal.timeout(10000) });
-        if (!videoRes.ok) { errorMsg = `请求失败 (${videoRes.status}`; loading = false; return; }
-        const data = await videoRes.json();
-        if (!data.success || !data.data) { errorMsg = data.message || '视频不存在'; loading = false; return; }
-        videoData = data.data;
-        loading = false;
-        
-        // 相关视频延迟加载
-        fetch(`/api/video/${videoId}/related`, { signal: AbortSignal.timeout(5000) })
-          .then(r => r.ok ? r.json() : null)
-          .then(d => { if (d?.data) relatedVideos = d.data; })
-          .catch(() => {});
-      }
-
-      video = videoData;
-
-      // 解析播放源
-      playSources = parsePlaySources(video.play_sources || []);
-
-      addToHistory({
-        vod_id: video.vod_id, title: video.title, cover: video.cover,
-        category: video.category, vod_year: video.vod_year, vod_area: video.vod_area
+      const res = await fetch(`/api/video/${videoId}`, {
+        signal: AbortSignal.timeout(10000)
       });
-      favorited = isFavorite(video.vod_id);
-
-      if (relatedData) {
-        relatedVideos = relatedData;
-      }
-
-      // 检查播放源
-      if (playSources.length === 0) {
-        errorMsg = '暂无可用播放源';
+      if (!res.ok) {
+        errorMsg = `请求失败 (${res.status})`;
         return;
       }
-
-      // 立即播放（关键：不等待其他操作）
-      const url = playSources[0].url;
-      prefetchStreamDomain(url);
-      startPlayback(url);
-    } catch (e: any) {
-      errorMsg = e.name === 'TimeoutError' ? '请求超时，请重试' : '网络错误，请稍后重试';
-      loading = false;
-    }
-  }
-
-  // 解析播放源（支持多种格式）
-  function parsePlaySources(sources: Array<{ url: string; duration: number }>): PlaySource[] {
-    const result: PlaySource[] = [];
-    
-    sources.forEach((s, i) => {
-      const url = s.url?.trim();
-      if (!url) return;
-
-      // 格式1: 多集格式 name$url#name$url#
-      if (url.includes('$') && url.includes('#')) {
-        const episodes = url.split('#');
-        episodes.forEach((ep, epIdx) => {
-          const match = ep.match(/(.+?)\\$(.+)/);
-          if (match && match[2]) {
-            result.push({
-              id: `ep${epIdx}`,
-              name: match[1] || `第${epIdx + 1}集`,
-              url: match[2].trim(),
-              duration: s.duration || 0,
-            });
-          }
-        });
+      const data = await res.json();
+      if (!data.success || !data.data) {
+        errorMsg = data.message || '视频不存在';
+        return;
       }
-      // 格式2: 单集格式 name$url
-      else if (url.includes('$')) {
-        const match = url.match(/(.+?)\\$(.+)/);
-        if (match && match[2]) {
-          result.push({
-            id: `source-${i}`,
-            name: match[1] || `线路${i + 1}`,
-            url: match[2].trim(),
-            duration: s.duration || 0,
-          });
+      video = data.data;
+
+      // 转换播放源
+      playSources = (video.play_sources || []).map((s, i) => ({
+        id: `source-${i}`,
+        name: `线路${i + 1}`,
+        url: s.url,
+        duration: s.duration || 0,
+        priority: 5 - i,
+        latency: 0,
+        bandwidth: 0,
+        errorCount: 0,
+      }));
+
+      // 添加到历史记录
+      addToHistory({
+        vod_id: video.vod_id,
+        title: video.title,
+        cover: video.cover,
+        category: video.category,
+        vod_year: video.vod_year,
+        vod_area: video.vod_area
+      });
+
+      // 后台加载相关视频（不阻塞）
+      loadRelatedVideos(videoId);
+
+      // 直接播放第一个源（不再等待测速）
+      if (playSources.length > 0) {
+        playSource(0);
+        // 后台测速其他源（异步，不阻塞播放）
+        if (playSources.length > 1) {
+          backgroundSpeedTest();
         }
       }
-      // 格式3: 纯URL
-      else {
-        result.push({
-          id: `source-${i}`,
-          name: `线路${i + 1}`,
-          url: url,
-          duration: s.duration || 0,
-        });
-      }
-    });
-
-    return result;
-  }
-
-  // 直接启动播放（带错误处理）
-  function startPlayback(url: string) {
-    if (!videoEl) return;
-    destroyPlayer();
-    playerLoading = true;
-
-    // 绑定错误处理（只绑定一次）
-    bindVideoErrorHandler();
-
-    // 绑定播放进度保存
-    bindProgressTracker();
-
-    // 视频源支持 CORS，直接使用原始 URL
-    const videoUrl = getVideoUrl(url);
-
-    if (url.includes('.m3u8')) {
-      playHls(videoEl, videoUrl);
-    } else {
-      playNative(videoEl, videoUrl);
+    } catch (e: any) {
+      errorMsg = e.name === 'TimeoutError' ? '请求超时，请重试' : '网络错误，请稍后重试';
+    } finally {
+      loading = false;
+      isLoadingVideo = false;
     }
   }
 
-  // 绑定播放进度追踪
-  function bindProgressTracker() {
-    if (!videoEl) return;
-    const onTimeUpdate = () => {
-      if (!videoEl || !video) return;
-      const currentTime = videoEl.currentTime;
-      const duration = videoEl.duration || 0;
-      if (duration > 0 && currentTime > 0) {
-        updateHistoryProgress(video.vod_id, currentTime, duration);
-      }
-    };
-    videoEl.addEventListener('timeupdate', onTimeUpdate);
-    // 存储清理函数
-    videoEl._progressCleanup = () => videoEl.removeEventListener('timeupdate', onTimeUpdate);
+  // ============ 后台测速（不阻塞播放）============
+  async function backgroundSpeedTest() {
+    isCheckingLines = true;
+    try {
+      await Promise.allSettled(
+        playSources.slice(1).map(async (source) => {
+          const start = performance.now();
+          try {
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 3000);
+            await fetch(source.url, { method: 'HEAD', signal: controller.signal, mode: 'no-cors' });
+            clearTimeout(timeout);
+            source.latency = performance.now() - start;
+            source.bandwidth = Math.round((512 * 1024) / (source.latency / 1000));
+          } catch {
+            source.errorCount = (source.errorCount || 0) + 1;
+          }
+        })
+      );
+    } finally {
+      isCheckingLines = false;
+    }
   }
 
-  // 原生视频播放（非m3u8）
-  function playNative(videoEl: HTMLVideoElement, url: string) {
-    videoEl.src = url;
-    
-    // 监听加载成功
-    const onCanPlay = () => {
-      playerLoading = false;
-      videoEl.play().catch(() => {});
-      cleanup();
-    };
-
-    // 监听错误
-    const onError = () => {
-      playerLoading = false;
-      const nextIdx = currentSourceIndex + 1;
-      if (nextIdx < playSources.length) {
-        // 自动切换下一条线路
-        playSource(nextIdx);
-      } else {
-        errorMsg = '当前线路无法播放，请稍后重试';
-      }
-      cleanup();
-    };
-
-    const cleanup = () => {
-      videoEl.removeEventListener('canplay', onCanPlay);
-      videoEl.removeEventListener('error', onError);
-    };
-
-    videoEl.addEventListener('canplay', onCanPlay, { once: true });
-    videoEl.addEventListener('error', onError, { once: true });
-    videoEl.load();
-  }
-
-  // 绑定视频错误处理器（全局）
-  function bindVideoErrorHandler() {
-    if (!videoEl) return;
-    // 清除之前的错误处理器，避免重复
-    videoEl.onerror = null;
-  }
-
+  // ============ 播放源切换 ============
   async function playSource(index: number) {
     currentSourceIndex = index;
     const source = playSources[index];
     if (!source) return;
 
-    if (!videoEl) return;
+    const videoEl = document.querySelector('video') as HTMLVideoElement | null;
+    if (!videoEl) {
+      requestAnimationFrame(() => playSource(index));
+      return;
+    }
 
     destroyPlayer();
-    playerLoading = true;
-    errorMsg = ''; // 清除之前的错误
-
-    // 视频源支持 CORS，直接使用原始 URL
-    const videoUrl = getVideoUrl(source.url);
+    isPlaying = false;
+    isBuffering = true;
 
     if (source.url.includes('.m3u8')) {
-      await playHls(videoEl, videoUrl);
+      await playHls(videoEl, source.url);
     } else {
-      playNative(videoEl, videoUrl);
+      videoEl.src = source.url;
+      videoEl.play().catch(() => { showPlayButton = true; });
     }
   }
 
+  // ============ 快速切换线路 ============
+  function switchToNext() {
+    const nextIdx = (currentSourceIndex + 1) % playSources.length;
+    if (nextIdx !== currentSourceIndex) {
+      playSource(nextIdx);
+    }
+  }
+
+  // ============ HLS 播放（优化版：快速启动）============
   async function playHls(videoEl: HTMLVideoElement, url: string) {
     try {
-      const canNative = videoEl.canPlayType('application/vnd.apple.mpegurl');
-      if (canNative) {
-        // Safari原生HLS
-        playNative(videoEl, url);
-        return;
-      }
-
-      if (typeof Hls !== 'undefined' && Hls.isSupported()) {
-        // 完全参考官方 demo 配置
-        // https://hlsjs.video-dev.org/demo/
+      const { default: Hls } = await import('hls.js');
+      if (Hls.isSupported()) {
+        // 优化HLS配置：快速启动，小缓冲
         hlsPlayer = new Hls({
-          // ===== 官方 demo 核心配置 =====
-          debug: false,                    // 生产环境关闭调试
-          enableWorker: true,              // Web Worker 解析（官方推荐）
-          lowLatencyMode: true,            // 低延迟模式（官方 demo 启用）
-          backBufferLength: 90,            // 回放缓冲 90 秒（官方 demo 配置）
-          
-          // ===== 首帧 3 秒配置（用户要求） =====
-          maxBufferLength: 3,              // 首帧只需 3 秒即可播放
-          maxMaxBufferLength: 600,         // 边播边缓存 10 分钟（600秒）
-          maxBufferSize: 60 * 1000 * 1000, // 最大缓冲 60MB（官方默认值）
-          maxBufferHole: 0.1,              // 缓冲空洞容忍 0.1 秒（官方默认）
-          
-          // ===== ABR 自适应码率（官方默认） =====
-          startLevel: -1,                  // 自动选择起始画质
-          abrEwmaDefaultEstimate: 500000,  // 初始带宽估算 500kbps
-          abrBandWidthFactor: 0.95,        // 带宽安全系数
-          abrMaxWithRealBitrate: true,     // 使用真实码率
-          
-          // ===== 加载策略（官方推荐配置） =====
-          autoStartLoad: true,             // 自动开始加载
-          startFragPrefetch: false,        // 不预取第一个片段
-          testBandwidth: true,             // 测试带宽
-          progressive: false,              // 非渐进式加载（官方默认）
-          
-          // ===== 官方默认加载策略 =====
-          fragLoadPolicy: {
-            default: {
-              maxTimeToFirstByteMs: 9000,
-              maxLoadTimeMs: 100000,
-              timeoutRetry: {
-                maxNumRetry: 2,
-                retryDelayMs: 0,
-                maxRetryDelayMs: 0,
-              },
-              errorRetry: {
-                maxNumRetry: 5,
-                retryDelayMs: 3000,
-                maxRetryDelayMs: 15000,
-                backoff: 'linear',
-              },
-            },
-          },
-          
-          // ===== 禁用非核心功能（减少开销） =====
+          enableWorker: true,
+          lowLatencyMode: false,
+          // 快速启动缓冲配置（小缓冲=快启动）
+          maxBufferLength: 30,
+          maxMaxBufferLength: 60,
+          maxBufferSize: 30 * 1000 * 1000,
+          maxBufferHole: 0.5,
+          backBufferLength: 30,
+          // ABR配置
+          startLevel: -1,
+          abrEwmaDefaultEstimate: 1500000,
+          abrBandWidthFactor: 0.8,
+          abrBandWidthUpFactor: 0.5,
+          // 超时配置
+          fragLoadingTimeOut: 20000,
+          manifestLoadingTimeOut: 10000,
+          levelLoadingTimeOut: 10000,
+          // 重试配置
+          fragLoadingMaxRetry: 4,
+          manifestLoadingMaxRetry: 3,
+          levelLoadingMaxRetry: 3,
+          // 禁用不必要的功能
           enableCEA708Captions: false,
           enableWebVTT: false,
-          enableIMSC1: false,
-          enableID3Metadata: false,
-          enableEPG: false,
-          enableSoftwareAES: false,
         });
 
         hlsPlayer.on(Hls.Events.MANIFEST_PARSED, () => {
-          playerLoading = false;
-          videoEl.play().catch(() => {});
+          isBuffering = false;
+          videoEl.muted = true;
+          videoEl.play()
+            .then(() => {
+              isPlaying = true;
+              showPlayButton = false;
+              setTimeout(() => { videoEl.muted = false; }, 500);
+            })
+            .catch(() => { showPlayButton = true; });
+        });
+
+        hlsPlayer.on(Hls.Events.BUFFER_APPENDED, () => {
+          updateBufferHealth(videoEl);
         });
 
         hlsPlayer.on(Hls.Events.ERROR, (_event: any, data: any) => {
-          if (!data.fatal) return;
-          playerLoading = false;
-          if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
-            hlsPlayer?.startLoad();
-          } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
-            hlsPlayer?.recoverMediaError();
-          } else {
-            const nextIdx = currentSourceIndex + 1;
-            if (nextIdx < playSources.length) playSource(nextIdx);
-            else errorMsg = '所有线路均无法播放，请稍后重试';
+          if (data.fatal) {
+            switch (data.type) {
+              case Hls.ErrorTypes.NETWORK_ERROR:
+                hlsPlayer?.startLoad();
+                break;
+              case Hls.ErrorTypes.MEDIA_ERROR:
+                hlsPlayer?.recoverMediaError();
+                break;
+              default:
+                switchToNext();
+                break;
+            }
           }
         });
 
         hlsPlayer.attachMedia(videoEl);
         hlsPlayer.loadSource(url);
+      } else if (videoEl.canPlayType('application/vnd.apple.mpegurl')) {
+        videoEl.src = url;
+        videoEl.play().catch(() => { showPlayButton = true; });
       } else {
-        playerLoading = false;
-        errorMsg = '浏览器不支持播放，请尝试其他浏览器';
+        errorMsg = '浏览器不支持HLS播放';
       }
-    } catch {
-      playerLoading = false;
+    } catch (e) {
       errorMsg = '播放器加载失败';
     }
   }
 
+  function updateBufferHealth(videoEl: HTMLVideoElement) {
+    if (!videoEl.buffered.length) return;
+    const bufferedEnd = videoEl.buffered.end(videoEl.buffered.length - 1);
+    const currentTime = videoEl.currentTime;
+    const bufferedAhead = bufferedEnd - currentTime;
+    bufferHealth = Math.min(100, (bufferedAhead / 30) * 100);
+    isBuffering = bufferedAhead < 2;
+  }
+
   function destroyPlayer() {
-    flushProgress();
-    if (hlsPlayer) { hlsPlayer.destroy(); hlsPlayer = null; }
-    if (videoEl) {
-      videoEl.pause();
-      videoEl.removeAttribute('src');
-      videoEl.load();
+    if (hlsPlayer) {
+      hlsPlayer.destroy();
+      hlsPlayer = null;
     }
   }
 
-  function retryLoad() { loadVideo(); }
+  function retryLoad() {
+    isLoadingVideo = false;
+    loadVideo();
+  }
 
-  function formatDuration(seconds: number): string {
-    if (seconds <= 0) return '';
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  async function loadRelatedVideos(id: string) {
+    try {
+      const res = await fetch(`/api/video/${id}/related`, {
+        signal: AbortSignal.timeout(5000)
+      });
+      if (res.ok) {
+        const data = await res.json();
+        relatedVideos = data.data || [];
+      }
+    } catch { /* 静默失败 */ }
   }
 </script>
 
@@ -463,11 +311,15 @@
     <title>{seoTitle}</title>
     <meta name="description" content={seoDesc} />
     <meta name="keywords" content={generateSEOKeywords({
-      title: video.title, category: video.category, vod_year: video.vod_year,
-      vod_area: video.vod_area, vod_actor: video.vod_actor, vod_director: video.vod_director, vod_lang: video.vod_lang
+      title: video.title,
+      category: video.category,
+      vod_year: video.vod_year,
+      vod_area: video.vod_area,
+      vod_actor: video.vod_actor,
+      vod_director: video.vod_director,
+      vod_lang: video.vod_lang
     }).join(',')} />
     <link rel="canonical" href={canonicalUrl(`/v/${video.vod_id}`)} />
-    <link rel="preload" href={video.cover} as="image" fetchpriority="high" />
     <meta property="og:title" content={video.title} />
     <meta property="og:description" content={seoDesc} />
     <meta property="og:image" content={video.cover} />
@@ -477,12 +329,6 @@
     <meta name="twitter:title" content={video.title} />
     <meta name="twitter:description" content={seoDesc} />
     <meta name="twitter:image" content={video.cover} />
-    {@html `<script type="application/ld+json">${JSON.stringify(generateVideoSchema({
-      title: video.title, category: video.category, vod_year: video.vod_year, vod_area: video.vod_area,
-      vod_actor: video.vod_actor, vod_director: video.vod_director, vod_lang: video.vod_lang,
-      cover: video.cover, play_url: playSources[0]?.url || '', vod_id: video.vod_id
-    }))}</script>`}
-    {@html `<script type="application/ld+json">${JSON.stringify(generateBreadcrumbSchema(breadcrumbs))}</script>`}
   {:else}
     <title>视频详情 - {SITE_NAME}</title>
     <meta name="robots" content="noindex, follow" />
@@ -492,111 +338,132 @@
 <div class="min-h-screen bg-gray-50">
   <!-- Header -->
   <header class="sticky top-0 bg-white/95 backdrop-blur-sm border-b border-gray-100 px-3 py-2 z-50 flex items-center gap-2">
-    <a href="/" class="text-gray-600 text-xl leading-none">←</a>
-    <h1 class="text-lg font-bold text-pink-500 truncate flex-1">{video?.title || '视频详情'}</h1>
+    <a href="/" class="text-gray-600 text-lg flex-shrink-0">←</a>
+    <h1 class="text-sm font-medium text-gray-800 truncate flex-1">{video?.title || '加载中...'}</h1>
+    {#if playSources.length > 1}
+      <button
+        onclick={switchToNext}
+        class="text-xs px-2 py-1 bg-pink-100 text-pink-600 rounded-full"
+      >
+        换线路
+      </button>
+    {/if}
   </header>
 
-  <main class="pb-16">
+  <!-- 视频播放器区域 -->
+  <div class="relative bg-black">
     {#if loading}
-      <div class="flex flex-col items-center justify-center py-20">
-        <div class="w-8 h-8 border-2 border-pink-200 border-t-pink-500 rounded-full animate-spin"></div>
-        <p class="mt-3 text-sm text-gray-400">加载中...</p>
+      <div class="aspect-video flex items-center justify-center bg-gray-900">
+        <div class="text-center">
+          <div class="w-12 h-12 border-4 border-pink-200 border-t-pink-500 rounded-full animate-spin mx-auto mb-3"></div>
+          <p class="text-white/60 text-sm">加载中...</p>
+        </div>
       </div>
     {:else if errorMsg}
-      <div class="flex flex-col items-center justify-center py-20">
-        <p class="text-red-500 text-sm mb-4">{errorMsg}</p>
-        <button onclick={retryLoad} class="px-4 py-2 bg-pink-500 text-white text-sm rounded-lg">重新加载</button>
+      <div class="aspect-video flex items-center justify-center bg-gray-900">
+        <div class="text-center px-4">
+          <p class="text-red-400 text-sm mb-3">{errorMsg}</p>
+          <button onclick={retryLoad} class="px-4 py-2 bg-pink-500 text-white text-sm rounded-lg">重试</button>
+        </div>
       </div>
-    {:else if video}
-      <!-- 面包屑 -->
-      <nav aria-label="面包屑" class="bg-white px-3 py-2 text-sm border-b">
-        <ol class="flex items-center gap-1">
-          {#each breadcrumbs as crumb, i}
-            <li class="flex items-center">
-              {#if i > 0}<span class="text-gray-400 mx-1">/</span>{/if}
-              {#if i < breadcrumbs.length - 1}
-                <a href={crumb.url} class="text-pink-500">{crumb.name}</a>
-              {:else}
-                <span class="text-gray-600">{crumb.name}</span>
-              {/if}
-            </li>
-          {/each}
-        </ol>
-      </nav>
+    {:else if showPlayButton}
+      <div class="aspect-video flex items-center justify-center bg-gray-900 relative">
+        <button
+          onclick={() => {
+            const v = document.querySelector('video');
+            v?.play().catch(() => {});
+          }}
+          class="w-16 h-16 bg-pink-500 rounded-full flex items-center justify-center text-white shadow-lg hover:bg-pink-600 transition-colors"
+        >
+          <svg class="w-8 h-8 ml-1" fill="currentColor" viewBox="0 0 24 24">
+            <path d="M8 5v14l11-7z" />
+          </svg>
+        </button>
+      </div>
+    {:else}
+      <div class="relative aspect-video">
+        <video
+          class="w-full h-full"
+          controls
+          playsinline
+          preload="auto"
+          poster={video?.cover}
+          x-webkit-airplay="allow"
+        ></video>
+        {#if isBuffering || !isPlaying}
+          <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
+            <div class="w-10 h-10 border-3 border-white/20 border-t-white rounded-full animate-spin"></div>
+          </div>
+        {/if}
+      </div>
     {/if}
 
-    <!-- 播放器：始终在DOM中，不被loading状态隐藏 -->
-    <div class="aspect-video bg-black relative">
-      <!-- preload="auto" 自动加载视频，加快播放启动速度 -->
-      <video bind:this={videoEl} controls playsinline preload="auto" class="w-full h-full" poster={video?.cover}>
-        您的浏览器不支持视频播放
-      </video>
-      {#if playerLoading}
-        <div class="absolute inset-0 flex items-center justify-center bg-black/50">
-          <div class="flex flex-col items-center gap-2">
-            <div class="w-10 h-10 border-3 border-pink-200 border-t-pink-500 rounded-full animate-spin"></div>
-            <span class="text-white text-sm">加载播放器...</span>
-          </div>
-        </div>
+    <!-- 线路切换器 -->
+    {#if playSources.length > 1 && !loading && !errorMsg}
+      <div class="bg-gray-900 px-3 py-2 flex items-center gap-2 overflow-x-auto">
+        {#each playSources as source, i}
+          <button
+            onclick={() => playSource(i)}
+            class="flex-shrink-0 px-3 py-1 text-xs rounded-full transition-colors {i === currentSourceIndex ? 'bg-pink-500 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}"
+          >
+            {source.name}
+          </button>
+        {/each}
+        {#if isCheckingLines}
+          <span class="text-xs text-gray-500 flex-shrink-0">测速中...</span>
+        {/if}
+      </div>
+    {/if}
+  </div>
+
+  <!-- 视频信息 -->
+  {#if video}
+    <div class="bg-white px-3 py-3">
+      <h1 class="text-base font-medium text-gray-800 mb-1">{video.title}</h1>
+      <div class="flex items-center gap-2 text-xs text-gray-400 mb-2">
+        {#if video.category}<span>{video.category}</span>{/if}
+        {#if video.vod_year}<span>{video.vod_year}</span>{/if}
+        {#if video.vod_area}<span>{video.vod_area}</span>{/if}
+        {#if video.vod_actor}<span>{video.vod_actor}</span>{/if}
+      </div>
+      {#if video.vod_remarks}
+        <p class="text-xs text-pink-500 bg-pink-50 inline-block px-2 py-1 rounded">{video.vod_remarks}</p>
       {/if}
     </div>
 
-    {#if video}
-      <!-- 视频信息 -->
-      <article class="p-3 bg-white">
-        <h1 class="text-lg font-bold text-gray-900 mb-1">{video.title}</h1>
-        <p class="text-sm text-gray-500 mb-2">{video.category} · {video.vod_year} · {video.vod_area}</p>
-        
-        <!-- 播放源选择 -->
-        {#if playSources.length > 0}
-          <div class="mt-3">
-            <p class="text-xs text-gray-400 mb-2">播放线路</p>
-            <div class="flex flex-wrap gap-2">
-              {#each playSources as source, idx}
-                <button
-                  onclick={() => playSource(idx)}
-                  class="px-3 py-1.5 text-xs rounded-full border transition-colors {idx === currentSourceIndex ? 'bg-pink-500 text-white border-pink-500' : 'bg-white text-gray-600 border-gray-200 hover:border-pink-300'}"
-                >
-                  {source.name}
-                </button>
-              {/each}
-            </div>
-          </div>
-        {/if}
-        
-        <!-- 操作按钮 -->
-        <div class="flex gap-3 mt-4">
-          <button
-            onclick={() => {
-              if (favorited) {
-                removeFavorite(video.vod_id);
-                favorited = false;
-              } else {
-                addFavorite({ vod_id: video.vod_id, title: video.title, cover: video.cover, category: video.category });
-                favorited = true;
-              }
-            }}
-            class="flex items-center gap-1 px-4 py-2 rounded-full text-sm font-medium transition-colors {favorited ? 'bg-pink-100 text-pink-600' : 'bg-gray-100 text-gray-600'}"
-          >
-            {favorited ? '已收藏' : '收藏'}
-          </button>
+    <!-- 相关推荐 -->
+    {#if relatedVideos.length > 0}
+      <div class="mt-2">
+        <h2 class="text-sm font-medium text-gray-700 px-3 py-2">相关推荐</h2>
+        <div class="grid grid-cols-3 gap-2 px-2 pb-4">
+          {#each relatedVideos.slice(0, 6) as v}
+            <a href="/v/{v.vod_id}" class="block">
+              <div class="relative aspect-video bg-gray-200 rounded-lg overflow-hidden">
+                <img src={v.cover} alt={v.title} loading="lazy" class="w-full h-full object-cover" />
+              </div>
+              <p class="text-xs text-gray-600 mt-1 line-clamp-2">{v.title}</p>
+            </a>
+          {/each}
         </div>
-      </article>
-
-      <!-- 相关视频 -->
-      {#if relatedVideos.length > 0}
-        <section class="mt-4 bg-white p-3">
-          <h2 class="text-sm font-bold text-gray-900 mb-3">相关推荐</h2>
-          <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2">
-            {#each relatedVideos as related}
-              <VideoCard video={related} />
-            {/each}
-          </div>
-        </section>
-      {/if}
+      </div>
     {/if}
-  </main>
+  {/if}
 
-  <!-- 底部导航 -->
   <NavBar />
 </div>
+
+<style>
+  .line-clamp-2 {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  @keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+  .animate-spin {
+    animation: spin 1s linear infinite;
+  }
+</style>
