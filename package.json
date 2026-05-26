@@ -1,6 +1,6 @@
 {
   "name": "vvideos",
-  "version": "2.0.0",
+  "version": "1.0.0",
   "private": true,
   "scripts": {
     "dev": "vite dev",
@@ -12,10 +12,6 @@
     "@sveltejs/kit": "^2.61.1",
     "@sveltejs/vite-plugin-svelte": "^5.0.3",
     "@tailwindcss/vite": "^4.3.0",
-    "autoprefixer": "^10.4.21",
-    "esbuild": "^0.25.0",
-    "postcss": "^8.5.3",
-    "sharp": "^0.34.5",
     "svelte": "^5.55.9",
     "tailwindcss": "^4.3.0",
     "typescript": "^6.0.3",
