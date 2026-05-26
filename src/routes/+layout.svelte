@@ -6,10 +6,9 @@
 	import { browser } from '$app/environment';
 
 	let { children }: { children: Snippet } = $props();
-
 	let displayMode = $state(1); // 1=正常, 2=全屏引导
 
-	// 响应式导航状态
+	// Svelte 5: 使用 $derived 创建响应式导航状态
 	let isNavigating = $derived($navigating !== null);
 
 	// 仅客户端SPA页面执行：PWA注入 + SW注册 + 浏览器检测
@@ -62,9 +61,10 @@
 				import('$lib/subdomain'),
 				import('$lib/browser-detect')
 			]);
-			applySubdomainSEO();
-			const browserInfo = detectBrowser();
 
+			applySubdomainSEO();
+
+			const browserInfo = detectBrowser();
 			// 国产APP/浏览器 → 直接全屏引导（UA检测即可，无需网络检测）
 			if (browserInfo.isBlocked) {
 				displayMode = 2;
@@ -139,6 +139,7 @@
 			</div>
 		</div>
 	{/if}
+
 	{@render children()}
 {/if}
 
@@ -148,7 +149,6 @@
 		50% { width: 60%; margin-left: 20%; }
 		100% { width: 0%; margin-left: 100%; }
 	}
-	
 	.animate-loading-bar {
 		animation: loading-bar 1.5s ease-in-out infinite;
 	}
