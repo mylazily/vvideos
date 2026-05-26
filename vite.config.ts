@@ -1,23 +1,86 @@
-import { defineConfig } from 'vite';
-import { sveltekit } from '@sveltejs/kit/vite';
 import tailwindcss from '@tailwindcss/vite';
+import { sveltekit } from '@sveltejs/kit/vite';
+import { defineConfig } from 'vite';
 
 export default defineConfig({
-	plugins: [
-		tailwindcss(),
-		sveltekit()
-	],
+	plugins: [tailwindcss(), sveltekit()],
 	build: {
-		sourcemap: true,
+		// 极致代码分割 - Vite 8优化
 		rollupOptions: {
 			output: {
-				manualChunks: {
-					'video-player': ['hls.js']
+				// 手动分包策略
+				manualChunks: (id) => {
+					// 只分包 node_modules
+					if (!id.includes('node_modules')) return;
+					// 核心框架
+					if (id.includes('svelte')) return 'svelte';
+					// 其他第三方库
+					return 'vendor';
+				},
+				// 入口文件优化
+				entryFileNames: '_app/immutable/entry/[name]-[hash].js',
+				chunkFileNames: '_app/immutable/chunks/[name]-[hash].js',
+				assetFileNames: (info) => {
+					const infoName = info.name || '';
+					if (infoName.endsWith('.css')) {
+						return '_app/immutable/assets/[name]-[hash][extname]';
+					}
+					return '_app/immutable/assets/[name]-[hash][extname]';
 				}
 			}
+		},
+		// 使用 esbuild 压缩 - Vite 8更快
+		minify: 'esbuild',
+		esbuildOptions: {
+			target: 'es2020',
+			drop: ['console', 'debugger'],
+			// 树摇优化
+			treeShaking: true,
+			// 压缩优化
+			minifyWhitespace: true,
+			minifyIdentifiers: true,
+			minifySyntax: true
+		},
+		// CSS 代码分割
+		cssCodeSplit: true,
+		// 资源内联阈值 - 小资源直接内联减少请求
+		assetsInlineLimit: 8192,
+		// 分块大小警告
+		chunkSizeWarningLimit: 500,
+		// 动态导入优化
+		dynamicImportVarsOptions: {
+			warnOnError: true,
+			exclude: []
+		},
+		// 源码映射 - 生产环境关闭
+		sourcemap: false,
+		// 报告压缩后大小
+		reportCompressedSize: false
+	},
+	// 优化依赖预构建 - Vite 8
+	optimizeDeps: {
+		// 强制预构建
+		force: true
+	},
+	// 开发服务器优化
+	server: {
+		fs: {
+			strict: false
+		},
+		// 预热常用文件
+		preTransformRequests: true
+	},
+	// 预览服务器
+	preview: {
+		headers: {
+			'Cache-Control': 'public, max-age=31536000, immutable'
 		}
 	},
-	optimizeDeps: {
-		include: ['hls.js']
+	// 实验性功能 - Vite 8
+	experimental: {
+		// 优化构建性能 - 使用绝对路径确保SPA路由正确加载
+		renderBuiltUrl: (filename, { hostType }) => {
+			return '/' + filename;
+		}
 	}
 });
