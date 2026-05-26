@@ -71,7 +71,6 @@
       <a href="/" class="flex-1 h-full flex items-center justify-center text-sm text-pink-500 font-medium" aria-current="page">首页</a>
       <a href="/category/全部/1" class="flex-1 h-full flex items-center justify-center text-sm text-gray-600">分类</a>
       <a href="/discover" class="flex-1 h-full flex items-center justify-center text-sm text-gray-600">发现</a>
-      <a href="/profile" class="flex-1 h-full flex items-center justify-center text-sm text-gray-600">我</a>
     </div>
   </nav>
 </div>

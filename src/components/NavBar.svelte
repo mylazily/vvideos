@@ -27,12 +27,5 @@
     >
       发现
     </a>
-    <a
-      href="/profile"
-      class="flex-1 h-full flex items-center justify-center text-sm {currentPath === '/profile' ? 'text-pink-500 font-medium' : 'text-gray-600'}"
-      aria-current={currentPath === '/profile' ? 'page' : undefined}
-    >
-      我
-    </a>
   </div>
 </nav>

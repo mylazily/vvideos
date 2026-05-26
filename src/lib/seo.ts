@@ -17,70 +17,70 @@ export interface VideoSEOData {
 // 生成SEO描述
 export function generateSEODescription(video: VideoSEOData): string {
   const parts: string[] = [];
-  
+
   // 基础描述
   parts.push(`《${video.title}》`);
-  
+
   // 添加类型（资源站数据）
   if (video.category) {
     parts.push(`${video.category}在线观看`);
   }
-  
+
   // 添加年份
   if (video.vod_year) {
     parts.push(`${video.vod_year}年`);
   }
-  
+
   // 添加地区
   if (video.vod_area) {
     parts.push(`${video.vod_area}出品`);
   }
-  
+
   // 添加演员
   if (video.vod_actor) {
     const actors = video.vod_actor.split(/[,，]/).slice(0, 3).join('、');
     parts.push(`由${actors}主演`);
   }
-  
+
   // 添加导演
   if (video.vod_director) {
     parts.push(`${video.vod_director}执导`);
   }
-  
+
   // 结尾
   parts.push('高清完整版免费播放，支持手机在线观看。');
-  
+
   return parts.join('，');
 }
 
 // 生成SEO关键词
 export function generateSEOKeywords(video: VideoSEOData): string[] {
   const keywords: string[] = [];
-  
+
   // 核心关键词
   keywords.push(video.title);
   keywords.push(`${video.title}在线观看`);
   keywords.push(`${video.title}免费观看`);
-  
+
   // 类型关键词（资源站数据）
   if (video.category) {
     keywords.push(video.category);
     keywords.push(`${video.category}在线观看`);
     keywords.push(`最新${video.category}`);
   }
-  
+
   // 地区关键词（资源站数据）
   if (video.vod_area) {
     keywords.push(video.vod_area);
     keywords.push(`${video.vod_area}${video.category || ''}`);
   }
-  
+
   // 年份关键词
   if (video.vod_year) {
     keywords.push(`${video.vod_year}年${video.category || ''}`);
     keywords.push(`${video.vod_year}最新`);
   }
-  
+
   // 演员关键词
   if (video.vod_actor) {
     const actors = video.vod_actor.split(/[,，]/).slice(0, 2);
@@ -89,102 +89,31 @@ export function generateSEOKeywords(video: VideoSEOData): string[] {
       keywords.push(`${actor}作品`);
     });
   }
-  
+
   // 语言关键词
   if (video.vod_lang) {
     keywords.push(`${video.vod_lang}版`);
   }
-  
+
   // 通用长尾词
   keywords.push('高清在线观看');
   keywords.push('免费完整版');
   keywords.push('手机在线播放');
-  
+
   return [...new Set(keywords)].slice(0, 15); // 去重，最多15个
-}
-
-// 生成TAG标签
-export function generateTags(video: VideoSEOData): string[] {
-  const tags: string[] = [];
-  
-  // 标题相关
-  tags.push(video.title);
-  
-  // 类型标签（资源站数据）
-  if (video.category) {
-    tags.push(video.category);
-  }
-  
-  // 年份标签
-  if (video.vod_year) {
-    tags.push(video.vod_year);
-    tags.push(`${video.vod_year}年`);
-  }
-  
-  // 地区标签（资源站数据）
-  if (video.vod_area) {
-    tags.push(video.vod_area);
-  }
-  
-  // 演员标签
-  if (video.vod_actor) {
-    const actors = video.vod_actor.split(/[,，]/).slice(0, 3);
-    tags.push(...actors.map(a => a.trim()).filter(Boolean));
-  }
-  
-  // 导演标签
-  if (video.vod_director) {
-    tags.push(video.vod_director);
-  }
-  
-  // 语言标签
-  if (video.vod_lang) {
-    tags.push(video.vod_lang);
-  }
-  
-  return [...new Set(tags)].filter(tag => tag.length > 0);
-}
-
-// 生成相关搜索词
-export function generateRelatedSearches(video: VideoSEOData): string[] {
-  const related: string[] = [];
-  
-  related.push(`${video.title}剧情介绍`);
-  related.push(`${video.title}演员表`);
-  related.push(`${video.title}结局`);
-  related.push(`${video.title}主题曲`);
-  
-  if (video.vod_actor) {
-    const actors = video.vod_actor.split(/[,，]/).slice(0, 2);
-    actors.forEach(actor => {
-      related.push(`${actor.trim()}演过的电影`);
-      related.push(`${actor.trim()}最新作品`);
-    });
-  }
-  
-  if (video.category) {
-    related.push(`最新${video.category}推荐`);
-    related.push(`${video.category}排行榜`);
-  }
-  
-  if (video.vod_year) {
-    related.push(`${video.vod_year}年热门${video.category || ''}`);
-  }
-  
-  return related;
 }
 
 // 生成页面标题
 export function generatePageTitle(video: VideoSEOData): string {
   const parts: string[] = [video.title];
-  
+
   if (video.category) {
     parts.push(video.category);
   }
-  
+
   parts.push('在线观看');
   parts.push(SITE_NAME);
-  
+
   return parts.join(' - ');
 }
 
@@ -233,19 +162,6 @@ export function canonicalUrl(path: string): string {
   return SITE_URL + path;
 }
 
-// SearchAction Schema（Google 搜索框直达）
-// 已整合到 generateWebSiteSchema 中
-
-// Image alt 文本优化
-export function generateImageAlt(video: VideoSEOData): string {
-  const parts: string[] = [];
-  parts.push(video.title);
-  if (video.category) parts.push(video.category);
-  if (video.vod_year) parts.push(video.vod_year + '年');
-  parts.push('封面');
-  return parts.join(' - ');
-}
-
 // 分类页 SEO
 export function generateCategorySEO(categoryName: string, page: number = 1): { title: string; description: string; keywords: string } {
   const suffix = page > 1 ? ` 第${page}页` : '';
@@ -254,30 +170,6 @@ export function generateCategorySEO(categoryName: string, page: number = 1): { t
     description: `最新${categoryName}在线观看，高清完整版免费播放。${categoryName}推荐、排行榜，每日更新，支持手机在线观看。`,
     keywords: `${categoryName},${categoryName}在线观看,最新${categoryName},${categoryName}推荐,免费${categoryName},高清${categoryName}`
   };
-}
-
-// RSS Feed 生成
-export function generateRSSFeed(videos: { title: string; vod_id: string; category?: string; vod_year?: string; cover?: string; updated_at?: number }[]): string {
-  const items = videos.map(v => `
-    <item>
-      <title><![CDATA[${v.title}]]></title>
-      <link>${SITE_URL}/v/${v.vod_id}</link>
-      <description><![CDATA[${v.category || '视频'}${v.vod_year ? ' · ' + v.vod_year + '年' : ''} - ${SITE_NAME}]]></description>
-      <pubDate>${v.updated_at ? new Date(v.updated_at * 1000).toUTCString() : new Date().toUTCString()}</pubDate>
-      <guid isPermaLink="true">${SITE_URL}/v/${v.vod_id}</guid>
-    </item>`).join('');
-
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
-  <channel>
-    <title>${SITE_NAME} - 最新更新</title>
-    <link>${SITE_URL}</link>
-    <description>最新高清视频在线观看</description>
-    <language>zh-CN</language>
-    <atom:link href="${SITE_URL}/api/rss.xml" rel="self" type="application/rss+xml"/>
-    ${items}
-  </channel>
-</rss>`;
 }
 
 // ===== 高级 SEO =====
@@ -335,43 +227,6 @@ export function generateFAQSchema(faqs: { question: string; answer: string }[]) 
         text: faq.answer
       }
     }))
-  };
-}
-
-// Organization Schema
-export function generateOrganizationSchema() {
-  return {
-    '@context': 'https://schema.org',
-    '@type': 'Organization',
-    name: SITE_NAME,
-    url: SITE_URL,
-    logo: `${SITE_URL}/icon-512.png`,
-    sameAs: []
-  };
-}
-
-// WebPage Schema
-export function generateWebPageSchema(page: { title: string; description: string; url: string }) {
-  return {
-    '@context': 'https://schema.org',
-    '@type': 'WebPage',
-    name: page.title,
-    description: page.description,
-    url: page.url,
-    isPartOf: {
-      '@type': 'WebSite',
-      name: SITE_NAME,
-      url: SITE_URL
-    }
-  };
-}
-
-// 首页 SEO
-export function generateHomeSEO(): { title: string; description: string; keywords: string } {
-  return {
-    title: `${SITE_NAME} - 免费在线观看最新电影、电视剧、综艺、动漫`,
-    description: `${SITE_NAME}提供最新最全的影视内容在线观看，高清流畅速度快，支持手机免会员观看。`,
-    keywords: `${SITE_NAME},免费视频,在线观看,高清视频,手机看视频`
   };
 }
 
@@ -454,32 +309,5 @@ export function generateCrossFAQ(filters: { area?: string; year?: string; catego
     { question: `哪里可以免费看${label}？`, answer: `${SITE_NAME}提供最新${label}在线免费观看，高清完整版，支持手机和电脑播放，无需下载。${totalCount > 0 ? '目前收录' + totalCount + '部' + label + '。' : ''}` },
     { question: `${filters.year || ''}${filters.category || '影视'}有什么好看的推荐？`, answer: `${SITE_NAME}每日更新${label}，涵盖${filters.area || '全球各地'}优质内容。支持按地区、年份、分类筛选，轻松找到你喜欢的内容。` },
     { question: `${label}支持手机观看吗？`, answer: `支持。${SITE_NAME}全站视频均支持手机在线观看，打开浏览器即可播放，无需安装任何APP。同时支持PWA离线缓存功能。` }
-  ];
-}
-
-// WebSite Schema（首页用）
-export function generateWebSiteSchema(): object {
-  return {
-    '@context': 'https://schema.org',
-    '@type': 'WebSite',
-    name: SITE_NAME,
-    url: SITE_URL,
-    potentialAction: {
-      '@type': 'SearchAction',
-      target: {
-        '@type': 'EntryPoint',
-        urlTemplate: SITE_URL + '/search/{search_term_string}/1'
-      },
-      'query-input': 'required name=search_term_string'
-    }
-  };
-}
-
-// 首页 FAQ
-export function generateHomeFAQ(): { question: string; answer: string }[] {
-  return [
-    { question: `${SITE_NAME}是什么？`, answer: `${SITE_NAME}是一个免费的在线视频播放平台，提供丰富的影视内容，高清流畅，支持手机电脑观看。` },
-    { question: `${SITE_NAME}需要注册吗？`, answer: `不需要。${SITE_NAME}无需注册即可观看所有视频，打开浏览器即可播放，完全免费。` },
-    { question: `${SITE_NAME}支持离线观看吗？`, answer: `支持。${SITE_NAME}提供PWA应用安装功能，安装后可将视频缓存到本地，离线也能观看。` }
   ];
 }

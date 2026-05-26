@@ -98,11 +98,6 @@
       }
     }, 300);
   }
-
-  function handlePageChange(pg: number) {
-    goto('/search/' + encodeURIComponent(searchQuery.trim()) + '/' + pg);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  }
 </script>
 
 <svelte:head>
@@ -182,7 +177,7 @@
       </div>
 
       {#if totalPages > 1}
-        <Pagination {currentPage} {totalPages} {loading} onPageChange={handlePageChange} />
+        <Pagination {currentPage} {totalPages} />
       {/if}
     {:else}
       <div class="text-center py-20 text-gray-400">输入关键词搜索影片</div>

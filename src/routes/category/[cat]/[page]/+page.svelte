@@ -104,11 +104,6 @@
     // 更新URL
     goto('/category/' + encodeURIComponent(activeCategory) + '/1');
   }
-
-  function handlePageChange(pg: number) {
-    goto('/category/' + encodeURIComponent(activeCategory) + '/' + pg);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  }
 </script>
 
 <svelte:head>
@@ -220,7 +215,7 @@
       </div>
 
       {#if totalPages > 1}
-        <Pagination {currentPage} {totalPages} {loading} onPageChange={handlePageChange} />
+        <Pagination {currentPage} {totalPages} />
       {/if}
     {/if}
   </main>

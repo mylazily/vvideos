@@ -2,11 +2,10 @@
   interface Props {
     currentPage: number;
     totalPages: number;
-    loading?: boolean;
     baseUrl: string;
   }
 
-  let { currentPage, totalPages, loading = false, baseUrl }: Props = $props();
+  let { currentPage, totalPages, baseUrl }: Props = $props();
 
   function getPageNumbers(): (number | string)[] {
     const pages: (number | string)[] = [];

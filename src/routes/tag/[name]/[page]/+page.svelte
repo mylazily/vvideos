@@ -77,11 +77,6 @@
       loading = false;
     }
   }
-
-  function handlePageChange(pg: number) {
-    goto('/tag/' + encodeURIComponent(tagName) + '/' + pg);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  }
 </script>
 
 <svelte:head>
@@ -150,7 +145,7 @@
       </div>
 
       {#if totalPages > 1}
-        <Pagination {currentPage} {totalPages} {loading} onPageChange={handlePageChange} />
+        <Pagination {currentPage} {totalPages} />
       {/if}
     {/if}
   </main>
