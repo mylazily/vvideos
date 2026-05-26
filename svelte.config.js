@@ -7,7 +7,9 @@ const config = {
 	compilerOptions: {
 		dev: false,
 		accessors: false,
-		customElement: false
+		customElement: false,
+		// Svelte 5.55+ 新选项
+		runes: true
 	},
 	kit: {
 		adapter: adapter({
