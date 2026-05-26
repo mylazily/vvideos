@@ -1,17 +1,30 @@
 {
   "extends": "./.svelte-kit/tsconfig.json",
   "compilerOptions": {
-    "allowJs": true,
-    "checkJs": true,
+    "target": "ES2025",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2025", "DOM", "DOM.Iterable"],
+    "strict": true,
     "esModuleInterop": true,
+    "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
-    "skipLibCheck": true,
+    "declaration": true,
+    "declarationMap": true,
     "sourceMap": true,
-    "strict": true,
-    "paths": {
-      "$components": ["./src/components"],
-      "$lib": ["./src/lib"]
-    }
-  }
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "isolatedModules": true,
+    "allowSyntheticDefaultImports": true,
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    // TypeScript 6.0 新特性支持
+    "types": [],
+    "ignoreDeprecations": "6.0"
+  },
+  "include": ["src/**/*", "src/**/*.svelte"],
+  "exclude": ["node_modules", "build", "dist"]
 }
