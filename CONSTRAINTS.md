@@ -97,7 +97,7 @@ grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap
 ```
 <nav>
   <a href="/">首页</a>
-  <a href="/category/全部/1">分类</a>
+  <a href="/category">分类</a>
   <a href="/discover">发现</a>
   <a href="/profile">我</a>
 </nav>
