@@ -8,7 +8,7 @@ const config = {
 		dev: false,
 		accessors: false,
 		customElement: false,
-		// Svelte 5.55+ 新选项
+		// Svelte 5 Runes Mode - 启用响应式原语
 		runes: true
 	},
 	kit: {
