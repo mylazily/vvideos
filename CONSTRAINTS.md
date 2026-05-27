@@ -156,41 +156,7 @@ grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap
 - ID 范围：0 - 9999999（纯数字编号）
 - ❌ **禁止修改分片规则**
 
-### 4.5 数据库表结构约束（强制）
-**videos 表禁止包含 description 列**：
-```sql
--- 正确的表结构（无 description 列）
-CREATE TABLE videos (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  vod_id TEXT UNIQUE NOT NULL,
-  fingerprint_id INTEGER DEFAULT 0,
-  title TEXT NOT NULL,
-  title_normalized TEXT DEFAULT '',
-  category TEXT DEFAULT '其他',
-  cover TEXT DEFAULT '',
-  play_url_1 TEXT DEFAULT '',
-  play_url_2 TEXT DEFAULT '',
-  play_url_3 TEXT DEFAULT '',
-  play_url_4 TEXT DEFAULT '',
-  play_url_5 TEXT DEFAULT '',
-  duration_1 INTEGER DEFAULT 0,
-  duration_2 INTEGER DEFAULT 0,
-  duration_3 INTEGER DEFAULT 0,
-  duration_4 INTEGER DEFAULT 0,
-  duration_5 INTEGER DEFAULT 0,
-  ad_segments TEXT DEFAULT '',
-  vod_year TEXT DEFAULT '',
-  vod_area TEXT DEFAULT '',
-  vod_actor TEXT DEFAULT '',
-  vod_director TEXT DEFAULT '',
-  vod_remarks TEXT DEFAULT '',
-  vod_lang TEXT DEFAULT '',
-  status INTEGER DEFAULT 1,
-  views INTEGER DEFAULT 0,
-  created_at INTEGER NOT NULL,
-  updated_at INTEGER NOT NULL
-  -- ❌ 禁止添加 description 列
-);
+
 ```
 
 ### 4.6 发现页数据来源约束（强制）
