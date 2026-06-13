@@ -15,7 +15,7 @@
     "@sveltejs/kit": "^2.0.0",
     "@sveltejs/vite-plugin-svelte": "^7.1.2",
     "autoprefixer": "^10.4.20",
-    "esbuild": "^0.28.0",
+    "esbuild": "^0.28.1",
     "postcss": "^8.4.47",
     "sharp": "^0.34.5",
     "svelte": "^5.0.0",
